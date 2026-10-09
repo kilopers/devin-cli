@@ -16,6 +16,12 @@ services:
       GIT_BRANCH: ${GIT_BRANCH:-}
       GIT_USER_NAME: ${GIT_USER_NAME:-devin-bot}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-devin-bot@localhost}
+      # Optional: telegram bot running in parallel with the watcher.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      CHAT_ID: ${CHAT_ID:-}
+      TG_USERNAME: ${TG_USERNAME:-kiloper}
+      MESSAGE_TEXT: ${MESSAGE_TEXT:-привет}
+      INTERVAL: ${INTERVAL:-60}
     volumes:
       - ${PROJECT_DIR:?Set PROJECT_DIR in .env}:/workspace
       - ./tasks:/tasks

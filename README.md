@@ -57,6 +57,20 @@ echo "Добавь endpoint /healthz, возвращающий 200" > tasks/inbo
 
 Задачи выполняются последовательно, по одной.
 
+## Telegram-бот (опционально)
+
+Если задан `TELEGRAM_BOT_TOKEN` — вотчер параллельно запускает `bot.py`,
+который шлёт `MESSAGE_TEXT` в чат `CHAT_ID` каждые `INTERVAL` секунд.
+
+Узнать свой `CHAT_ID` — напиши боту `/start`, затем:
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool | grep -A5 '"chat"'
+```
+
+Если `CHAT_ID` не задан, бот сам поймает его из `getUpdates`, когда
+`TG_USERNAME` напишет боту.
+
 ## Переменные окружения
 
 | Переменная | По умолчанию | Описание |
@@ -71,6 +85,11 @@ echo "Добавь endpoint /healthz, возвращающий 200" > tasks/inbo
 | `GIT_BRANCH` | — | Ветка при клонировании |
 | `DEVIN_INSTRUCTIONS_FILE` | — | Доп. инструкции, добавляются в промпт |
 | `DEVIN_EXTRA_ARGS` | — | Доп. флаги для `devin` |
+| `TELEGRAM_BOT_TOKEN` | — (выкл) | Токен бота — включает telegram-пингер |
+| `CHAT_ID` | — | Числовой id чата; иначе ловится из `getUpdates` по `TG_USERNAME` |
+| `TG_USERNAME` | `kiloper` | Username для авто-детекта chat_id |
+| `MESSAGE_TEXT` | `привет` | Текст сообщения |
+| `INTERVAL` | `60` | Период отправки, сек |
 
 ## One-shot режим (без compose)
 

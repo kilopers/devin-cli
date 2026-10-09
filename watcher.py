@@ -27,6 +27,9 @@ OUTBOX = TASKS_DIR / "outbox"
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT", "7200"))  # 2h
 DEVIN_TASK = os.environ.get("DEVIN_TASK_BIN", "/usr/local/bin/devin-task")
+BOT_SCRIPT = os.environ.get("BOT_SCRIPT", "/app/bot.py")
+
+_bot_proc: subprocess.Popen | None = None
 
 
 def log(msg: str) -> None:
@@ -98,14 +101,30 @@ def ensure_repo() -> None:
         log("clone finished")
 
 
+def start_bot() -> None:
+    """Run bot.py in parallel when TELEGRAM_BOT_TOKEN is set."""
+    global _bot_proc
+    if not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        return
+    if _bot_proc and _bot_proc.poll() is None:
+        return
+    log("starting telegram bot")
+    _bot_proc = subprocess.Popen([sys.executable, BOT_SCRIPT])
+
+
 def main() -> int:
+    global _bot_proc
     for d in (INBOX, DONE, OUTBOX):
         d.mkdir(parents=True, exist_ok=True)
 
     ensure_repo()
+    start_bot()
     log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
     while True:
         try:
+            if _bot_proc and _bot_proc.poll() is not None:
+                log(f"telegram bot exited ({_bot_proc.returncode}), restarting")
+                start_bot()
             task = next_task()
             if task is None:
                 time.sleep(POLL_INTERVAL)
@@ -113,6 +132,8 @@ def main() -> int:
             run_task(task)
         except KeyboardInterrupt:
             log("stopping")
+            if _bot_proc:
+                _bot_proc.terminate()
             return 0
         except Exception as e:  # keep the watcher alive no matter what
             log(f"ERROR: {e}")

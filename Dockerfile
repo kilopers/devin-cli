@@ -32,7 +32,8 @@ RUN mkdir -p /root/.config/devin \
 
 COPY entrypoint.sh /usr/local/bin/devin-task
 COPY watcher.py /app/watcher.py
-RUN chmod +x /usr/local/bin/devin-task /app/watcher.py
+COPY bot.py /app/bot.py
+RUN chmod +x /usr/local/bin/devin-task /app/watcher.py /app/bot.py
 
 WORKDIR /workspace
 
