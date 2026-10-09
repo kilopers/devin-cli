@@ -109,7 +109,8 @@ def start_bot() -> None:
     if _bot_proc and _bot_proc.poll() is None:
         return
     log("starting telegram bot")
-    _bot_proc = subprocess.Popen([sys.executable, BOT_SCRIPT])
+    # -u: unbuffered stdout so bot logs show up in `docker logs`
+    _bot_proc = subprocess.Popen([sys.executable, "-u", BOT_SCRIPT])
 
 
 def main() -> int:
