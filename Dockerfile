@@ -15,9 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Devin CLI.
 # install.sh finishes by launching the interactive `devin setup` wizard —
 # strip that line so the image build stays non-interactive.
+# Install under /opt/devin-install (not the default ~/.local/share/devin) so the
+# persistent data-dir mount doesn't shadow the installed binary.
 RUN curl -fsSL https://cli.devin.ai/install.sh -o /tmp/devin-install.sh \
     && sed -i 's|"\$VERSION_DIR/bin/\$COMPILED_BIN_NAME" setup|true|' /tmp/devin-install.sh \
-    && bash /tmp/devin-install.sh \
+    && XDG_DATA_HOME=/opt/devin-install bash /tmp/devin-install.sh \
     && rm -f /tmp/devin-install.sh
 
 ENV PATH="/root/.local/bin:${PATH}"
