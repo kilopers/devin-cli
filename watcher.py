@@ -90,8 +90,12 @@ def ensure_repo() -> None:
     if branch := os.environ.get("GIT_BRANCH"):
         args += ["--branch", branch]
     args += [url, str(workdir)]
-    subprocess.run(args, check=True)
-    log("clone finished")
+    res = subprocess.run(args)
+    if res.returncode != 0:
+        log(f"clone failed (exit {res.returncode}) — check GIT_REPO_URL and git credentials; "
+            "devin-task will retry before each task")
+    else:
+        log("clone finished")
 
 
 def main() -> int:
