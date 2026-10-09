@@ -10,14 +10,15 @@ Docker-образ с [Devin CLI](https://devin.ai) для автономного
 - **one-shot** (`docker run`) — выполняет один task-файл и завершается.
 
 Образ собирается GitHub Actions (`.github/workflows/docker.yml`) и пушится в
-`docker.killop.ru/devin-cli`. Для работы CI добавь в репозиторий secrets:
-`REGISTRY_USERNAME` и `REGISTRY_PASSWORD` (креды `docker login docker.killop.ru`).
+GitHub Container Registry — `ghcr.io/kilopers/devin-cli`. Secrets настраивать
+не нужно: логин идёт через встроенный `GITHUB_TOKEN`.
 
 ## Сервер: установка и запуск
 
 ```bash
-# 1. залогиниться в registry
-docker login docker.killop.ru
+# 1. залогиниться в ghcr (нужен PAT с правом read:packages,
+#    если пакет приватный; для public-пакета логин не нужен)
+echo $GITHUB_PAT | docker login ghcr.io -u kilopers --password-stdin
 
 # 2. забрать файлы запуска
 git clone git@github.com:kilopers/devin-cli.git
@@ -77,7 +78,7 @@ docker run --rm \
     -v /path/to/task.txt:/task/task.txt:ro \
     -v ./devin-data:/root/.local/share/devin \
     -v ~/.ssh:/root/.ssh:ro \
-    docker.killop.ru/devin-cli:latest
+    ghcr.io/kilopers/devin-cli:latest
 ```
 
 ## Что делает контейнер для каждой задачи
@@ -100,7 +101,7 @@ docker run --rm \
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-    -t docker.killop.ru/devin-cli:latest --push .
+    -t ghcr.io/kilopers/devin-cli:latest --push .
 ```
 
 ## Замечания
