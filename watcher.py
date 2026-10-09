@@ -147,6 +147,9 @@ def ensure_repo() -> None:
 # --- telegram / gemini -------------------------------------------------------
 
 def tg_api(method: str, **params) -> dict:
+    shown = {k: ("***" if k == "secret_token" else str(v)[:120])
+             for k, v in params.items()}
+    log(f"tg -> {method} {shown}")
     data = json.dumps(params).encode()
     req = urllib.request.Request(
         f"https://api.telegram.org/bot{TG_TOKEN}/{method}",
@@ -157,6 +160,7 @@ def tg_api(method: str, **params) -> dict:
             res = json.load(r)
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"{method} HTTP {e.code}: {e.read().decode()[:300]}")
+    log(f"tg <- {method}: {json.dumps(res)[:200]}")
     if not res.get("ok"):
         raise RuntimeError(f"{method} api error: {res}")
     return res
@@ -167,6 +171,7 @@ def tg_send(chat_id: int, text: str) -> None:
     chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)][:5]
     if len(text) > 20000:
         chunks[-1] += "\n…[truncated]"
+    log(f"reply to chat {chat_id}: {len(chunks)} message(s), {len(text)} chars")
     for chunk in chunks:
         try:
             tg_api("sendMessage", chat_id=chat_id, text=chunk)
@@ -177,8 +182,11 @@ def tg_send(chat_id: int, text: str) -> None:
 def tg_download(file_id: str) -> bytes:
     file_path = tg_api("getFile", file_id=file_id)["result"]["file_path"]
     url = f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}"
+    log(f"downloading voice file {file_path}")
     with TG_OPENER.open(url, timeout=60) as r:
-        return r.read()
+        data = r.read()
+    log(f"voice file: {len(data)} bytes")
+    return data
 
 
 def gemini_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
@@ -189,11 +197,15 @@ def gemini_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
         {"text": "Transcribe this voice message. Reply with only the "
                  "transcription, in its original language."},
     ]}]}
+    log(f"gemini -> transcribing {len(audio)} bytes with {GEMINI_MODEL}")
+    started = time.time()
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
     with TG_OPENER.open(req, timeout=120) as r:
         res = json.load(r)
-    return res["candidates"][0]["content"]["parts"][0]["text"].strip()
+    text = res["candidates"][0]["content"]["parts"][0]["text"].strip()
+    log(f"gemini <- {time.time() - started:.1f}s: {text!r}")
+    return text
 
 
 def _load_chats() -> dict:
@@ -213,31 +225,35 @@ def enqueue_task(text: str, chat_id: int) -> str:
     name = f"tg-{time.strftime('%Y%m%d-%H%M%S')}-{int(time.time() * 1000) % 100000}.txt"
     (INBOX / name).write_text(text)
     _save_chat(Path(name).stem, chat_id)
+    log(f"task file {INBOX / name} written, chat_id={chat_id} remembered")
     return name
 
 
 def handle_update(upd: dict) -> None:
     msg = upd.get("message") or upd.get("edited_message") or {}
     chat_id = (msg.get("chat") or {}).get("id")
+    sender = (msg.get("from") or {}).get("username", "?")
     if not chat_id:
+        log(f"update ignored (no chat): {json.dumps(upd)[:200]}")
         return
     try:
         if voice := msg.get("voice"):
+            log(f"voice from @{sender} chat={chat_id}, {voice.get('duration', '?')}s")
             if not GEMINI_API_KEY:
                 tg_send(chat_id, "voice received, but GEMINI_API_KEY is not set")
                 return
-            log(f"voice message from chat {chat_id} ({voice.get('duration', '?')}s)")
             text = gemini_transcribe(tg_download(voice["file_id"]))
             name = enqueue_task(text, chat_id)
-            log(f"voice -> task {name}: {text[:80]}")
             tg_send(chat_id, f"Распознано:\n{text}\n\nЗадача {name} в очереди.")
         elif text := (msg.get("text") or "").strip():
+            log(f"text from @{sender} chat={chat_id}: {text[:100]}")
             if text.startswith("/"):
                 tg_send(chat_id, "Пришли задачу текстом или голосовым сообщением.")
                 return
             name = enqueue_task(text, chat_id)
-            log(f"text -> task {name}: {text[:80]}")
             tg_send(chat_id, f"Задача {name} в очереди.")
+        else:
+            log(f"update from @{sender} chat={chat_id}: unsupported content, skipped")
     except Exception as e:
         log(f"telegram update error: {e}")
         try:
@@ -249,7 +265,9 @@ def handle_update(upd: dict) -> None:
 def notify_chat(task_stem: str, response_text: str) -> None:
     chat_id = _load_chats().get(task_stem)
     if not chat_id:
+        log(f"no chat mapping for {task_stem} — result not sent to telegram")
         return
+    log(f"delivering result of {task_stem} to chat {chat_id}")
     tg_send(chat_id, response_text)
 
 
@@ -261,7 +279,7 @@ def register_webhook() -> None:
         if TG_WEBHOOK_SECRET:
             params["secret_token"] = TG_WEBHOOK_SECRET
         tg_api("setWebhook", **params)
-        log(f"telegram webhook -> {TG_WEBHOOK_URL}")
+        log(f"telegram webhook registered: {TG_WEBHOOK_URL}")
     except Exception as e:
         log(f"setWebhook failed: {e}")
 
@@ -310,6 +328,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         # whatever path prefix the reverse proxy preserves
         if TG_WEBHOOK_SECRET and \
                 self.headers.get("X-Telegram-Bot-Api-Secret-Token") != TG_WEBHOOK_SECRET:
+            log(f"POST {self.path}: bad webhook secret — 403")
             self.send_response(403)
             self.end_headers()
             return
@@ -320,7 +339,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         try:
             upd = json.loads(body)
         except ValueError:
+            log(f"POST {self.path}: bad JSON ({length} bytes), ignored")
             return
+        log(f"POST {self.path}: update_id={upd.get('update_id')}, "
+            f"{length} bytes")
         threading.Thread(target=handle_update, args=(upd,), daemon=True).start()
 
     def log_message(self, *args) -> None:  # keep docker logs clean
