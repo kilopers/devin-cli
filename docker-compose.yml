@@ -25,6 +25,11 @@ services:
       TG_USERNAME: ${TG_USERNAME:-kiloper}
       MESSAGE_TEXT: ${MESSAGE_TEXT:-привет}
       INTERVAL: ${INTERVAL:-60}
+      # Webhook mode: voice/text -> task in inbox, result -> back to the chat
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       # Optional outbound proxy — devin API and telegram only; git always
       # goes direct. Empty = direct connections.
       HTTP_PROXY: ${HTTP_PROXY:-}

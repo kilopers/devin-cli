@@ -57,6 +57,28 @@ echo "Добавь endpoint /healthz, возвращающий 200" > tasks/inbo
 
 Задачи выполняются последовательно, по одной.
 
+## Telegram webhook: голос → задача → ответ
+
+Если задан `TELEGRAM_WEBHOOK_URL` — вотчер сам регистрирует webhook у Telegram
+(`setWebhook`) и принимает апдейты POST'ом на **любой** путь статус-сервера
+(например `https://techcontrol.kilop.ru/build/anything` — зависит от того, как
+nginx режет путь; работает всегда).
+
+Поток:
+
+1. Голосовое → `getFile` → OGG → **Gemini** (`GEMINI_API_KEY`, модель
+   `GEMINI_MODEL`) → текст.
+2. Текст (или обычное текстовое сообщение) → `tasks/inbox/tg-*.txt`;
+   маппинг `task → chat_id` в `tasks/tg-chats.json`.
+3. В чат уходит распознанный текст + «задача в очереди».
+4. Когда задача отработает — в чат прилетает статус и хвост `outbox`-ответа.
+
+`TELEGRAM_WEBHOOK_SECRET` — опционально, сверяется с заголовком
+`X-Telegram-Bot-Api-Secret-Token`.
+
+Внимание: при активном webhook `getUpdates` возвращает 409 — если используешь
+пингер-бота (bot.py), задай `CHAT_ID` явно или выключи его.
+
 ## Статус-страница
 
 Вотчер отдаёт простую страницу `http://server/` (проброс `${WEB_PORT:-80}:8080`)
@@ -97,6 +119,10 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 | `MESSAGE_TEXT` | `привет` | Текст сообщения |
 | `INTERVAL` | `60` | Период отправки, сек |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | — | Исходящий прокси для devin API и telegram; git всегда напрямую |
+| `TELEGRAM_WEBHOOK_URL` | — | Публичный URL — регистрируется setWebhook при старте |
+| `TELEGRAM_WEBHOOK_SECRET` | — | Секрет для проверки заголовка webhook |
+| `GEMINI_API_KEY` | — | Ключ Gemini для распознавания голосовых |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Модель Gemini для STT |
 
 ## Прокси
 

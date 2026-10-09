@@ -13,12 +13,17 @@ output into outbox/, then moves the task file to done/.
 Tasks run sequentially, oldest first.
 """
 
+import base64
 import html
+import json
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -33,6 +38,23 @@ DEVIN_TASK = os.environ.get("DEVIN_TASK_BIN", "/usr/local/bin/devin-task")
 BOT_SCRIPT = os.environ.get("BOT_SCRIPT", "/app/bot.py")
 WEB_PORT = int(os.environ.get("WEB_PORT", "8080"))
 WORKDIR = Path(os.environ.get("DEVIN_WORKDIR", "/workspace"))
+
+# Telegram webhook bridge: voice -> Gemini STT -> task file; replies go back
+# to the originating chat. Set TELEGRAM_WEBHOOK_URL to enable registration.
+TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TG_WEBHOOK_URL = os.environ.get("TELEGRAM_WEBHOOK_URL", "")
+TG_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
+
+_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+if _proxy:
+    TG_OPENER = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"http": _proxy, "https": _proxy})
+    )
+else:
+    TG_OPENER = urllib.request.build_opener()
 
 _bot_proc: subprocess.Popen | None = None
 _started_at = time.time()
@@ -88,6 +110,8 @@ def run_task(task: Path) -> None:
     STATE.update(current_task=None, last_task=task.name,
                  last_status=status, tasks_done=STATE["tasks_done"] + 1)
     log(f"done {task.name} -> outbox/{response.name} ({status})")
+    if TG_TOKEN:
+        notify_chat(task.stem, f"{task.name}\n{status}\n\n{response.read_text()[-3500:]}")
 
 
 def ensure_repo() -> None:
@@ -118,6 +142,128 @@ def ensure_repo() -> None:
             "devin-task will retry before each task")
     else:
         log("clone finished")
+
+
+# --- telegram / gemini -------------------------------------------------------
+
+def tg_api(method: str, **params) -> dict:
+    data = json.dumps(params).encode()
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{TG_TOKEN}/{method}",
+        data=data, headers={"Content-Type": "application/json"},
+    )
+    try:
+        with TG_OPENER.open(req, timeout=60) as r:
+            res = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"{method} HTTP {e.code}: {e.read().decode()[:300]}")
+    if not res.get("ok"):
+        raise RuntimeError(f"{method} api error: {res}")
+    return res
+
+
+def tg_send(chat_id: int, text: str) -> None:
+    """sendMessage, splitting into <=4000-char chunks, max 5 messages."""
+    chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)][:5]
+    if len(text) > 20000:
+        chunks[-1] += "\n…[truncated]"
+    for chunk in chunks:
+        try:
+            tg_api("sendMessage", chat_id=chat_id, text=chunk)
+        except Exception as e:
+            log(f"telegram sendMessage error: {e}")
+
+
+def tg_download(file_id: str) -> bytes:
+    file_path = tg_api("getFile", file_id=file_id)["result"]["file_path"]
+    url = f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}"
+    with TG_OPENER.open(url, timeout=60) as r:
+        return r.read()
+
+
+def gemini_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+    payload = {"contents": [{"parts": [
+        {"inline_data": {"mime_type": mime, "data": base64.b64encode(audio).decode()}},
+        {"text": "Transcribe this voice message. Reply with only the "
+                 "transcription, in its original language."},
+    ]}]}
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with TG_OPENER.open(req, timeout=120) as r:
+        res = json.load(r)
+    return res["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
+def _load_chats() -> dict:
+    try:
+        return json.loads(TG_CHATS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_chat(task_stem: str, chat_id: int) -> None:
+    chats = _load_chats()
+    chats[task_stem] = chat_id
+    TG_CHATS_FILE.write_text(json.dumps(chats))
+
+
+def enqueue_task(text: str, chat_id: int) -> str:
+    name = f"tg-{time.strftime('%Y%m%d-%H%M%S')}-{int(time.time() * 1000) % 100000}.txt"
+    (INBOX / name).write_text(text)
+    _save_chat(Path(name).stem, chat_id)
+    return name
+
+
+def handle_update(upd: dict) -> None:
+    msg = upd.get("message") or upd.get("edited_message") or {}
+    chat_id = (msg.get("chat") or {}).get("id")
+    if not chat_id:
+        return
+    try:
+        if voice := msg.get("voice"):
+            if not GEMINI_API_KEY:
+                tg_send(chat_id, "voice received, but GEMINI_API_KEY is not set")
+                return
+            log(f"voice message from chat {chat_id} ({voice.get('duration', '?')}s)")
+            text = gemini_transcribe(tg_download(voice["file_id"]))
+            name = enqueue_task(text, chat_id)
+            log(f"voice -> task {name}: {text[:80]}")
+            tg_send(chat_id, f"Распознано:\n{text}\n\nЗадача {name} в очереди.")
+        elif text := (msg.get("text") or "").strip():
+            if text.startswith("/"):
+                tg_send(chat_id, "Пришли задачу текстом или голосовым сообщением.")
+                return
+            name = enqueue_task(text, chat_id)
+            log(f"text -> task {name}: {text[:80]}")
+            tg_send(chat_id, f"Задача {name} в очереди.")
+    except Exception as e:
+        log(f"telegram update error: {e}")
+        try:
+            tg_send(chat_id, f"Error: {e}")
+        except Exception:
+            pass
+
+
+def notify_chat(task_stem: str, response_text: str) -> None:
+    chat_id = _load_chats().get(task_stem)
+    if not chat_id:
+        return
+    tg_send(chat_id, response_text)
+
+
+def register_webhook() -> None:
+    if not (TG_TOKEN and TG_WEBHOOK_URL):
+        return
+    try:
+        params = {"url": TG_WEBHOOK_URL}
+        if TG_WEBHOOK_SECRET:
+            params["secret_token"] = TG_WEBHOOK_SECRET
+        tg_api("setWebhook", **params)
+        log(f"telegram webhook -> {TG_WEBHOOK_URL}")
+    except Exception as e:
+        log(f"setWebhook failed: {e}")
 
 
 def _git_head() -> str:
@@ -159,6 +305,24 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def do_POST(self) -> None:
+        # any POST path is treated as the telegram webhook — robust against
+        # whatever path prefix the reverse proxy preserves
+        if TG_WEBHOOK_SECRET and \
+                self.headers.get("X-Telegram-Bot-Api-Secret-Token") != TG_WEBHOOK_SECRET:
+            self.send_response(403)
+            self.end_headers()
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length)
+        self.send_response(200)
+        self.end_headers()
+        try:
+            upd = json.loads(body)
+        except ValueError:
+            return
+        threading.Thread(target=handle_update, args=(upd,), daemon=True).start()
+
     def log_message(self, *args) -> None:  # keep docker logs clean
         pass
 
@@ -188,6 +352,7 @@ def main() -> int:
 
     ensure_repo()
     start_bot()
+    register_webhook()
     start_web()
     log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
     while True:
