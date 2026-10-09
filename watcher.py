@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Watch a tasks directory and run each incoming task through Devin CLI.
+
+Layout (TASKS_DIR, default /tasks):
+
+    inbox/    drop *.txt task files here
+    done/     processed task files are moved here
+    outbox/   devin's full output is written here as <name>.response.txt
+
+For every new file in inbox/ the watcher runs /usr/local/bin/devin-task
+(which pulls the repo, runs `devin -p` and pushes the result), captures its
+output into outbox/, then moves the task file to done/.
+Tasks run sequentially, oldest first.
+"""
+
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+TASKS_DIR = Path(os.environ.get("TASKS_DIR", "/tasks"))
+INBOX = TASKS_DIR / "inbox"
+DONE = TASKS_DIR / "done"
+OUTBOX = TASKS_DIR / "outbox"
+
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
+TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT", "7200"))  # 2h
+DEVIN_TASK = os.environ.get("DEVIN_TASK_BIN", "/usr/local/bin/devin-task")
+
+
+def log(msg: str) -> None:
+    print(f"[watcher] {time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
+
+
+def next_task() -> Path | None:
+    tasks = sorted(INBOX.glob("*.txt"), key=lambda p: p.stat().st_mtime)
+    return tasks[0] if tasks else None
+
+
+def run_task(task: Path) -> None:
+    log(f"processing {task.name}")
+    processing = task.with_name(task.name + ".processing")
+    task.rename(processing)
+
+    env = dict(os.environ, DEVIN_TASK_FILE=str(processing))
+    try:
+        res = subprocess.run(
+            [DEVIN_TASK],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=TASK_TIMEOUT,
+        )
+        status = f"exit code: {res.returncode}"
+        body = res.stdout
+        if res.stderr:
+            body += f"\n\n--- STDERR ---\n{res.stderr}"
+    except subprocess.TimeoutExpired as e:
+        status = f"TIMEOUT after {TASK_TIMEOUT}s"
+        body = (e.stdout or "") + (f"\n\n--- STDERR ---\n{e.stderr}" if e.stderr else "")
+
+    response = OUTBOX / f"{task.stem}.response.txt"
+    response.write_text(
+        f"task:    {task.name}\n"
+        f"status:  {status}\n"
+        f"started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"{'=' * 60}\n\n{body}"
+    )
+    processing.rename(DONE / task.name)
+    log(f"done {task.name} -> outbox/{response.name} ({status})")
+
+
+def main() -> int:
+    for d in (INBOX, DONE, OUTBOX):
+        d.mkdir(parents=True, exist_ok=True)
+
+    log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
+    while True:
+        try:
+            task = next_task()
+            if task is None:
+                time.sleep(POLL_INTERVAL)
+                continue
+            run_task(task)
+        except KeyboardInterrupt:
+            log("stopping")
+            return 0
+        except Exception as e:  # keep the watcher alive no matter what
+            log(f"ERROR: {e}")
+            time.sleep(POLL_INTERVAL)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

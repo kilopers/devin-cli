@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+devin-data/
+tasks/
+.devin/config.local.json
