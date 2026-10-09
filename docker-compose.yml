@@ -22,8 +22,8 @@ services:
       TG_USERNAME: ${TG_USERNAME:-kiloper}
       MESSAGE_TEXT: ${MESSAGE_TEXT:-привет}
       INTERVAL: ${INTERVAL:-60}
-      # Optional outbound proxy (devin API, telegram, git over https).
-      # Empty = direct connections.
+      # Optional outbound proxy — devin API and telegram only; git always
+      # goes direct. Empty = direct connections.
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-}

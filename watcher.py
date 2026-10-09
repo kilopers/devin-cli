@@ -93,7 +93,10 @@ def ensure_repo() -> None:
     if branch := os.environ.get("GIT_BRANCH"):
         args += ["--branch", branch]
     args += [url, str(workdir)]
-    res = subprocess.run(args)
+    # git bypasses the proxy — strip *_proxy so the clone goes direct
+    env = {k: v for k, v in os.environ.items()
+           if k.lower() not in ("http_proxy", "https_proxy", "no_proxy")}
+    res = subprocess.run(args, env=env)
     if res.returncode != 0:
         log(f"clone failed (exit {res.returncode}) — check GIT_REPO_URL and git credentials; "
             "devin-task will retry before each task")

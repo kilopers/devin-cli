@@ -33,26 +33,30 @@ PERMISSION_MODE="${DEVIN_PERMISSION_MODE:-bypass}"
 [ -n "${GIT_USER_EMAIL:-}" ] && git config --global user.email "$GIT_USER_EMAIL"
 # Mounted repos are owned by the host uid — never fail on "dubious ownership".
 git config --global --add safe.directory '*'
+# Git always connects directly — overrides *_proxy env vars (also for the agent's own git calls).
+git config --global http.proxy ''
 # Accept new host keys without prompting; don't persist them (ssh dir may be read-only).
 export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null}"
 
 # --- proxy ------------------------------------------------------------------
-# HTTPS_PROXY/http_proxy are picked up automatically by git (https remotes),
-# curl and python. Devin CLI gets the proxy via its own config file instead.
+# Applies to the devin API and telegram bot only. Git always goes direct:
+# *_proxy vars are stripped per-command via GIT_DIRECT.
 PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
 if [ -n "$PROXY_URL" ]; then
     MASKED=$(printf '%s' "$PROXY_URL" | sed -E 's|(://)[^@]*@|\1***@|')
-    log "proxy enabled: $MASKED"
+    log "proxy enabled: $MASKED (devin + telegram; git stays direct)"
     printf '{ "version": 1, "auto_update": false, "proxy": { "mode": "manual", "url": "%s" } }\n' \
         "$PROXY_URL" > /root/.config/devin/config.json
 fi
+
+GIT_DIRECT=(env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u NO_PROXY -u no_proxy git)
 
 # --- 1. get the repo -------------------------------------------------------
 if [ ! -d "$WORKDIR/.git" ]; then
     if [ -n "${GIT_REPO_URL:-}" ]; then
         log "Cloning $GIT_REPO_URL -> $WORKDIR"
         mkdir -p "$WORKDIR"
-        git clone ${GIT_BRANCH:+--branch "$GIT_BRANCH"} "$GIT_REPO_URL" "$WORKDIR"
+        "${GIT_DIRECT[@]}" clone ${GIT_BRANCH:+--branch "$GIT_BRANCH"} "$GIT_REPO_URL" "$WORKDIR"
     elif [ ! -f "$TASK_FILE" ] && [ -t 0 ]; then
         warn "No repo and no task file — starting an interactive devin session."
         mkdir -p "$WORKDIR" && cd "$WORKDIR"
@@ -66,7 +70,7 @@ cd "$WORKDIR"
 # --- 2. pull latest --------------------------------------------------------
 if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
     log "Pulling latest changes (ff-only)"
-    git pull --ff-only || die "git pull --ff-only failed (history diverged?). Fix the checkout and retry."
+    "${GIT_DIRECT[@]}" pull --ff-only || die "git pull --ff-only failed (history diverged?). Fix the checkout and retry."
 else
     warn "No upstream configured for the current branch — skipping git pull."
 fi
@@ -132,7 +136,7 @@ fi
 if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 \
     && [ -n "$(git log '@{u}..HEAD' --oneline)" ]; then
     warn "Unpushed commits detected — pushing as a fallback."
-    git push || warn "Fallback git push failed — push manually."
+    "${GIT_DIRECT[@]}" push || warn "Fallback git push failed — push manually."
 fi
 
 log "Done."
