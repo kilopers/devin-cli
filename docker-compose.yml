@@ -26,10 +26,10 @@ services:
       # goes direct. Empty = direct connections.
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
       http_proxy: ${HTTP_PROXY:-}
       https_proxy: ${HTTPS_PROXY:-}
-      no_proxy: ${NO_PROXY:-}
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1}
     volumes:
       - ${PROJECT_DIR:?Set PROJECT_DIR in .env}:/workspace
       - ./tasks:/tasks
