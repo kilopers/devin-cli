@@ -11,6 +11,9 @@ services:
       TASKS_DIR: /tasks
       POLL_INTERVAL: ${POLL_INTERVAL:-30}
       TASK_TIMEOUT: ${TASK_TIMEOUT:-7200}
+      # If set and PROJECT_DIR is empty — the repo is cloned automatically.
+      GIT_REPO_URL: ${GIT_REPO_URL:-}
+      GIT_BRANCH: ${GIT_BRANCH:-}
       GIT_USER_NAME: ${GIT_USER_NAME:-devin-bot}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-devin-bot@localhost}
     volumes:

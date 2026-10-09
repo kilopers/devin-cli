@@ -26,7 +26,10 @@ cd devin-cli
 
 # 3. настроить
 cp .env.example .env
-# в .env прописать PROJECT_DIR=/path/to/repo, DEVIN_MODEL, git-идентичность
+# в .env прописать:
+#   PROJECT_DIR=/srv/my-project — пустая папка или существующий чекаут
+#   GIT_REPO_URL=...            — если папка пустая, репо склонируется сам
+#   DEVIN_MODEL, GIT_USER_NAME/EMAIL
 
 # 4. один раз авторизовать Devin (manual token flow — вставь токен)
 docker compose --profile auth run --rm auth
@@ -58,13 +61,14 @@ echo "Добавь endpoint /healthz, возвращающий 200" > tasks/inbo
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
-| `PROJECT_DIR` | — (обязательна) | Папка проекта на сервере, монтируется в `/workspace` |
+| `PROJECT_DIR` | — (обязательна) | Папка проекта на сервере, монтируется в `/workspace`. Пустая → clone, с репо → pull |
 | `DEVIN_MODEL` | `swe` | Модель (`opus`, `sonnet`, `gpt`, `swe`, …) |
 | `DEVIN_PERMISSION_MODE` | `bypass` | Режим разрешений Devin CLI |
 | `POLL_INTERVAL` | `30` | Период опроса `inbox/`, сек |
 | `TASK_TIMEOUT` | `7200` | Таймаут одной задачи, сек |
 | `GIT_USER_NAME` / `GIT_USER_EMAIL` | `devin-bot` | Git-идентичность для коммитов |
-| `GIT_REPO_URL` | — | Клонировать репо, если `/workspace` пуст |
+| `GIT_REPO_URL` | — | Клонируется в пустой `/workspace` при старте и перед каждой задачей |
+| `GIT_BRANCH` | — | Ветка при клонировании |
 | `DEVIN_INSTRUCTIONS_FILE` | — | Доп. инструкции, добавляются в промпт |
 | `DEVIN_EXTRA_ARGS` | — | Доп. флаги для `devin` |
 
@@ -81,9 +85,14 @@ docker run --rm \
     ghcr.io/kilopers/devin-cli:latest
 ```
 
-## Что делает контейнер для каждой задачи
+## Что делает контейнер
 
-1. `git pull --ff-only` в `/workspace` (или клонирует по `GIT_REPO_URL`).
+При старте вотчера: если `/workspace` пуст и задан `GIT_REPO_URL` — репо
+клонируется сразу (ошибки авторизации видны в логах сразу, а не на первой задаче).
+
+Для каждой задачи:
+
+1. `git pull --ff-only` в `/workspace` (если репо ещё нет — клонирует по `GIT_REPO_URL`).
 2. Проверяет авторизацию (`devin auth status`).
 3. Промпт = инструкции репозитория (`AGENTS.md`, `.devin/` и т.п.) + задача +
    обязательство `git add -A` → commit → push.

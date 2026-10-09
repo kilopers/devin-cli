@@ -21,6 +21,8 @@ RUN curl -fsSL https://cli.devin.ai/install.sh -o /tmp/devin-install.sh \
     && rm -f /tmp/devin-install.sh
 
 ENV PATH="/root/.local/bin:${PATH}"
+# Accept new SSH host keys without prompting (ssh dir is mounted read-only).
+ENV GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
 
 # Deterministic unattended defaults: no background self-update inside containers.
 RUN mkdir -p /root/.config/devin \

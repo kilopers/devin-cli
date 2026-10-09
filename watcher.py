@@ -71,10 +71,34 @@ def run_task(task: Path) -> None:
     log(f"done {task.name} -> outbox/{response.name} ({status})")
 
 
+def ensure_repo() -> None:
+    """Clone GIT_REPO_URL into the workspace if it is not a git repo yet.
+
+    devin-task does the same check before every task, but doing it here too
+    means auth/URL problems surface at container start, not on the first task.
+    """
+    workdir = Path(os.environ.get("DEVIN_WORKDIR", "/workspace"))
+    if (workdir / ".git").exists():
+        return
+    url = os.environ.get("GIT_REPO_URL")
+    if not url:
+        log(f"{workdir} is empty and GIT_REPO_URL is not set — "
+            "tasks will fail until a repo is mounted or cloned")
+        return
+    log(f"cloning {url} -> {workdir}")
+    args = ["git", "clone"]
+    if branch := os.environ.get("GIT_BRANCH"):
+        args += ["--branch", branch]
+    args += [url, str(workdir)]
+    subprocess.run(args, check=True)
+    log("clone finished")
+
+
 def main() -> int:
     for d in (INBOX, DONE, OUTBOX):
         d.mkdir(parents=True, exist_ok=True)
 
+    ensure_repo()
     log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
     while True:
         try:
