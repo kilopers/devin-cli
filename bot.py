@@ -15,6 +15,7 @@ Env:
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -25,8 +26,18 @@ USERNAME = os.environ.get("TG_USERNAME", "kiloper").lstrip("@")
 CHAT_ID = os.environ.get("CHAT_ID") or None
 TEXT = os.environ.get("MESSAGE_TEXT", "привет")
 INTERVAL = int(os.environ.get("INTERVAL", "60"))
+PROXY = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 
 API = f"https://api.telegram.org/bot{TOKEN}"
+
+# urllib reads *_proxy env vars by default; build an explicit opener anyway so
+# the proxy is deterministic and we can log it (with credentials masked).
+if PROXY:
+    OPENER = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"http": PROXY, "https": PROXY})
+    )
+else:
+    OPENER = urllib.request.build_opener()
 
 
 def log(msg: str) -> None:
@@ -37,7 +48,7 @@ def log(msg: str) -> None:
 def api(method: str, **params) -> dict:
     data = urllib.parse.urlencode(params).encode()
     try:
-        with urllib.request.urlopen(f"{API}/{method}", data, timeout=40) as r:
+        with OPENER.open(f"{API}/{method}", data, timeout=40) as r:
             res = json.load(r)
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"{method} HTTP {e.code}: {e.read().decode()[:300]}")
@@ -73,6 +84,9 @@ def main() -> None:
     if not TOKEN:
         log("TELEGRAM_BOT_TOKEN is not set — exiting")
         return
+
+    if PROXY:
+        log(f"using proxy {re.sub(r'://[^@]*@', '://***@', PROXY)}")
 
     # connectivity + token sanity check up front
     try:

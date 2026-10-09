@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         jq \
         python3 \
         make \
+        socat \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Devin CLI.

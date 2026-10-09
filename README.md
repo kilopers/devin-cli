@@ -90,6 +90,25 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 | `TG_USERNAME` | `kiloper` | Username для авто-детекта chat_id |
 | `MESSAGE_TEXT` | `привет` | Текст сообщения |
 | `INTERVAL` | `60` | Период отправки, сек |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | — | Исходящий прокси для devin API, telegram и git-over-HTTPS |
+
+## Прокси
+
+Если сервер ходит наружу через прокси, задай в `.env`:
+
+```bash
+HTTP_PROXY=http://user:password@proxy.company.local:3128
+HTTPS_PROXY=http://user:password@proxy.company.local:3128
+NO_PROXY=localhost,127.0.0.1
+```
+
+Переменные подхватываются автоматически: git (HTTPS-remote), python/telegram,
+curl. Для Devin CLI entrypoint записывает `proxy.mode=manual` в его конфиг.
+Пустые значения = прямые соединения.
+
+Нюанс: `GIT_REPO_URL` по **SSH** через HTTP-прокси не пойдёт — при прокси
+используй HTTPS-URL с токеном. Если SSH обязателен, в образе есть `socat`
+и можно задать `GIT_SSH_COMMAND` с `ProxyCommand`.
 
 ## One-shot режим (без compose)
 

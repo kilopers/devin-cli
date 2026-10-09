@@ -36,6 +36,17 @@ git config --global --add safe.directory '*'
 # Accept new host keys without prompting; don't persist them (ssh dir may be read-only).
 export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null}"
 
+# --- proxy ------------------------------------------------------------------
+# HTTPS_PROXY/http_proxy are picked up automatically by git (https remotes),
+# curl and python. Devin CLI gets the proxy via its own config file instead.
+PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+if [ -n "$PROXY_URL" ]; then
+    MASKED=$(printf '%s' "$PROXY_URL" | sed -E 's|(://)[^@]*@|\1***@|')
+    log "proxy enabled: $MASKED"
+    printf '{ "version": 1, "auto_update": false, "proxy": { "mode": "manual", "url": "%s" } }\n' \
+        "$PROXY_URL" > /root/.config/devin/config.json
+fi
+
 # --- 1. get the repo -------------------------------------------------------
 if [ ! -d "$WORKDIR/.git" ]; then
     if [ -n "${GIT_REPO_URL:-}" ]; then
