@@ -13,10 +13,13 @@ output into outbox/, then moves the task file to done/.
 Tasks run sequentially, oldest first.
 """
 
+import html
 import os
 import subprocess
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 TASKS_DIR = Path(os.environ.get("TASKS_DIR", "/tasks"))
@@ -28,8 +31,18 @@ POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT", "7200"))  # 2h
 DEVIN_TASK = os.environ.get("DEVIN_TASK_BIN", "/usr/local/bin/devin-task")
 BOT_SCRIPT = os.environ.get("BOT_SCRIPT", "/app/bot.py")
+WEB_PORT = int(os.environ.get("WEB_PORT", "8080"))
+WORKDIR = Path(os.environ.get("DEVIN_WORKDIR", "/workspace"))
 
 _bot_proc: subprocess.Popen | None = None
+_started_at = time.time()
+
+STATE = {
+    "current_task": None,
+    "last_task": "-",
+    "last_status": "-",
+    "tasks_done": 0,
+}
 
 
 def log(msg: str) -> None:
@@ -43,6 +56,7 @@ def next_task() -> Path | None:
 
 def run_task(task: Path) -> None:
     log(f"processing {task.name}")
+    STATE["current_task"] = task.name
     processing = task.with_name(task.name + ".processing")
     task.rename(processing)
 
@@ -71,6 +85,8 @@ def run_task(task: Path) -> None:
         f"{'=' * 60}\n\n{body}"
     )
     processing.rename(DONE / task.name)
+    STATE.update(current_task=None, last_task=task.name,
+                 last_status=status, tasks_done=STATE["tasks_done"] + 1)
     log(f"done {task.name} -> outbox/{response.name} ({status})")
 
 
@@ -104,6 +120,55 @@ def ensure_repo() -> None:
         log("clone finished")
 
 
+def _git_head() -> str:
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(WORKDIR), "log", "-1", "--oneline"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return res.stdout.strip() or "n/a"
+    except Exception:
+        return "n/a"
+
+
+class StatusHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        uptime = int(time.time() - _started_at)
+        h, m, s = uptime // 3600, uptime % 3600 // 60, uptime % 60
+        queue = len(list(INBOX.glob("*.txt")))
+        bot = "running" if (_bot_proc and _bot_proc.poll() is None) else "off"
+        body = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>devin watcher</title></head>
+<body style="font-family:monospace;max-width:640px;margin:40px auto">
+<h1>devin watcher — I'm working</h1>
+<table>
+<tr><td>status</td><td><b>running</b></td></tr>
+<tr><td>uptime</td><td>{h}h {m}m {s}s</td></tr>
+<tr><td>repo HEAD</td><td>{html.escape(_git_head())}</td></tr>
+<tr><td>queue</td><td>{queue} task(s) in inbox</td></tr>
+<tr><td>current task</td><td>{html.escape(STATE["current_task"] or "-")}</td></tr>
+<tr><td>last task</td><td>{html.escape(str(STATE["last_task"]))} ({html.escape(str(STATE["last_status"]))})</td></tr>
+<tr><td>tasks done</td><td>{STATE["tasks_done"]}</td></tr>
+<tr><td>telegram bot</td><td>{bot}</td></tr>
+</table>
+</body></html>"""
+        data = body.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args) -> None:  # keep docker logs clean
+        pass
+
+
+def start_web() -> None:
+    server = ThreadingHTTPServer(("0.0.0.0", WEB_PORT), StatusHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    log(f"status page on :{WEB_PORT}")
+
+
 def start_bot() -> None:
     """Run bot.py in parallel when TELEGRAM_BOT_TOKEN is set."""
     global _bot_proc
@@ -123,6 +188,7 @@ def main() -> int:
 
     ensure_repo()
     start_bot()
+    start_web()
     log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
     while True:
         try:
