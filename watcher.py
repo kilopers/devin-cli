@@ -556,6 +556,7 @@ def status_text() -> str:
             f"project: {project_label()}\n"
             f"model: {current_model()}\n"
             f"session: {'continue' if continue_mode() else 'new each task'}\n"
+            f"tokens 24h/7d: {usage_totals()[0]}/{usage_totals()[2]}\n"
             f"queue: {queue} task(s)\n"
             f"current: {STATE['current_task'] or '-'}\n"
             f"last: {STATE['last_task']} ({STATE['last_status']})\n"
@@ -603,14 +604,45 @@ def session_stats(since: float) -> dict | None:
     }
 
 
+def usage_totals() -> tuple:
+    """Cumulative tokens across all sessions: (24h tokens, 24h tasks,
+    7d tokens, 7d tasks). CLI exposes no credit/money balance — only
+    token metrics in transcripts."""
+    td = Path.home() / ".local/share/devin/cli/transcripts"
+    day = week = nday = nweek = 0
+    try:
+        files = list(td.glob("*.json"))
+    except Exception:
+        files = []
+    now = time.time()
+    for f in files:
+        try:
+            age = now - f.stat().st_mtime
+            fm = (json.loads(f.read_text()).get("final_metrics") or {})
+            toks = (fm.get("total_prompt_tokens") or 0) + \
+                   (fm.get("total_completion_tokens") or 0)
+        except Exception:
+            continue
+        if age <= 86400:
+            day += toks
+            nday += 1
+        if age <= 7 * 86400:
+            week += toks
+            nweek += 1
+    return day, nday, week, nweek
+
+
 def send_task_stats(chat_id, since: float) -> None:
     s = session_stats(since) or {}
+    day, nday, week, nweek = usage_totals()
     lines = [
         f"model: {s.get('model') or current_model()}",
         f"tokens: prompt={s.get('prompt_tokens', '?')} "
         f"(cached={s.get('cached_tokens', '?')}), "
         f"completion={s.get('completion_tokens', '?')}",
         f"steps: {s.get('steps', '?')}, session: {s.get('session') or '-'}",
+        f"за 24ч: {day} токенов ({nday} задач), "
+        f"за 7д: {week} токенов ({nweek} задач)",
     ]
     tg_send(chat_id, "📊 Статистика задачи:\n" + "\n".join(lines))
 
