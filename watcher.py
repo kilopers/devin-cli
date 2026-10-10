@@ -326,6 +326,44 @@ def _pop_pending(pid: str) -> dict | None:
     return entry
 
 
+def _pending_for_chat(chat_id) -> tuple:
+    """Newest open pending entry for this chat, or (None, None)."""
+    found = (None, None)
+    for pid, e in _load_json(PENDING_FILE).items():
+        if str(e.get("chat_id")) == str(chat_id):
+            found = (pid, e)
+    return found
+
+
+def _update_pending(pid: str, entry: dict) -> None:
+    pending = _load_json(PENDING_FILE)
+    pending[pid] = entry
+    PENDING_FILE.write_text(json.dumps(pending))
+
+
+def _pending_text(entry: dict) -> str:
+    return f"Распознано:\n{entry['text']}"
+
+
+def _add_to_pending(chat_id, pid: str, entry: dict, extra: str) -> None:
+    """Append extra text to an open pending task and refresh its message."""
+    entry["text"] = f"{entry['text']}\n{extra}".strip()
+    _update_pending(pid, entry)
+    try:
+        tg_api("editMessageText", chat_id=chat_id,
+               message_id=entry.get("message_id"),
+               text=_pending_text(entry),
+               reply_markup=_confirm_keyboard(pid))
+    except Exception as e:
+        log(f"editMessageText failed ({e}), sending a new confirm message")
+        res = tg_api("sendMessage", chat_id=chat_id,
+                     text=_pending_text(entry),
+                     reply_markup=_confirm_keyboard(pid))
+        entry["message_id"] = res["result"]["message_id"]
+        _update_pending(pid, entry)
+    log(f"pending {pid} appended ({len(entry['text'])} chars total)")
+
+
 def _confirm_keyboard(pid: str) -> dict:
     return {"inline_keyboard": [[
         {"text": "✅ Принять", "callback_data": f"ok:{pid}"},
@@ -351,10 +389,12 @@ def handle_callback(cb: dict) -> None:
     if action == "ok":
         name = enqueue_task(entry["text"], chat_id)
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
-               text=f"Распознано:\n{entry['text']}\n\n✅ Задача {name} в очереди.")
+               text=f"Распознано:\n{entry['text']}\n\n✅ Задача {name} в очереди.",
+               reply_markup={"inline_keyboard": []})
     else:
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
-               text=f"Распознано:\n{entry['text']}\n\n❌ Отменено.")
+               text=f"Распознано:\n{entry['text']}\n\n❌ Отменено.",
+               reply_markup={"inline_keyboard": []})
     tg_api("answerCallbackQuery", callback_query_id=cb_id)
 
 
@@ -382,15 +422,26 @@ def handle_update(upd: dict) -> None:
                 tg_send(chat_id, "voice received, but STT_API_KEY is not set")
                 return
             text = transcribe(tg_download(voice["file_id"]))
-            pid = _save_pending({"chat_id": chat_id, "text": text,
-                                 "id": upd.get("update_id")})
+            pid, entry = _pending_for_chat(chat_id)
+            if pid:
+                _add_to_pending(chat_id, pid, entry, text)
+                return
+            pid = str(upd.get("update_id") or int(time.time() * 1000))
+            res = tg_api("sendMessage", chat_id=chat_id,
+                         text=f"Распознано:\n{text}",
+                         reply_markup=_confirm_keyboard(pid))
+            _save_pending({"chat_id": chat_id, "text": text,
+                           "message_id": res["result"]["message_id"],
+                           "id": pid})
             log(f"pending confirm {pid} -> chat {chat_id}")
-            tg_api("sendMessage", chat_id=chat_id, text=f"Распознано:\n{text}",
-                   reply_markup=_confirm_keyboard(pid))
         elif text := (msg.get("text") or "").strip():
             log(f"text from @{sender} chat={chat_id}: {text[:100]}")
             if text.startswith("/"):
                 tg_send(chat_id, "Пришли задачу текстом или голосовым сообщением.")
+                return
+            pid, entry = _pending_for_chat(chat_id)
+            if pid:
+                _add_to_pending(chat_id, pid, entry, text)
                 return
             name = enqueue_task(text, chat_id)
             tg_send(chat_id, f"Задача {name} в очереди.")
