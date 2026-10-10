@@ -64,6 +64,7 @@ PENDING_FILE = TASKS_DIR / "tg-pending.json"  # pending id -> {chat_id, text}
 MODEL_FILE = TASKS_DIR / "model.txt"  # telegram-selected DEVIN_MODEL override
 COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> {chat_id, workdir}
 PROJECT_FILE = TASKS_DIR / "project.txt"  # selected project name (multi mode)
+SESSION_FILE = TASKS_DIR / "session-mode.txt"  # "continue" | "new"
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -102,7 +103,8 @@ def run_task(task: Path) -> None:
     started_ts = time.time()
     _, workdir = current_project()
     env = dict(os.environ, DEVIN_TASK_FILE=str(processing),
-               DEVIN_MODEL=current_model(), DEVIN_WORKDIR=str(workdir))
+               DEVIN_MODEL=current_model(), DEVIN_WORKDIR=str(workdir),
+               DEVIN_CONTINUE="true" if continue_mode() else "false")
     try:
         res = subprocess.run(
             [DEVIN_TASK],
@@ -446,6 +448,35 @@ def send_projects(chat_id, msg_id=None) -> None:
                reply_markup={"inline_keyboard": kb})
 
 
+def continue_mode() -> bool:
+    """Session mode for the next task: telegram override wins over env."""
+    try:
+        return SESSION_FILE.read_text().strip() == "continue"
+    except Exception:
+        return os.environ.get("DEVIN_CONTINUE", "").lower() == "true"
+
+
+def set_session_mode(mode: str) -> None:
+    SESSION_FILE.write_text(mode)
+    log(f"session mode -> {mode}")
+
+
+def send_session_menu(chat_id, msg_id=None) -> None:
+    cont = continue_mode()
+    kb = [[{"text": ("✅ " if cont else "") + "🔁 Продолжать сессию проекта",
+            "callback_data": "sess:continue"}],
+          [{"text": ("✅ " if not cont else "") + "🆕 Каждая задача — новая",
+            "callback_data": "sess:new"}]]
+    text = ("Режим сессий: каждый проект хранит свои сессии — "
+            "'продолжать' резюмит последнюю сессию выбранного проекта.")
+    if msg_id:
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=text, reply_markup={"inline_keyboard": kb})
+    else:
+        tg_api("sendMessage", chat_id=chat_id, text=text,
+               reply_markup={"inline_keyboard": kb})
+
+
 def current_model() -> str:
     """Model for the next task: telegram override wins over DEVIN_MODEL env."""
     try:
@@ -504,6 +535,7 @@ def status_text() -> str:
     return (f"uptime: {h}h {m}m\n"
             f"project: {project_label()}\n"
             f"model: {current_model()}\n"
+            f"session: {'continue' if continue_mode() else 'new each task'}\n"
             f"queue: {queue} task(s)\n"
             f"current: {STATE['current_task'] or '-'}\n"
             f"last: {STATE['last_task']} ({STATE['last_status']})\n"
@@ -640,7 +672,8 @@ def handle_command(chat_id, text: str) -> None:
                reply_markup={"inline_keyboard": [[
                    {"text": "📁 Проект", "callback_data": "cmd:projects"},
                    {"text": "🧠 Модели", "callback_data": "cmd:models"},
-                   {"text": "📊 Статус", "callback_data": "cmd:status"},
+                   {"text": "� Сессия", "callback_data": "cmd:session"},
+                   {"text": "�📊 Статус", "callback_data": "cmd:status"},
                ]]})
     elif cmd == "models":
         send_models(chat_id)
@@ -656,6 +689,12 @@ def handle_command(chat_id, text: str) -> None:
             tg_send(chat_id, f"Модель: {arg.strip()}")
         else:
             send_models(chat_id)
+    elif cmd == "session":
+        if arg.strip() in ("new", "continue"):
+            set_session_mode(arg.strip())
+            tg_send(chat_id, f"Режим сессий: {arg.strip()}")
+        else:
+            send_session_menu(chat_id)
     elif cmd == "status":
         tg_send(chat_id, status_text())
     else:
@@ -692,6 +731,21 @@ def handle_callback(cb: dict) -> None:
     if data == "cmd:projects":
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
         send_projects(chat_id, msg_id)
+        return
+    if data == "cmd:session":
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
+        send_session_menu(chat_id, msg_id)
+        return
+    if action == "sess":
+        if pid not in ("new", "continue"):
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Неизвестный режим")
+            return
+        set_session_mode(pid)
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=f"Режим сессий: {pid}.",
+               reply_markup={"inline_keyboard": []})
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
         return
     if action == "proj":
         if pid not in list_projects():
@@ -846,6 +900,7 @@ def register_commands() -> None:
             {"command": "menu", "description": "меню бота"},
             {"command": "projects", "description": "выбор проекта"},
             {"command": "models", "description": "выбор модели"},
+            {"command": "session", "description": "режим сессий"},
             {"command": "status", "description": "статус воркера"},
         ])
         log("telegram commands registered (menu button)")
@@ -951,7 +1006,9 @@ def main() -> int:
     log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
     while True:
         try:
-            if _bot_proc and _bot_proc.poll() is not None:
+            if _bot_proc and _bot_proc.poll() is not None \
+                    and _bot_proc.returncode != 0:
+                # clean exit (e.g. INTERVAL<=0 one-shot mode) — don't restart
                 log(f"telegram bot exited ({_bot_proc.returncode}), restarting")
                 start_bot()
             task = next_task()

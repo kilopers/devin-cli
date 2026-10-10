@@ -12,6 +12,7 @@
 #   DEVIN_INSTRUCTIONS_FILE  Optional extra instructions file appended to the prompt
 #   DEVIN_EXTRA_ARGS         Extra flags appended to the devin invocation
 #   GIT_AUTO_COMMIT          "false" -> agent leaves changes uncommitted (default: true)
+#   DEVIN_CONTINUE           "true" -> resume the workdir's last session when one exists
 #   GIT_REPO_URL             If set and WORKDIR is empty — clone instead of requiring a mount
 #   GIT_BRANCH               Branch for the clone (optional)
 #   GIT_USER_NAME            git user.name for commits  (else uses mounted ~/.gitconfig)
@@ -29,6 +30,7 @@ INSTRUCTIONS_FILE="${DEVIN_INSTRUCTIONS_FILE:-}"
 MODEL="${DEVIN_MODEL:-swe}"
 PERMISSION_MODE="${DEVIN_PERMISSION_MODE:-bypass}"
 AUTO_COMMIT="${GIT_AUTO_COMMIT:-true}"
+CONTINUE="${DEVIN_CONTINUE:-false}"
 
 # --- git setup -------------------------------------------------------------
 [ -n "${GIT_USER_NAME:-}" ]  && git config --global user.name  "$GIT_USER_NAME"
@@ -134,11 +136,20 @@ EOF
 PROMPT="$(cat "$PROMPT_FILE")"
 
 # --- 5. run devin ----------------------------------------------------------
+# Sessions are scoped to the working directory: -c resumes the last session
+# of THIS project. Only pass it when the project actually has one.
+CONTINUE_FLAG=""
+if [ "$CONTINUE" = "true" ] \
+    && devin list --format json 2>/dev/null | jq -e 'length > 0' >/dev/null 2>&1; then
+    CONTINUE_FLAG="--continue"
+    log "Continue mode: resuming this project's last session"
+fi
 log "Running devin (model=$MODEL, permission-mode=$PERMISSION_MODE)"
 # shellcheck disable=SC2086
 devin --model "$MODEL" \
       --permission-mode "$PERMISSION_MODE" \
       --respect-workspace-trust false \
+      $CONTINUE_FLAG \
       -p "$PROMPT" ${DEVIN_EXTRA_ARGS:-} "$@"
 
 # --- 6. safety net ---------------------------------------------------------

@@ -10,7 +10,8 @@ Env:
     TG_USERNAME          Whose chat to message (default: kiloper)
     CHAT_ID              Skip auto-detection if you know the id
     MESSAGE_TEXT         Text to send (default: "привет")
-    INTERVAL             Seconds between messages (default: 60)
+    INTERVAL             Seconds between messages (default: 60).
+                         <= 0 sends the message once at startup and exits.
 """
 
 import json
@@ -97,6 +98,11 @@ def main() -> None:
         raise
 
     chat_id = int(CHAT_ID) if CHAT_ID else find_chat_id()
+    if INTERVAL <= 0:
+        res = api("sendMessage", chat_id=chat_id, text=TEXT)
+        log(f"sent {TEXT!r} once -> message_id={res['result']['message_id']} "
+            "(INTERVAL<=0, exiting)")
+        return
     log(f"chat_id={chat_id} — sending every {INTERVAL}s")
     while True:
         try:

@@ -23,12 +23,15 @@ services:
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-devin-bot@localhost}
       # false = agent leaves changes uncommitted; telegram buttons decide.
       GIT_AUTO_COMMIT: ${GIT_AUTO_COMMIT:-true}
+      # true = resume the project's last session per task (default via env;
+      # telegram /session overrides at runtime)
+      DEVIN_CONTINUE: ${DEVIN_CONTINUE:-false}
       # Optional: telegram bot running in parallel with the watcher.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       CHAT_ID: ${CHAT_ID:-}
       TG_USERNAME: ${TG_USERNAME:-kiloper}
       MESSAGE_TEXT: ${MESSAGE_TEXT:-привет}
-      INTERVAL: ${INTERVAL:-60}
+      INTERVAL: ${INTERVAL:-60}  # 0 = send MESSAGE_TEXT once at startup
       # Webhook mode: voice/text -> task in inbox, result -> back to the chat
       TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
