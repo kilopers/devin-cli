@@ -27,8 +27,13 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # Сервер на обычном x86 — arm64 через QEMU не нужна
+          platforms: linux/amd64
           push: true
+          # Кэш слоёв в GitHub Actions — тяжёлые (apt/Node/PHP/Devin)
+          # не пересобираются при изменении только кода
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}

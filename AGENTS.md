@@ -11,8 +11,8 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
 выбранном проекте (`./projects/<имя>` = git-репозиторий, мультирежим),
 результат уходит в `tasks/outbox/` и обратно в чат. Голосовые сообщения
 распознаются Yandex SpeechKit v3 async, перед постановкой задачи текст
-подтверждается inline-кнопками. Сборка — GitHub Actions → GHCR, деплой —
-`docker compose up -d` на сервере.
+подтверждается inline-кнопками. Сборка — GitHub Actions → GHCR только под `linux/amd64` (сервер x86),
+кэш слоёв `type=gha` — деплой `docker compose up -d` на сервере.
 
 ## Коммиты и язык
 
