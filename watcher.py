@@ -201,8 +201,11 @@ def gemini_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
     started = time.time()
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
-    with TG_OPENER.open(req, timeout=120) as r:
-        res = json.load(r)
+    try:
+        with TG_OPENER.open(req, timeout=120) as r:
+            res = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"gemini HTTP {e.code}: {e.read().decode()[:500]}")
     text = res["candidates"][0]["content"]["parts"][0]["text"].strip()
     log(f"gemini <- {time.time() - started:.1f}s: {text!r}")
     return text
