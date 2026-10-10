@@ -61,7 +61,7 @@ echo "Добавь endpoint /healthz, возвращающий 200" > tasks/inbo
 
 Если задан `TELEGRAM_WEBHOOK_URL` — вотчер сам регистрирует webhook у Telegram
 (`setWebhook`) и принимает апдейты POST'ом на **любой** путь статус-сервера
-(например `https://techcontrol.kilop.ru/build/anything` — зависит от того, как
+(например `https://build.kilop.ru/anything` — зависит от того, как
 nginx режет путь; работает всегда).
 
 Поток:
