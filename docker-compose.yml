@@ -30,6 +30,11 @@ services:
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      # Alternative STT provider (OpenAI-compatible API: OpenAI, Groq, …)
+      STT_PROVIDER: ${STT_PROVIDER:-gemini}
+      STT_API_KEY: ${STT_API_KEY:-}
+      STT_BASE_URL: ${STT_BASE_URL:-https://api.openai.com/v1}
+      STT_MODEL: ${STT_MODEL:-whisper-1}
       # Optional outbound proxy — devin API and telegram only; git always
       # goes direct. Empty = direct connections.
       HTTP_PROXY: ${HTTP_PROXY:-}

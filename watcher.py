@@ -46,6 +46,12 @@ TG_WEBHOOK_URL = os.environ.get("TELEGRAM_WEBHOOK_URL", "")
 TG_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+# STT provider for voice messages: "gemini" or "openai" (OpenAI-compatible
+# /audio/transcriptions — works for api.openai.com, Groq, etc.)
+STT_PROVIDER = os.environ.get("STT_PROVIDER", "gemini")
+STT_API_KEY = os.environ.get("STT_API_KEY", "")
+STT_BASE_URL = os.environ.get("STT_BASE_URL", "https://api.openai.com/v1")
+STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
 TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
@@ -206,6 +212,44 @@ def gemini_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
             res = json.load(r)
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"gemini HTTP {e.code}: {e.read().decode()[:500]}")
+
+
+def openai_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+    """OpenAI-compatible /audio/transcriptions (OpenAI, Groq, …)."""
+    boundary = "----devincli" + str(int(time.time() * 1000))
+    ext = {"audio/ogg": "oga", "audio/mpeg": "mp3", "audio/mp4": "m4a",
+           "audio/wav": "wav"}.get(mime, "ogg")
+    parts = [
+        f"--{boundary}\r\nContent-Disposition: form-data; "
+        f'name="model"\r\n\r\n{STT_MODEL}\r\n'.encode(),
+        f"--{boundary}\r\nContent-Disposition: form-data; "
+        f'name="file"; filename="voice.{ext}"\r\n'
+        f"Content-Type: {mime}\r\n\r\n".encode() + audio + b"\r\n",
+        f"--{boundary}--\r\n".encode(),
+    ]
+    log(f"stt -> transcribing {len(audio)} bytes via {STT_BASE_URL} ({STT_MODEL})")
+    started = time.time()
+    req = urllib.request.Request(
+        f"{STT_BASE_URL}/audio/transcriptions",
+        data=b"".join(parts),
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Authorization": f"Bearer {STT_API_KEY}",
+        })
+    try:
+        with TG_OPENER.open(req, timeout=120) as r:
+            res = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"stt HTTP {e.code}: {e.read().decode()[:500]}")
+    text = res["text"].strip()
+    log(f"stt <- {time.time() - started:.1f}s: {text!r}")
+    return text
+
+
+def transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+    if STT_PROVIDER == "gemini":
+        return gemini_transcribe(audio, mime)
+    return openai_transcribe(audio, mime)
     text = res["candidates"][0]["content"]["parts"][0]["text"].strip()
     log(f"gemini <- {time.time() - started:.1f}s: {text!r}")
     return text
@@ -242,10 +286,13 @@ def handle_update(upd: dict) -> None:
     try:
         if voice := msg.get("voice"):
             log(f"voice from @{sender} chat={chat_id}, {voice.get('duration', '?')}s")
-            if not GEMINI_API_KEY:
+            if STT_PROVIDER == "gemini" and not GEMINI_API_KEY:
                 tg_send(chat_id, "voice received, but GEMINI_API_KEY is not set")
                 return
-            text = gemini_transcribe(tg_download(voice["file_id"]))
+            if STT_PROVIDER != "gemini" and not STT_API_KEY:
+                tg_send(chat_id, "voice received, but STT_API_KEY is not set")
+                return
+            text = transcribe(tg_download(voice["file_id"]))
             name = enqueue_task(text, chat_id)
             tg_send(chat_id, f"Распознано:\n{text}\n\nЗадача {name} в очереди.")
         elif text := (msg.get("text") or "").strip():

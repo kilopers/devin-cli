@@ -123,6 +123,10 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 | `TELEGRAM_WEBHOOK_SECRET` | — | Секрет для проверки заголовка webhook |
 | `GEMINI_API_KEY` | — | Ключ Gemini для распознавания голосовых |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Модель Gemini для STT |
+| `STT_PROVIDER` | `gemini` | `gemini` или `openai` (OpenAI-совместимый API) |
+| `STT_API_KEY` | — | Ключ для `STT_PROVIDER=openai` (OpenAI, Groq, …) |
+| `STT_BASE_URL` | `https://api.openai.com/v1` | Базовый URL STT API |
+| `STT_MODEL` | `whisper-1` | Модель STT (напр. `whisper-large-v3-turbo` у Groq) |
 
 ## Прокси
 
