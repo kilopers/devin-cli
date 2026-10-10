@@ -122,12 +122,46 @@ def _tool_line(tc: dict) -> str:
     return fn
 
 
+def _load_transcript_docs(path: Path) -> list:
+    """Parse the devin --export file tolerantly: whole JSON, NDJSON lines,
+    or concatenated JSON objects."""
+    try:
+        raw = path.read_text()
+    except Exception:
+        return []
+    try:
+        return [json.loads(raw)]
+    except ValueError:
+        pass
+    docs = []
+    for line in raw.splitlines():
+        try:
+            docs.append(json.loads(line))
+        except ValueError:
+            pass
+    if docs:
+        return docs
+    dec, i, n = json.JSONDecoder(), 0, len(raw)
+    while i < n:
+        while i < n and raw[i] in " \r\n\t":
+            i += 1
+        if i >= n:
+            break
+        try:
+            obj, j = dec.raw_decode(raw, i)
+            docs.append(obj)
+            i = j
+        except ValueError:
+            break
+    return docs
+
+
 def _digest_new_steps(path: Path, last_id: int) -> tuple:
     """Digest lines for transcript steps after last_id; (lines, new last_id)."""
-    try:
-        steps = (json.loads(path.read_text())).get("steps") or []
-    except Exception:
-        return [], last_id
+    steps = []
+    for d in _load_transcript_docs(path):
+        if isinstance(d, dict):
+            steps += d.get("steps") or ([d] if "step_id" in d else [])
     lines = []
     for s in steps:
         sid = s.get("step_id") or 0
@@ -144,9 +178,19 @@ def _digest_new_steps(path: Path, last_id: int) -> tuple:
 def progress_loop(chat_id, path: Path, proc: subprocess.Popen) -> None:
     """While the task runs, tail the devin --export transcript and send
     step digests to telegram (batched, at most every 20s)."""
-    last_id, last_sent = 0, 0.0
+    last_id, last_sent, seen = 0, 0.0, 0
     while proc.poll() is None:
         time.sleep(10)
+        try:
+            size = path.stat().st_size if path.exists() else 0
+        except Exception:
+            size = 0
+        steps_total = sum(
+            len((d.get("steps") or []) if isinstance(d, dict) else [])
+            for d in _load_transcript_docs(path))
+        if size != seen:
+            log(f"progress: export {size} bytes, {steps_total} steps")
+            seen = size
         lines, last_id = _digest_new_steps(path, last_id)
         if lines and time.time() - last_sent >= 20:
             tg_send(chat_id, "🛠 " + "\n".join(lines)[:3500])
