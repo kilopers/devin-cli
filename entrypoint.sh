@@ -13,6 +13,8 @@
 #   DEVIN_EXTRA_ARGS         Extra flags appended to the devin invocation
 #   GIT_AUTO_COMMIT          "false" -> agent leaves changes uncommitted (default: true)
 #   DEVIN_CONTINUE           "true" -> resume the workdir's last session when one exists
+#   REPLY_MODE               "ask" -> answer a question about the repo, no edits (default: code)
+#   DEVIN_EXPORT_FILE        If set, devin exports the live transcript here each turn
 #   GIT_REPO_URL             If set and WORKDIR is empty — clone instead of requiring a mount
 #   GIT_BRANCH               Branch for the clone (optional)
 #   GIT_USER_NAME            git user.name for commits  (else uses mounted ~/.gitconfig)
@@ -31,6 +33,7 @@ MODEL="${DEVIN_MODEL:-swe}"
 PERMISSION_MODE="${DEVIN_PERMISSION_MODE:-bypass}"
 AUTO_COMMIT="${GIT_AUTO_COMMIT:-true}"
 CONTINUE="${DEVIN_CONTINUE:-false}"
+REPLY_MODE="${REPLY_MODE:-code}"
 
 # --- git setup -------------------------------------------------------------
 [ -n "${GIT_USER_NAME:-}" ]  && git config --global user.name  "$GIT_USER_NAME"
@@ -96,6 +99,27 @@ if [ -n "$INSTRUCTIONS_FILE" ] && [ -f "$INSTRUCTIONS_FILE" ]; then
 fi
 
 PROMPT_FILE="$(mktemp /tmp/devin-prompt.XXXXXX)"
+if [ "$REPLY_MODE" = "ask" ]; then
+cat > "$PROMPT_FILE" <<EOF
+You are running autonomously inside a Docker container. No human can answer questions — make reasonable decisions on your own.
+
+The repository at $WORKDIR has already been pulled to the latest upstream commit.
+
+Read the code and repo docs as needed, then answer this question:
+
+<question>
+$TASK
+</question>
+${EXTRA:+
+Additional instructions:
+<instructions>
+$EXTRA
+</instructions>
+}
+Answer concisely. Do NOT modify any files, do NOT run git add/commit/push,
+do NOT run tests or builds — only read and answer.
+EOF
+else
 cat > "$PROMPT_FILE" <<EOF
 You are running autonomously inside a Docker container. No human can answer questions — make reasonable decisions on your own.
 
@@ -133,6 +157,7 @@ cat >> "$PROMPT_FILE" <<EOF
 
 Finally, print a short summary of what you did.
 EOF
+fi
 PROMPT="$(cat "$PROMPT_FILE")"
 
 # --- 5. run devin ----------------------------------------------------------
@@ -150,6 +175,7 @@ devin --model "$MODEL" \
       --permission-mode "$PERMISSION_MODE" \
       --respect-workspace-trust false \
       $CONTINUE_FLAG \
+      ${DEVIN_EXPORT_FILE:+--export "$DEVIN_EXPORT_FILE"} \
       -p "$PROMPT" ${DEVIN_EXTRA_ARGS:-} "$@"
 
 # --- 6. safety net ---------------------------------------------------------

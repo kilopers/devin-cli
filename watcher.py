@@ -66,6 +66,7 @@ MODEL_FILE = TASKS_DIR / "model.txt"  # telegram-selected DEVIN_MODEL override
 COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> {chat_id, workdir}
 PROJECT_FILE = TASKS_DIR / "project.txt"  # selected project name (multi mode)
 SESSION_FILE = TASKS_DIR / "session-mode.txt"  # "continue" | "new"
+MODE_FILE = TASKS_DIR / "reply-mode.txt"  # "code" | "ask"
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -89,6 +90,67 @@ STATE = {
 
 def log(msg: str) -> None:
     print(f"[watcher] {time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
+
+
+def _tool_line(tc: dict) -> str:
+    """One human-readable line for a transcript tool call."""
+    fn = tc.get("function_name", "?")
+    a = tc.get("arguments") or {}
+    base = lambda p: Path(p or "").name or p
+    if fn == "exec":
+        return f"$ {(a.get('command') or '')[:80]}"
+    if fn == "read":
+        return f"читает {base(a.get('file_path'))}"
+    if fn in ("edit", "write"):
+        return f"правит {base(a.get('file_path'))}"
+    if fn == "find_file_by_name":
+        return f"ищет файлы: {a.get('pattern', '')}"
+    if fn == "grep":
+        return f"grep: {str(a.get('pattern', ''))[:40]}"
+    if fn == "code_search":
+        return f"поиск: {str(a.get('search_term', ''))[:60]}"
+    if fn == "run_subagent":
+        return f"субагент: {a.get('title', '')}"
+    if fn in ("web_search", "webfetch"):
+        return f"web: {str(a.get('query') or a.get('url') or '')[:60]}"
+    if fn.startswith("mcp"):
+        return f"mcp: {a.get('tool_name', fn)}"
+    if fn == "todo_write":
+        return "обновляет план"
+    if fn == "skill":
+        return f"skill: {a.get('skill', '')}"
+    return fn
+
+
+def _digest_new_steps(path: Path, last_id: int) -> tuple:
+    """Digest lines for transcript steps after last_id; (lines, new last_id)."""
+    try:
+        steps = (json.loads(path.read_text())).get("steps") or []
+    except Exception:
+        return [], last_id
+    lines = []
+    for s in steps:
+        sid = s.get("step_id") or 0
+        if sid <= last_id or s.get("source") != "agent":
+            continue
+        last_id = max(last_id, sid)
+        lines += [_tool_line(tc) for tc in s.get("tool_calls") or []]
+        msg = (s.get("message") or "").strip()
+        if msg:
+            lines.append("💬 " + msg[:150].replace("\n", " "))
+    return [l for l in lines if l], last_id
+
+
+def progress_loop(chat_id, path: Path, proc: subprocess.Popen) -> None:
+    """While the task runs, tail the devin --export transcript and send
+    step digests to telegram (batched, at most every 20s)."""
+    last_id, last_sent = 0, 0.0
+    while proc.poll() is None:
+        time.sleep(10)
+        lines, last_id = _digest_new_steps(path, last_id)
+        if lines and time.time() - last_sent >= 20:
+            tg_send(chat_id, "🛠 " + "\n".join(lines)[:3500])
+            last_sent = time.time()
 
 
 def kill_task() -> None:
@@ -116,9 +178,15 @@ def run_task(task: Path) -> None:
 
     started_ts = time.time()
     _, workdir = current_project()
+    progress_dir = TASKS_DIR / ".progress"
+    progress_dir.mkdir(exist_ok=True)
+    export_path = progress_dir / f"{task.stem}.json"
     env = dict(os.environ, DEVIN_TASK_FILE=str(processing),
                DEVIN_MODEL=current_model(), DEVIN_WORKDIR=str(workdir),
-               DEVIN_CONTINUE="true" if continue_mode() else "false")
+               DEVIN_CONTINUE="true" if continue_mode() else "false",
+               REPLY_MODE=reply_mode(),
+               DEVIN_EXPORT_FILE=str(export_path))
+    chat_id = _load_chats().get(task.stem)
     global _task_proc
     try:
         # start_new_session: own process group, so telegram /stop kills the
@@ -128,6 +196,10 @@ def run_task(task: Path) -> None:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, start_new_session=True,
         )
+        if chat_id:
+            threading.Thread(
+                target=progress_loop, daemon=True,
+                args=(chat_id, export_path, _task_proc)).start()
         try:
             out, err = _task_proc.communicate(timeout=TASK_TIMEOUT)
             status = f"exit code: {_task_proc.returncode}"
@@ -153,7 +225,6 @@ def run_task(task: Path) -> None:
                  last_status=status, tasks_done=STATE["tasks_done"] + 1)
     log(f"done {task.name} -> outbox/{response.name} ({status})")
     if TG_TOKEN:
-        chat_id = _load_chats().get(task.stem)
         notify_chat(task.stem, f"{task.name}\n{status}\n\n{response.read_text()[-3500:]}")
         if chat_id:
             send_task_stats(chat_id, started_ts)
@@ -290,35 +361,106 @@ def openai_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
     return text
 
 
-def yandex_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
-    """Yandex SpeechKit v1 synchronous recognition (short audio, ~30s)."""
-    params = {"format": "oggopus", "lang": YANDEX_LANG,
-              "sampleRateHertz": "48000", "model": "general"}
-    if YANDEX_FOLDER_ID:
-        params["folderId"] = YANDEX_FOLDER_ID
-    url = ("https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?"
-           + urllib.parse.urlencode(params))
-    log(f"stt -> yandex speechkit, {len(audio)} bytes, lang={YANDEX_LANG}")
-    started = time.time()
-    req = urllib.request.Request(url, data=audio, headers={
-        "Authorization": f"Api-Key {STT_API_KEY}",
-        "Content-Type": "application/octet-stream",
-    })
+YANDEX_STT_HOST = os.environ.get("YANDEX_STT_URL",
+                                 "https://stt.api.cloud.yandex.net")
+
+
+def _yandex_request(path: str, body: dict | None = None) -> str:
+    req = urllib.request.Request(
+        YANDEX_STT_HOST + path,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Api-Key {STT_API_KEY}",
+                 "Content-Type": "application/json"},
+        method="POST" if body is not None else "GET",
+    )
     try:
-        with TG_OPENER.open(req, timeout=60) as r:
-            res = json.load(r)
+        with TG_OPENER.open(req, timeout=120) as r:
+            return r.read().decode()
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"yandex stt HTTP {e.code}: {e.read().decode()[:500]}")
-    if res.get("error_code"):
-        raise RuntimeError(f"yandex stt error: {res}")
-    text = res.get("result", "").strip()
-    log(f"stt <- {time.time() - started:.1f}s: {text!r}")
-    return text
+        raise RuntimeError(
+            f"yandex {path} HTTP {e.code}: {e.read().decode()[:500]}")
 
 
-def transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+def _collect_recognition_text(raw: str) -> str:
+    """Join final/partial alternatives from a getRecognition response —
+    it may be a single JSON object or newline-delimited stream chunks."""
+    texts = []
+    blobs = []
+    try:
+        blobs.append(json.loads(raw))
+    except ValueError:
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                blobs.append(json.loads(line))
+            except ValueError:
+                pass
+    for blob in blobs:
+        for kind in ("final", "partial", "finalRefinement"):
+            for alt in (blob.get(kind) or {}).get("alternatives") or []:
+                t = (alt.get("text") or "").strip()
+                if t:
+                    texts.append(t)
+    return " ".join(texts).strip()
+
+
+def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
+                      on_status=None) -> str:
+    """SpeechKit v3 async recognition — audio goes as base64 `content`,
+    no Object Storage needed. Polls getRecognition every 10s (≤10 min),
+    reporting progress through on_status()."""
+    started = time.time()
+    body = {
+        "content": base64.b64encode(audio).decode(),
+        "recognitionModel": {
+            "model": "general",
+            "audioFormat": {"containerAudio":
+                            {"containerAudioType": "OGG_OPUS"}},
+            "textNormalization": {"textNormalization":
+                                  "TEXT_NORMALIZATION_ENABLED",
+                                  "literatureText": True},
+            "languageRestriction": {"restrictionType": "WHITELIST",
+                                    "languageCode": [YANDEX_LANG]},
+            "audioProcessingType": "AUDIO_PROCESSING_TYPE_FULL_DATA",
+        },
+    }
+    if YANDEX_FOLDER_ID:
+        body["folderId"] = YANDEX_FOLDER_ID
+    log(f"stt -> yandex speechkit v3 async, {len(audio)} bytes, lang={YANDEX_LANG}")
+    op = json.loads(_yandex_request("/stt/v3/recognizeFileAsync", body))
+    op_id = op.get("id") or op.get("operationId")
+    if not op_id:
+        raise RuntimeError(f"yandex stt: no operation id in {op}")
+    log(f"stt operation {op_id}, polling every 10s")
+    if on_status:
+        on_status(f"🔎 Отправлено на распознавание (операция {op_id[:12]}…), "
+                  "проверяю каждые 10с")
+
+    for attempt in range(1, 61):
+        time.sleep(10)
+        try:
+            raw = _yandex_request(
+                f"/stt/v3/getRecognition?operationId={op_id}")
+        except Exception as e:
+            log(f"stt poll {attempt}: {e}")
+            raw = ""
+        text = _collect_recognition_text(raw)
+        if text:
+            log(f"stt <- {time.time() - started:.1f}s, "
+                f"{attempt} polls: {text!r}")
+            return text
+        log(f"stt poll {attempt}: not ready yet")
+        if on_status:
+            on_status(f"⏳ Пока не готово — проверяю ещё раз через 10с "
+                      f"({attempt}/60)")
+    raise RuntimeError("yandex stt: recognition did not finish in 10 min")
+
+
+def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None) -> str:
     if STT_PROVIDER == "yandex":
-        return yandex_transcribe(audio, mime)
+        return yandex_transcribe(audio, mime, on_status)
     if STT_PROVIDER == "gemini":
         return gemini_transcribe(audio, mime)
     return openai_transcribe(audio, mime)
@@ -497,6 +639,38 @@ def send_session_menu(chat_id, msg_id=None) -> None:
                reply_markup={"inline_keyboard": kb})
 
 
+def reply_mode() -> str:
+    """'ask' = answer questions about the repo, no edits; 'code' = do tasks."""
+    try:
+        m = MODE_FILE.read_text().strip()
+        if m in ("ask", "code"):
+            return m
+    except Exception:
+        pass
+    return os.environ.get("REPLY_MODE", "code")
+
+
+def set_reply_mode(mode: str) -> None:
+    MODE_FILE.write_text(mode)
+    log(f"reply mode -> {mode}")
+
+
+def send_mode_menu(chat_id, msg_id=None) -> None:
+    cur = reply_mode()
+    kb = [[{"text": ("✅ " if cur == "code" else "") + "🛠 Написание кода",
+            "callback_data": "mode:code"}],
+          [{"text": ("✅ " if cur == "ask" else "") + "💬 Ответ на вопрос",
+            "callback_data": "mode:ask"}]]
+    text = ("Режим ответа: «код» — выполняет задачу и меняет репо; "
+            "«вопрос» — читает код и отвечает, ничего не трогая.")
+    if msg_id:
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=text, reply_markup={"inline_keyboard": kb})
+    else:
+        tg_api("sendMessage", chat_id=chat_id, text=text,
+               reply_markup={"inline_keyboard": kb})
+
+
 def current_model() -> str:
     """Model for the next task: telegram override wins over DEVIN_MODEL env."""
     try:
@@ -552,15 +726,19 @@ def status_text() -> str:
     uptime = int(time.time() - _started_at)
     h, m = uptime // 3600, uptime % 3600 // 60
     queue = len(list(INBOX.glob("*.txt")))
-    return (f"uptime: {h}h {m}m\n"
-            f"project: {project_label()}\n"
-            f"model: {current_model()}\n"
-            f"session: {'continue' if continue_mode() else 'new each task'}\n"
-            f"tokens 24h/7d: {usage_totals()[0]}/{usage_totals()[2]}\n"
-            f"queue: {queue} task(s)\n"
-            f"current: {STATE['current_task'] or '-'}\n"
-            f"last: {STATE['last_task']} ({STATE['last_status']})\n"
-            f"done: {STATE['tasks_done']}")
+    day, nday, week, nweek = usage_totals()
+    sess = "continue" if continue_mode() else "new"
+    return ("📊 Статус воркера\n"
+            f"▫️ uptime: {h}ч {m}м\n"
+            f"▫️ проект: {project_label()}  ·  модель: {current_model()}\n"
+            f"▫️ сессии: {sess}  ·  режим: {reply_mode()}\n"
+            f"▫️ очередь: {queue} задач  ·  выполняется: "
+            f"{STATE['current_task'] or '—'}\n"
+            f"▫️ последняя: {STATE['last_task']} ({STATE['last_status']})\n"
+            f"▫️ выполнено задач: {STATE['tasks_done']}\n"
+            f"▫️ токены — 24ч: {day} ({nday} задач), "
+            f"7д: {week} ({nweek} задач)\n"
+            f"▫️ репо: {_git_head()}")
 
 
 def send_models(chat_id, msg_id=None) -> None:
@@ -725,6 +903,7 @@ def handle_command(chat_id, text: str) -> None:
                    {"text": "📁 Проект", "callback_data": "cmd:projects"},
                    {"text": "🧠 Модели", "callback_data": "cmd:models"},
                    {"text": "🔁 Сессия", "callback_data": "cmd:session"},
+                   {"text": "💬 Режим", "callback_data": "cmd:mode"},
                    {"text": "📊 Статус", "callback_data": "cmd:status"},
                    {"text": "⛔ Стоп", "callback_data": "cmd:stop"},
                ]]})
@@ -804,6 +983,21 @@ def handle_callback(cb: dict) -> None:
         else:
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Ничего не выполняется")
+        return
+    if data == "cmd:mode":
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
+        send_mode_menu(chat_id, msg_id)
+        return
+    if action == "mode":
+        if pid not in ("ask", "code"):
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Неизвестный режим")
+            return
+        set_reply_mode(pid)
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=f"Режим ответа: {pid}.",
+               reply_markup={"inline_keyboard": []})
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
         return
     if data == "cmd:session":
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
@@ -902,18 +1096,30 @@ def handle_update(upd: dict) -> None:
                 tg_send(chat_id, "Сначала выбери проект: /projects")
                 send_projects(chat_id)
                 return
-            text = transcribe(tg_download(voice["file_id"]))
+            res = tg_api("sendMessage", chat_id=chat_id,
+                         text="📤 Аудио отправлено на распознавание, жду…")
+            status_msg = res["result"]["message_id"]
+
+            def _st(stext: str) -> None:
+                try:
+                    tg_api("editMessageText", chat_id=chat_id,
+                           message_id=status_msg, text=stext)
+                except Exception:
+                    pass
+
+            text = transcribe(tg_download(voice["file_id"]), on_status=_st)
             pid, entry = _pending_for_chat(chat_id)
             if pid:
                 _add_to_pending(chat_id, pid, entry, text)
                 return
             pid = str(upd.get("update_id") or int(time.time() * 1000))
-            res = tg_api("sendMessage", chat_id=chat_id,
-                         text=f"Проект: {project_label()}\n\nРаспознано:\n{text}",
-                         reply_markup=_confirm_keyboard(pid))
+            tg_api("editMessageText", chat_id=chat_id,
+                   message_id=status_msg,
+                   text=f"Проект: {project_label()}\n\nРаспознано:\n{text}",
+                   reply_markup=_confirm_keyboard(pid))
             _save_pending({"chat_id": chat_id, "text": text,
                            "project": project_label(),
-                           "message_id": res["result"]["message_id"],
+                           "message_id": status_msg,
                            "id": pid})
             log(f"pending confirm {pid} -> chat {chat_id}")
         elif text := (msg.get("text") or "").strip():
@@ -975,6 +1181,7 @@ def register_commands() -> None:
             {"command": "models", "description": "выбор модели"},
             {"command": "session", "description": "режим сессий"},
             {"command": "stop", "description": "убить текущую задачу"},
+            {"command": "mode", "description": "код или ответ на вопрос"},
             {"command": "status", "description": "статус воркера"},
         ])
         log("telegram commands registered (menu button)")
