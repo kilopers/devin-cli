@@ -10,9 +10,8 @@ services:
     environment:
       DEVIN_MODEL: ${DEVIN_MODEL:-swe}
       DEVIN_WORKDIR: /workspace
-      # Multi-project mode: set PROJECTS_DIR (host dir containing one folder
-      # per project) — each direct subfolder becomes a selectable project.
-      DEVIN_PROJECTS_DIR: ${PROJECTS_DIR:+/projects}
+      # Multi-project mode activates when /projects has subfolders.
+      DEVIN_PROJECTS_DIR: /projects
       DEVIN_PERMISSION_MODE: ${DEVIN_PERMISSION_MODE:-bypass}
       TASKS_DIR: /tasks
       POLL_INTERVAL: ${POLL_INTERVAL:-30}

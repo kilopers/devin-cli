@@ -39,7 +39,8 @@ BOT_SCRIPT = os.environ.get("BOT_SCRIPT", "/app/bot.py")
 WEB_PORT = int(os.environ.get("WEB_PORT", "8080"))
 WORKDIR = Path(os.environ.get("DEVIN_WORKDIR", "/workspace"))
 # Multi-project mode: a directory whose direct subdirectories are projects.
-# Set DEVIN_PROJECTS_DIR (mounted at /projects); empty = single WORKDIR mode.
+# Active only when DEVIN_PROJECTS_DIR contains at least one subfolder;
+# otherwise the legacy single WORKDIR mode is used.
 PROJECTS_ROOT = Path(os.environ["DEVIN_PROJECTS_DIR"]) \
     if os.environ.get("DEVIN_PROJECTS_DIR") else None
 
@@ -143,7 +144,7 @@ def ensure_repo() -> None:
     devin-task does the same check before every task, but doing it here too
     means auth/URL problems surface at container start, not on the first task.
     """
-    if PROJECTS_ROOT:
+    if multi_mode():
         log(f"multi-project mode: {len(list_projects())} project(s) "
             f"in {PROJECTS_ROOT}, current: {project_label()}")
         return
@@ -399,9 +400,14 @@ def list_projects() -> list:
                   if d.is_dir() and not d.name.startswith("."))
 
 
+def multi_mode() -> bool:
+    """Multi-project mode is on while the projects dir has subfolders."""
+    return bool(list_projects())
+
+
 def current_project() -> tuple:
     """(project name or None, workdir Path). Single mode: (None, WORKDIR)."""
-    if not PROJECTS_ROOT:
+    if not multi_mode():
         return None, WORKDIR
     try:
         name = PROJECT_FILE.read_text().strip()
@@ -425,8 +431,9 @@ def send_projects(chat_id, msg_id=None) -> None:
     projects = list_projects()
     cur = current_project()[0]
     if not projects:
-        tg_send(chat_id, f"Проектов нет — пусто в {PROJECTS_ROOT}. "
-                "Положи папки с репозиториями туда.")
+        tg_send(chat_id, "Проектов нет — положи папки с репозиториями "
+                f"в {PROJECTS_ROOT} (multi-project mode выключен, "
+                "работаю с /workspace).")
         return
     kb = [[{"text": ("✅ " if p == cur else "") + p,
             "callback_data": f"proj:{p}"}] for p in projects[:15]]
@@ -764,7 +771,7 @@ def handle_update(upd: dict) -> None:
             if STT_PROVIDER != "gemini" and not STT_API_KEY:
                 tg_send(chat_id, "voice received, but STT_API_KEY is not set")
                 return
-            if PROJECTS_ROOT and not current_project()[0]:
+            if multi_mode() and not current_project()[0]:
                 tg_send(chat_id, "Сначала выбери проект: /projects")
                 send_projects(chat_id)
                 return
@@ -791,7 +798,7 @@ def handle_update(upd: dict) -> None:
             if pid:
                 _add_to_pending(chat_id, pid, entry, text)
                 return
-            if PROJECTS_ROOT and not current_project()[0]:
+            if multi_mode() and not current_project()[0]:
                 tg_send(chat_id, "Сначала выбери проект: /projects")
                 send_projects(chat_id)
                 return
