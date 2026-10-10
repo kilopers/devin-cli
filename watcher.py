@@ -52,6 +52,8 @@ STT_PROVIDER = os.environ.get("STT_PROVIDER", "gemini")
 STT_API_KEY = os.environ.get("STT_API_KEY", "")
 STT_BASE_URL = os.environ.get("STT_BASE_URL", "https://api.openai.com/v1")
 STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
+YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
+YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
@@ -246,7 +248,35 @@ def openai_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
     return text
 
 
+def yandex_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+    """Yandex SpeechKit v1 synchronous recognition (short audio, ~30s)."""
+    params = {"format": "oggopus", "lang": YANDEX_LANG,
+              "sampleRateHertz": "48000", "model": "general"}
+    if YANDEX_FOLDER_ID:
+        params["folderId"] = YANDEX_FOLDER_ID
+    url = ("https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?"
+           + urllib.parse.urlencode(params))
+    log(f"stt -> yandex speechkit, {len(audio)} bytes, lang={YANDEX_LANG}")
+    started = time.time()
+    req = urllib.request.Request(url, data=audio, headers={
+        "Authorization": f"Api-Key {STT_API_KEY}",
+        "Content-Type": "application/octet-stream",
+    })
+    try:
+        with TG_OPENER.open(req, timeout=60) as r:
+            res = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"yandex stt HTTP {e.code}: {e.read().decode()[:500]}")
+    if res.get("error_code"):
+        raise RuntimeError(f"yandex stt error: {res}")
+    text = res.get("result", "").strip()
+    log(f"stt <- {time.time() - started:.1f}s: {text!r}")
+    return text
+
+
 def transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+    if STT_PROVIDER == "yandex":
+        return yandex_transcribe(audio, mime)
     if STT_PROVIDER == "gemini":
         return gemini_transcribe(audio, mime)
     return openai_transcribe(audio, mime)
@@ -293,8 +323,9 @@ def handle_update(upd: dict) -> None:
                 tg_send(chat_id, "voice received, but STT_API_KEY is not set")
                 return
             text = transcribe(tg_download(voice["file_id"]))
+            tg_send(chat_id, f"Распознано:\n{text}")
             name = enqueue_task(text, chat_id)
-            tg_send(chat_id, f"Распознано:\n{text}\n\nЗадача {name} в очереди.")
+            tg_send(chat_id, f"Задача {name} в очереди.")
         elif text := (msg.get("text") or "").strip():
             log(f"text from @{sender} chat={chat_id}: {text[:100]}")
             if text.startswith("/"):
