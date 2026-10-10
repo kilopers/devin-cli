@@ -515,6 +515,31 @@ def _collect_recognition_text(raw: str) -> str:
     return " ".join(refined or finals).strip()
 
 
+def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg") -> str:
+    """SpeechKit v1 sync recognition — fast path for short clips (≤~30s)."""
+    started = time.time()
+    qs = f"?lang={YANDEX_LANG}&format=oggopus&sampleRateHertz=48000"
+    if YANDEX_FOLDER_ID:
+        qs += f"&folderId={YANDEX_FOLDER_ID}"
+    req = urllib.request.Request(
+        YANDEX_STT_HOST + "/speech/v1/stt:recognize" + qs,
+        data=audio,
+        headers={"Authorization": f"Api-Key {STT_API_KEY}"},
+        method="POST")
+    log(f"stt -> yandex v1 sync, {len(audio)} bytes, lang={YANDEX_LANG}")
+    try:
+        with TG_OPENER.open(req, timeout=60) as r:
+            res = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(
+            f"yandex stt:recognize HTTP {e.code}: {e.read().decode()[:500]}")
+    if res.get("error_code"):
+        raise RuntimeError(f"yandex stt: {res.get('error_message')}")
+    text = (res.get("result") or "").strip()
+    log(f"stt <- {time.time() - started:.1f}s (sync): {text!r}")
+    return text
+
+
 def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
                       on_status=None) -> str:
     """SpeechKit v3 async recognition — audio goes as base64 `content`,
@@ -564,15 +589,15 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
     raise RuntimeError("yandex stt: recognition did not finish in 10 min")
 
 
-def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None) -> str:
+def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None,
+               duration=None) -> str:
     if STT_PROVIDER == "yandex":
+        if duration is not None and duration < 28:
+            return yandex_transcribe_sync(audio, mime)
         return yandex_transcribe(audio, mime, on_status)
     if STT_PROVIDER == "gemini":
         return gemini_transcribe(audio, mime)
     return openai_transcribe(audio, mime)
-    text = res["candidates"][0]["content"]["parts"][0]["text"].strip()
-    log(f"gemini <- {time.time() - started:.1f}s: {text!r}")
-    return text
 
 
 def _load_json(path: Path) -> dict:
@@ -1202,8 +1227,16 @@ def handle_update(upd: dict) -> None:
                 tg_send(chat_id, "Сначала выбери проект: /projects")
                 send_projects(chat_id)
                 return
+            dur = voice.get("duration")
+            dur_txt = f" ({dur}с)" if dur else ""
+            if STT_PROVIDER == "yandex":
+                mode_txt = "синхронный" if dur is not None and dur < 28 \
+                    else "асинхронный"
+            else:
+                mode_txt = STT_PROVIDER
             res = tg_api("sendMessage", chat_id=chat_id,
-                         text="📤 Аудио отправлено на распознавание, жду…")
+                         text=f"📤 Аудио{dur_txt} отправлено на распознавание"
+                              f" ({mode_txt} режим), жду…")
             status_msg = res["result"]["message_id"]
 
             def _st(stext: str) -> None:
@@ -1213,7 +1246,8 @@ def handle_update(upd: dict) -> None:
                 except Exception:
                     pass
 
-            text = transcribe(tg_download(voice["file_id"]), on_status=_st)
+            text = transcribe(tg_download(voice["file_id"]),
+                              on_status=_st, duration=dur)
             pid, entry = _pending_for_chat(chat_id)
             if pid:
                 _add_to_pending(chat_id, pid, entry, text)
