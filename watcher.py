@@ -366,11 +366,14 @@ YANDEX_STT_HOST = os.environ.get("YANDEX_STT_URL",
 
 
 def _yandex_request(path: str, body: dict | None = None) -> str:
+    headers = {"Authorization": f"Api-Key {STT_API_KEY}",
+               "Content-Type": "application/json"}
+    if YANDEX_FOLDER_ID:
+        headers["x-folder-id"] = YANDEX_FOLDER_ID
     req = urllib.request.Request(
         YANDEX_STT_HOST + path,
         data=json.dumps(body).encode() if body is not None else None,
-        headers={"Authorization": f"Api-Key {STT_API_KEY}",
-                 "Content-Type": "application/json"},
+        headers=headers,
         method="POST" if body is not None else "GET",
     )
     try:
@@ -381,10 +384,27 @@ def _yandex_request(path: str, body: dict | None = None) -> str:
             f"yandex {path} HTTP {e.code}: {e.read().decode()[:500]}")
 
 
+def _extract_texts(obj, finals: list, refined: list) -> None:
+    """Recursively find {final|finalRefinement}.alternatives[].text in any
+    nesting — getRecognition may wrap chunks in result/response or a list."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in ("final", "finalRefinement") and isinstance(v, dict):
+                tgt = refined if k == "finalRefinement" else finals
+                for alt in v.get("alternatives") or []:
+                    t = (alt.get("text") or "").strip()
+                    if t:
+                        tgt.append(t)
+            else:
+                _extract_texts(v, finals, refined)
+    elif isinstance(obj, list):
+        for v in obj:
+            _extract_texts(v, finals, refined)
+
+
 def _collect_recognition_text(raw: str) -> str:
-    """Join final/partial alternatives from a getRecognition response —
-    it may be a single JSON object or newline-delimited stream chunks."""
-    texts = []
+    """Join final alternatives from a getRecognition response — it may be
+    a single JSON object, a {result: ...} wrapper, or NDJSON chunks."""
     blobs = []
     try:
         blobs.append(json.loads(raw))
@@ -397,13 +417,11 @@ def _collect_recognition_text(raw: str) -> str:
                 blobs.append(json.loads(line))
             except ValueError:
                 pass
+    finals, refined = [], []
     for blob in blobs:
-        for kind in ("final", "partial", "finalRefinement"):
-            for alt in (blob.get(kind) or {}).get("alternatives") or []:
-                t = (alt.get("text") or "").strip()
-                if t:
-                    texts.append(t)
-    return " ".join(texts).strip()
+        _extract_texts(blob, finals, refined)
+    # finalRefinement replaces the plain final — don't concatenate both
+    return " ".join(refined or finals).strip()
 
 
 def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
@@ -425,8 +443,6 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
                                     "languageCode": [YANDEX_LANG]},
         },
     }
-    if YANDEX_FOLDER_ID:
-        body["folderId"] = YANDEX_FOLDER_ID
     log(f"stt -> yandex speechkit v3 async, {len(audio)} bytes, lang={YANDEX_LANG}")
     op = json.loads(_yandex_request("/stt/v3/recognizeFileAsync", body))
     op_id = op.get("id") or op.get("operationId")
@@ -450,7 +466,7 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
             log(f"stt <- {time.time() - started:.1f}s, "
                 f"{attempt} polls: {text!r}")
             return text
-        log(f"stt poll {attempt}: not ready yet")
+        log(f"stt poll {attempt}: not ready yet, raw[:200]={raw[:200]!r}")
         if on_status:
             on_status(f"⏳ Пока не готово — проверяю ещё раз через 10с "
                       f"({attempt}/60)")
