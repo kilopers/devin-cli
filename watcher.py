@@ -57,6 +57,7 @@ YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
 PENDING_FILE = TASKS_DIR / "tg-pending.json"  # pending id -> {chat_id, text}
 MODEL_FILE = TASKS_DIR / "model.txt"  # telegram-selected DEVIN_MODEL override
+COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> chat_id (awaiting decision)
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -92,6 +93,7 @@ def run_task(task: Path) -> None:
     processing = task.with_name(task.name + ".processing")
     task.rename(processing)
 
+    started_ts = time.time()
     env = dict(os.environ, DEVIN_TASK_FILE=str(processing),
                DEVIN_MODEL=current_model())
     try:
@@ -122,7 +124,11 @@ def run_task(task: Path) -> None:
                  last_status=status, tasks_done=STATE["tasks_done"] + 1)
     log(f"done {task.name} -> outbox/{response.name} ({status})")
     if TG_TOKEN:
+        chat_id = _load_chats().get(task.stem)
         notify_chat(task.stem, f"{task.name}\n{status}\n\n{response.read_text()[-3500:]}")
+        if chat_id:
+            send_task_stats(chat_id, started_ts)
+            offer_commit(task, chat_id)
 
 
 def ensure_repo() -> None:
@@ -455,6 +461,109 @@ def send_models(chat_id, msg_id=None) -> None:
                reply_markup={"inline_keyboard": kb})
 
 
+def session_stats(since: float) -> dict | None:
+    """Metrics of the devin session finished after `since`, from its transcript."""
+    td = Path.home() / ".local/share/devin/cli/transcripts"
+    try:
+        files = [f for f in td.glob("*.json") if f.stat().st_mtime >= since]
+        if not files:
+            return None
+        d = json.loads(max(files, key=lambda f: f.stat().st_mtime).read_text())
+    except Exception as e:
+        log(f"session stats read failed: {e}")
+        return None
+    fm = d.get("final_metrics") or {}
+    return {
+        "session": d.get("session_id"),
+        "model": (d.get("agent") or {}).get("model_name"),
+        "prompt_tokens": fm.get("total_prompt_tokens"),
+        "completion_tokens": fm.get("total_completion_tokens"),
+        "cached_tokens": fm.get("total_cached_tokens"),
+        "steps": fm.get("total_steps"),
+    }
+
+
+def send_task_stats(chat_id, since: float) -> None:
+    s = session_stats(since) or {}
+    lines = [
+        f"model: {s.get('model') or current_model()}",
+        f"tokens: prompt={s.get('prompt_tokens', '?')} "
+        f"(cached={s.get('cached_tokens', '?')}), "
+        f"completion={s.get('completion_tokens', '?')}",
+        f"steps: {s.get('steps', '?')}, session: {s.get('session') or '-'}",
+    ]
+    tg_send(chat_id, "📊 Статистика задачи:\n" + "\n".join(lines))
+
+
+def _git(*args) -> tuple:
+    """git in WORKDIR, direct connection (proxy vars stripped)."""
+    env = {k: v for k, v in os.environ.items()
+           if k.lower() not in ("http_proxy", "https_proxy", "no_proxy")}
+    res = subprocess.run(["git", "-C", str(WORKDIR), *args],
+                         capture_output=True, text=True, timeout=120, env=env)
+    return res.returncode, (res.stdout + res.stderr).strip()
+
+
+def _save_commit_pending(stem: str, chat_id) -> None:
+    pending = _load_json(COMMITS_FILE)
+    pending[stem] = chat_id
+    COMMITS_FILE.write_text(json.dumps(pending))
+
+
+def _pop_commit_pending(stem: str) -> bool:
+    pending = _load_json(COMMITS_FILE)
+    existed = pending.pop(stem, None) is not None
+    COMMITS_FILE.write_text(json.dumps(pending))
+    return existed
+
+
+def offer_commit(task: Path, chat_id) -> None:
+    """After a task: show repo state with commit/push/skip buttons."""
+    try:
+        _, st = _git("status", "--porcelain")
+        dirty = len(st.splitlines()) if st else 0
+        rc, up = _git("log", "@{u}..HEAD", "--oneline")
+        unpushed = len(up.splitlines()) if rc == 0 and up else 0
+    except Exception as e:
+        log(f"git state check failed: {e}")
+        return
+    if not dirty and not unpushed:
+        return
+    if dirty:
+        label = f"✅ Закоммитить и запушить ({dirty} файл(ов))"
+    else:
+        label = f"⬆ Запушить {unpushed} коммит(ов)"
+    _save_commit_pending(task.stem, chat_id)
+    tg_api("sendMessage", chat_id=chat_id,
+           text=f"В репо: {dirty} незакоммиченных, {unpushed} незапушенных. Что делаем?",
+           reply_markup={"inline_keyboard": [
+               [{"text": label, "callback_data": f"commit:{task.stem}"}],
+               [{"text": "⏭ Пропустить", "callback_data": f"skip:{task.stem}"}],
+           ]})
+    log(f"commit offer for {task.stem}: dirty={dirty} unpushed={unpushed}")
+
+
+def do_commit(chat_id, stem: str) -> str:
+    """git add -A && commit && push; or push only when the tree is clean."""
+    _, st = _git("status", "--porcelain")
+    out = []
+    if st:
+        msg = f"task: {stem}"
+        try:
+            first = (DONE / f"{stem}.txt").read_text().strip().splitlines()[0]
+            msg = f"task: {first[:70]}"
+        except Exception:
+            pass
+        for args in (("add", "-A"), ("commit", "-m", msg)):
+            rc, o = _git(*args)
+            out.append(o)
+            if rc != 0:
+                return "\n".join(out)
+    rc, o = _git("push")
+    out.append(o)
+    return "\n".join(out) or "nothing to do"
+
+
 def handle_command(chat_id, text: str) -> None:
     cmd, _, arg = text.partition(" ")
     cmd = cmd.lower().lstrip("/").split("@")[0]  # strip /cmd@botname
@@ -504,6 +613,27 @@ def handle_callback(cb: dict) -> None:
     if data == "cmd:status":
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
         tg_send(chat_id, status_text())
+        return
+    if action in ("commit", "skip"):
+        if not _pop_commit_pending(pid):
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Уже обработано")
+            return
+        if action == "commit":
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Коммичу и пушу…")
+            result = do_commit(chat_id, pid)
+            tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+                   text="✅ Закоммичено и запушено.",
+                   reply_markup={"inline_keyboard": []})
+            tg_send(chat_id, f"git output:\n{result[-3500:]}")
+            log(f"commit accepted for {pid}")
+        else:
+            tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+                   text="⏭ Изменения оставлены в репо — следующая задача их увидит.",
+                   reply_markup={"inline_keyboard": []})
+            tg_api("answerCallbackQuery", callback_query_id=cb_id)
+            log(f"commit skipped for {pid}")
         return
 
     entry = _pop_pending(pid)

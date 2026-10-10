@@ -11,6 +11,7 @@
 #   DEVIN_PERMISSION_MODE    Permission mode               (default: bypass)
 #   DEVIN_INSTRUCTIONS_FILE  Optional extra instructions file appended to the prompt
 #   DEVIN_EXTRA_ARGS         Extra flags appended to the devin invocation
+#   GIT_AUTO_COMMIT          "false" -> agent leaves changes uncommitted (default: true)
 #   GIT_REPO_URL             If set and WORKDIR is empty — clone instead of requiring a mount
 #   GIT_BRANCH               Branch for the clone (optional)
 #   GIT_USER_NAME            git user.name for commits  (else uses mounted ~/.gitconfig)
@@ -27,6 +28,7 @@ TASK_FILE="${DEVIN_TASK_FILE:-/task/task.txt}"
 INSTRUCTIONS_FILE="${DEVIN_INSTRUCTIONS_FILE:-}"
 MODEL="${DEVIN_MODEL:-swe}"
 PERMISSION_MODE="${DEVIN_PERMISSION_MODE:-bypass}"
+AUTO_COMMIT="${GIT_AUTO_COMMIT:-true}"
 
 # --- git setup -------------------------------------------------------------
 [ -n "${GIT_USER_NAME:-}" ]  && git config --global user.name  "$GIT_USER_NAME"
@@ -112,9 +114,20 @@ $EXTRA
 }
 When you are done:
 1. Verify your work — run the repo's tests/linters/build if they exist.
+EOF
+if [ "$AUTO_COMMIT" = "true" ]; then
+cat >> "$PROMPT_FILE" <<EOF
 2. Stage ALL changes: git add -A
 3. Commit with a clear, conventional message.
 4. Push to the current branch's upstream with git push. Do not force-push, do not open a PR.
+EOF
+else
+cat >> "$PROMPT_FILE" <<EOF
+2. Do NOT run git add, git commit or git push — leave all changes in the
+   working tree. A human will review and commit them via Telegram.
+EOF
+fi
+cat >> "$PROMPT_FILE" <<EOF
 
 Finally, print a short summary of what you did.
 EOF
@@ -129,6 +142,10 @@ devin --model "$MODEL" \
       -p "$PROMPT" ${DEVIN_EXTRA_ARGS:-} "$@"
 
 # --- 6. safety net ---------------------------------------------------------
+if [ "$AUTO_COMMIT" != "true" ]; then
+    log "GIT_AUTO_COMMIT=false — leaving working tree as the agent left it."
+    exit 0
+fi
 if [ -n "$(git status --porcelain)" ]; then
     warn "Working tree still has uncommitted changes:"
     git status --short >&2
