@@ -18,6 +18,7 @@ import html
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -75,6 +76,7 @@ else:
     TG_OPENER = urllib.request.build_opener()
 
 _bot_proc: subprocess.Popen | None = None
+_task_proc: subprocess.Popen | None = None  # running devin-task, killable via telegram
 _started_at = time.time()
 
 STATE = {
@@ -87,6 +89,18 @@ STATE = {
 
 def log(msg: str) -> None:
     print(f"[watcher] {time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
+
+
+def kill_task() -> None:
+    """SIGKILL the whole process group of the running devin-task."""
+    if not _task_proc:
+        return
+    try:
+        os.killpg(_task_proc.pid, signal.SIGKILL)
+        log(f"task process group {_task_proc.pid} killed")
+    except Exception as e:
+        log(f"killpg failed ({e}), falling back to kill()")
+        _task_proc.kill()
 
 
 def next_task() -> Path | None:
@@ -105,21 +119,27 @@ def run_task(task: Path) -> None:
     env = dict(os.environ, DEVIN_TASK_FILE=str(processing),
                DEVIN_MODEL=current_model(), DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE="true" if continue_mode() else "false")
+    global _task_proc
     try:
-        res = subprocess.run(
-            [DEVIN_TASK],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=TASK_TIMEOUT,
+        # start_new_session: own process group, so telegram /stop kills the
+        # whole tree (devin-task -> devin -> its children), not just the shell
+        _task_proc = subprocess.Popen(
+            [DEVIN_TASK], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, start_new_session=True,
         )
-        status = f"exit code: {res.returncode}"
-        body = res.stdout
-        if res.stderr:
-            body += f"\n\n--- STDERR ---\n{res.stderr}"
-    except subprocess.TimeoutExpired as e:
-        status = f"TIMEOUT after {TASK_TIMEOUT}s"
-        body = (e.stdout or "") + (f"\n\n--- STDERR ---\n{e.stderr}" if e.stderr else "")
+        try:
+            out, err = _task_proc.communicate(timeout=TASK_TIMEOUT)
+            status = f"exit code: {_task_proc.returncode}"
+        except subprocess.TimeoutExpired:
+            kill_task()
+            out, err = _task_proc.communicate()
+            status = f"TIMEOUT after {TASK_TIMEOUT}s"
+        body = out or ""
+        if err:
+            body += f"\n\n--- STDERR ---\n{err}"
+    finally:
+        _task_proc = None
 
     response = OUTBOX / f"{task.stem}.response.txt"
     response.write_text(
@@ -672,8 +692,9 @@ def handle_command(chat_id, text: str) -> None:
                reply_markup={"inline_keyboard": [[
                    {"text": "📁 Проект", "callback_data": "cmd:projects"},
                    {"text": "🧠 Модели", "callback_data": "cmd:models"},
-                   {"text": "� Сессия", "callback_data": "cmd:session"},
-                   {"text": "�📊 Статус", "callback_data": "cmd:status"},
+                   {"text": "🔁 Сессия", "callback_data": "cmd:session"},
+                   {"text": "📊 Статус", "callback_data": "cmd:status"},
+                   {"text": "⛔ Стоп", "callback_data": "cmd:stop"},
                ]]})
     elif cmd == "models":
         send_models(chat_id)
@@ -695,6 +716,14 @@ def handle_command(chat_id, text: str) -> None:
             tg_send(chat_id, f"Режим сессий: {arg.strip()}")
         else:
             send_session_menu(chat_id)
+    elif cmd == "stop":
+        if _task_proc and STATE["current_task"]:
+            kill_task()
+            tg_send(chat_id,
+                    f"⛔ Задача {STATE['current_task']} остановлена — "
+                    "воркер возьмёт следующую из очереди.")
+        else:
+            tg_send(chat_id, "Сейчас ничего не выполняется.")
     elif cmd == "status":
         tg_send(chat_id, status_text())
     else:
@@ -731,6 +760,18 @@ def handle_callback(cb: dict) -> None:
     if data == "cmd:projects":
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
         send_projects(chat_id, msg_id)
+        return
+    if data == "cmd:stop":
+        if _task_proc and STATE["current_task"]:
+            kill_task()
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Остановлено")
+            tg_send(chat_id,
+                    f"⛔ Задача {STATE['current_task']} остановлена — "
+                    "воркер возьмёт следующую из очереди.")
+        else:
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Ничего не выполняется")
         return
     if data == "cmd:session":
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
@@ -901,6 +942,7 @@ def register_commands() -> None:
             {"command": "projects", "description": "выбор проекта"},
             {"command": "models", "description": "выбор модели"},
             {"command": "session", "description": "режим сессий"},
+            {"command": "stop", "description": "убить текущую задачу"},
             {"command": "status", "description": "статус воркера"},
         ])
         log("telegram commands registered (menu button)")
