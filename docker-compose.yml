@@ -10,6 +10,9 @@ services:
     environment:
       DEVIN_MODEL: ${DEVIN_MODEL:-swe}
       DEVIN_WORKDIR: /workspace
+      # Multi-project mode: set PROJECTS_DIR (host dir containing one folder
+      # per project) — each direct subfolder becomes a selectable project.
+      DEVIN_PROJECTS_DIR: ${PROJECTS_DIR:+/projects}
       DEVIN_PERMISSION_MODE: ${DEVIN_PERMISSION_MODE:-bypass}
       TASKS_DIR: /tasks
       POLL_INTERVAL: ${POLL_INTERVAL:-30}
@@ -48,7 +51,8 @@ services:
       https_proxy: ${HTTPS_PROXY:-}
       no_proxy: ${NO_PROXY:-localhost,127.0.0.1}
     volumes:
-      - ${PROJECT_DIR:?Set PROJECT_DIR in .env}:/workspace
+      - ${PROJECT_DIR:-./workspace}:/workspace
+      - ${PROJECTS_DIR:-./projects}:/projects
       - ./tasks:/tasks
       # Persistent Devin credentials + sessions — log in once, survives restarts.
       - ./devin-data:/root/.local/share/devin

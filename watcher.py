@@ -38,6 +38,10 @@ DEVIN_TASK = os.environ.get("DEVIN_TASK_BIN", "/usr/local/bin/devin-task")
 BOT_SCRIPT = os.environ.get("BOT_SCRIPT", "/app/bot.py")
 WEB_PORT = int(os.environ.get("WEB_PORT", "8080"))
 WORKDIR = Path(os.environ.get("DEVIN_WORKDIR", "/workspace"))
+# Multi-project mode: a directory whose direct subdirectories are projects.
+# Set DEVIN_PROJECTS_DIR (mounted at /projects); empty = single WORKDIR mode.
+PROJECTS_ROOT = Path(os.environ["DEVIN_PROJECTS_DIR"]) \
+    if os.environ.get("DEVIN_PROJECTS_DIR") else None
 
 # Telegram webhook bridge: voice -> Gemini STT -> task file; replies go back
 # to the originating chat. Set TELEGRAM_WEBHOOK_URL to enable registration.
@@ -57,7 +61,8 @@ YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
 PENDING_FILE = TASKS_DIR / "tg-pending.json"  # pending id -> {chat_id, text}
 MODEL_FILE = TASKS_DIR / "model.txt"  # telegram-selected DEVIN_MODEL override
-COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> chat_id (awaiting decision)
+COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> {chat_id, workdir}
+PROJECT_FILE = TASKS_DIR / "project.txt"  # selected project name (multi mode)
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -94,8 +99,9 @@ def run_task(task: Path) -> None:
     task.rename(processing)
 
     started_ts = time.time()
+    _, workdir = current_project()
     env = dict(os.environ, DEVIN_TASK_FILE=str(processing),
-               DEVIN_MODEL=current_model())
+               DEVIN_MODEL=current_model(), DEVIN_WORKDIR=str(workdir))
     try:
         res = subprocess.run(
             [DEVIN_TASK],
@@ -128,7 +134,7 @@ def run_task(task: Path) -> None:
         notify_chat(task.stem, f"{task.name}\n{status}\n\n{response.read_text()[-3500:]}")
         if chat_id:
             send_task_stats(chat_id, started_ts)
-            offer_commit(task, chat_id)
+            offer_commit(task, chat_id, workdir)
 
 
 def ensure_repo() -> None:
@@ -137,6 +143,10 @@ def ensure_repo() -> None:
     devin-task does the same check before every task, but doing it here too
     means auth/URL problems surface at container start, not on the first task.
     """
+    if PROJECTS_ROOT:
+        log(f"multi-project mode: {len(list_projects())} project(s) "
+            f"in {PROJECTS_ROOT}, current: {project_label()}")
+        return
     workdir = Path(os.environ.get("DEVIN_WORKDIR", "/workspace"))
     if (workdir / ".git").exists():
         return
@@ -350,7 +360,9 @@ def _update_pending(pid: str, entry: dict) -> None:
 
 
 def _pending_text(entry: dict) -> str:
-    return f"Распознано:\n{entry['text']}"
+    proj = entry.get("project")
+    head = f"Проект: {proj}\n\n" if proj else ""
+    return f"{head}Распознано:\n{entry['text']}"
 
 
 def _add_to_pending(chat_id, pid: str, entry: dict, extra: str) -> None:
@@ -377,6 +389,54 @@ def _confirm_keyboard(pid: str) -> dict:
         {"text": "✅ Принять", "callback_data": f"ok:{pid}"},
         {"text": "❌ Отмена", "callback_data": f"no:{pid}"},
     ]]}
+
+
+def list_projects() -> list:
+    """Direct subdirectories of PROJECTS_ROOT — non-recursive, auto-scanned."""
+    if not PROJECTS_ROOT or not PROJECTS_ROOT.is_dir():
+        return []
+    return sorted(d.name for d in PROJECTS_ROOT.iterdir()
+                  if d.is_dir() and not d.name.startswith("."))
+
+
+def current_project() -> tuple:
+    """(project name or None, workdir Path). Single mode: (None, WORKDIR)."""
+    if not PROJECTS_ROOT:
+        return None, WORKDIR
+    try:
+        name = PROJECT_FILE.read_text().strip()
+    except Exception:
+        name = ""
+    if name and (PROJECTS_ROOT / name).is_dir():
+        return name, PROJECTS_ROOT / name
+    return None, PROJECTS_ROOT
+
+
+def set_project(name: str) -> None:
+    PROJECT_FILE.write_text(name)
+    log(f"project switched to {name}")
+
+
+def project_label() -> str:
+    return current_project()[0] or "не выбран"
+
+
+def send_projects(chat_id, msg_id=None) -> None:
+    projects = list_projects()
+    cur = current_project()[0]
+    if not projects:
+        tg_send(chat_id, f"Проектов нет — пусто в {PROJECTS_ROOT}. "
+                "Положи папки с репозиториями туда.")
+        return
+    kb = [[{"text": ("✅ " if p == cur else "") + p,
+            "callback_data": f"proj:{p}"}] for p in projects[:15]]
+    text = f"Текущий проект: {project_label()}\nВыбери проект:"
+    if msg_id:
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=text, reply_markup={"inline_keyboard": kb})
+    else:
+        tg_api("sendMessage", chat_id=chat_id, text=text,
+               reply_markup={"inline_keyboard": kb})
 
 
 def current_model() -> str:
@@ -435,6 +495,7 @@ def status_text() -> str:
     h, m = uptime // 3600, uptime % 3600 // 60
     queue = len(list(INBOX.glob("*.txt")))
     return (f"uptime: {h}h {m}m\n"
+            f"project: {project_label()}\n"
             f"model: {current_model()}\n"
             f"queue: {queue} task(s)\n"
             f"current: {STATE['current_task'] or '-'}\n"
@@ -495,34 +556,34 @@ def send_task_stats(chat_id, since: float) -> None:
     tg_send(chat_id, "📊 Статистика задачи:\n" + "\n".join(lines))
 
 
-def _git(*args) -> tuple:
-    """git in WORKDIR, direct connection (proxy vars stripped)."""
+def _git(workdir, *args) -> tuple:
+    """git in workdir, direct connection (proxy vars stripped)."""
     env = {k: v for k, v in os.environ.items()
            if k.lower() not in ("http_proxy", "https_proxy", "no_proxy")}
-    res = subprocess.run(["git", "-C", str(WORKDIR), *args],
+    res = subprocess.run(["git", "-C", str(workdir), *args],
                          capture_output=True, text=True, timeout=120, env=env)
     return res.returncode, (res.stdout + res.stderr).strip()
 
 
-def _save_commit_pending(stem: str, chat_id) -> None:
+def _save_commit_pending(stem: str, chat_id, workdir) -> None:
     pending = _load_json(COMMITS_FILE)
-    pending[stem] = chat_id
+    pending[stem] = {"chat_id": chat_id, "workdir": str(workdir)}
     COMMITS_FILE.write_text(json.dumps(pending))
 
 
-def _pop_commit_pending(stem: str) -> bool:
+def _pop_commit_pending(stem: str) -> dict | None:
     pending = _load_json(COMMITS_FILE)
-    existed = pending.pop(stem, None) is not None
+    entry = pending.pop(stem, None)
     COMMITS_FILE.write_text(json.dumps(pending))
-    return existed
+    return entry
 
 
-def offer_commit(task: Path, chat_id) -> None:
+def offer_commit(task: Path, chat_id, workdir) -> None:
     """After a task: show repo state with commit/push/skip buttons."""
     try:
-        _, st = _git("status", "--porcelain")
+        _, st = _git(workdir, "status", "--porcelain")
         dirty = len(st.splitlines()) if st else 0
-        rc, up = _git("log", "@{u}..HEAD", "--oneline")
+        rc, up = _git(workdir, "log", "@{u}..HEAD", "--oneline")
         unpushed = len(up.splitlines()) if rc == 0 and up else 0
     except Exception as e:
         log(f"git state check failed: {e}")
@@ -533,7 +594,7 @@ def offer_commit(task: Path, chat_id) -> None:
         label = f"✅ Закоммитить и запушить ({dirty} файл(ов))"
     else:
         label = f"⬆ Запушить {unpushed} коммит(ов)"
-    _save_commit_pending(task.stem, chat_id)
+    _save_commit_pending(task.stem, chat_id, workdir)
     tg_api("sendMessage", chat_id=chat_id,
            text=f"В репо: {dirty} незакоммиченных, {unpushed} незапушенных. Что делаем?",
            reply_markup={"inline_keyboard": [
@@ -543,9 +604,9 @@ def offer_commit(task: Path, chat_id) -> None:
     log(f"commit offer for {task.stem}: dirty={dirty} unpushed={unpushed}")
 
 
-def do_commit(chat_id, stem: str) -> str:
+def do_commit(stem: str, workdir) -> str:
     """git add -A && commit && push; or push only when the tree is clean."""
-    _, st = _git("status", "--porcelain")
+    _, st = _git(workdir, "status", "--porcelain")
     out = []
     if st:
         msg = f"task: {stem}"
@@ -555,11 +616,11 @@ def do_commit(chat_id, stem: str) -> str:
         except Exception:
             pass
         for args in (("add", "-A"), ("commit", "-m", msg)):
-            rc, o = _git(*args)
+            rc, o = _git(workdir, *args)
             out.append(o)
             if rc != 0:
                 return "\n".join(out)
-    rc, o = _git("push")
+    rc, o = _git(workdir, "push")
     out.append(o)
     return "\n".join(out) or "nothing to do"
 
@@ -570,11 +631,18 @@ def handle_command(chat_id, text: str) -> None:
     if cmd in ("menu", "start", "help"):
         tg_api("sendMessage", chat_id=chat_id, text="Меню:",
                reply_markup={"inline_keyboard": [[
+                   {"text": "📁 Проект", "callback_data": "cmd:projects"},
                    {"text": "🧠 Модели", "callback_data": "cmd:models"},
                    {"text": "📊 Статус", "callback_data": "cmd:status"},
                ]]})
     elif cmd == "models":
         send_models(chat_id)
+    elif cmd in ("projects", "project"):
+        if arg.strip() and arg.strip() in list_projects():
+            set_project(arg.strip())
+            tg_send(chat_id, f"Проект: {arg.strip()}")
+        else:
+            send_projects(chat_id)
     elif cmd == "model":
         if arg.strip():
             set_model(arg.strip())
@@ -614,15 +682,34 @@ def handle_callback(cb: dict) -> None:
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
         tg_send(chat_id, status_text())
         return
+    if data == "cmd:projects":
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
+        send_projects(chat_id, msg_id)
+        return
+    if action == "proj":
+        if pid not in list_projects():
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Проект не найден")
+            return
+        set_project(pid)
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=f"Проект переключён на {pid}.",
+               reply_markup={"inline_keyboard": []})
+        tg_api("answerCallbackQuery", callback_query_id=cb_id,
+               text=f"Проект: {pid}")
+        return
     if action in ("commit", "skip"):
-        if not _pop_commit_pending(pid):
+        centry = _pop_commit_pending(pid)
+        if not centry:
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Уже обработано")
             return
+        cworkdir = (centry.get("workdir") if isinstance(centry, dict)
+                    else WORKDIR)
         if action == "commit":
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Коммичу и пушу…")
-            result = do_commit(chat_id, pid)
+            result = do_commit(pid, cworkdir)
             tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                    text="✅ Закоммичено и запушено.",
                    reply_markup={"inline_keyboard": []})
@@ -677,6 +764,10 @@ def handle_update(upd: dict) -> None:
             if STT_PROVIDER != "gemini" and not STT_API_KEY:
                 tg_send(chat_id, "voice received, but STT_API_KEY is not set")
                 return
+            if PROJECTS_ROOT and not current_project()[0]:
+                tg_send(chat_id, "Сначала выбери проект: /projects")
+                send_projects(chat_id)
+                return
             text = transcribe(tg_download(voice["file_id"]))
             pid, entry = _pending_for_chat(chat_id)
             if pid:
@@ -684,9 +775,10 @@ def handle_update(upd: dict) -> None:
                 return
             pid = str(upd.get("update_id") or int(time.time() * 1000))
             res = tg_api("sendMessage", chat_id=chat_id,
-                         text=f"Распознано:\n{text}",
+                         text=f"Проект: {project_label()}\n\nРаспознано:\n{text}",
                          reply_markup=_confirm_keyboard(pid))
             _save_pending({"chat_id": chat_id, "text": text,
+                           "project": project_label(),
                            "message_id": res["result"]["message_id"],
                            "id": pid})
             log(f"pending confirm {pid} -> chat {chat_id}")
@@ -699,8 +791,13 @@ def handle_update(upd: dict) -> None:
             if pid:
                 _add_to_pending(chat_id, pid, entry, text)
                 return
+            if PROJECTS_ROOT and not current_project()[0]:
+                tg_send(chat_id, "Сначала выбери проект: /projects")
+                send_projects(chat_id)
+                return
             name = enqueue_task(text, chat_id)
-            tg_send(chat_id, f"Задача {name} в очереди.")
+            tg_send(chat_id,
+                    f"Проект: {project_label()}\nЗадача {name} в очереди.")
         else:
             log(f"update from @{sender} chat={chat_id}: unsupported content, skipped")
     except Exception as e:
@@ -740,6 +837,7 @@ def register_commands() -> None:
     try:
         tg_api("setMyCommands", commands=[
             {"command": "menu", "description": "меню бота"},
+            {"command": "projects", "description": "выбор проекта"},
             {"command": "models", "description": "выбор модели"},
             {"command": "status", "description": "статус воркера"},
         ])
@@ -751,7 +849,7 @@ def register_commands() -> None:
 def _git_head() -> str:
     try:
         res = subprocess.run(
-            ["git", "-C", str(WORKDIR), "log", "-1", "--oneline"],
+            ["git", "-C", str(current_project()[1]), "log", "-1", "--oneline"],
             capture_output=True, text=True, timeout=5,
         )
         return res.stdout.strip() or "n/a"
@@ -775,6 +873,7 @@ class StatusHandler(BaseHTTPRequestHandler):
 <tr><td>repo HEAD</td><td>{html.escape(_git_head())}</td></tr>
 <tr><td>queue</td><td>{queue} task(s) in inbox</td></tr>
 <tr><td>model</td><td>{html.escape(current_model())}</td></tr>
+<tr><td>project</td><td>{html.escape(project_label())}</td></tr>
 <tr><td>current task</td><td>{html.escape(STATE["current_task"] or "-")}</td></tr>
 <tr><td>last task</td><td>{html.escape(str(STATE["last_task"]))} ({html.escape(str(STATE["last_status"]))})</td></tr>
 <tr><td>tasks done</td><td>{STATE["tasks_done"]}</td></tr>
