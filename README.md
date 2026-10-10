@@ -66,11 +66,12 @@ nginx режет путь; работает всегда).
 
 Поток:
 
-1. Голосовое → `getFile` → OGG → **Gemini** (`GEMINI_API_KEY`, модель
-   `GEMINI_MODEL`) → текст.
-2. Текст (или обычное текстовое сообщение) → `tasks/inbox/tg-*.txt`;
-   маппинг `task → chat_id` в `tasks/tg-chats.json`.
-3. В чат уходит распознанный текст + «задача в очереди».
+1. Голосовое → `getFile` → OGG → STT (`STT_PROVIDER`: yandex / gemini /
+   openai-compatible) → текст.
+2. В чат приходит распознанный текст с inline-кнопками
+   **«✅ Принять» / «❌ Отмена»** (pending-записи — `tasks/tg-pending.json`).
+3. «Принять» → `tasks/inbox/tg-*.txt` + маппинг `task → chat_id` в
+   `tasks/tg-chats.json`. Текстовые сообщения ставятся в очередь сразу.
 4. Когда задача отработает — в чат прилетает статус и хвост `outbox`-ответа.
 
 `TELEGRAM_WEBHOOK_SECRET` — опционально, сверяется с заголовком

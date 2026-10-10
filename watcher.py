@@ -55,6 +55,7 @@ STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
 YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
+PENDING_FILE = TASKS_DIR / "tg-pending.json"  # pending id -> {chat_id, text}
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -285,11 +286,15 @@ def transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
     return text
 
 
-def _load_chats() -> dict:
+def _load_json(path: Path) -> dict:
     try:
-        return json.loads(TG_CHATS_FILE.read_text())
+        return json.loads(path.read_text())
     except Exception:
         return {}
+
+
+def _load_chats() -> dict:
+    return _load_json(TG_CHATS_FILE)
 
 
 def _save_chat(task_stem: str, chat_id: int) -> None:
@@ -306,7 +311,61 @@ def enqueue_task(text: str, chat_id: int) -> str:
     return name
 
 
+def _save_pending(entry: dict) -> str:
+    pending = _load_json(PENDING_FILE)
+    pid = str(entry.get("id") or int(time.time() * 1000))
+    pending[pid] = entry
+    PENDING_FILE.write_text(json.dumps(pending))
+    return pid
+
+
+def _pop_pending(pid: str) -> dict | None:
+    pending = _load_json(PENDING_FILE)
+    entry = pending.pop(pid, None)
+    PENDING_FILE.write_text(json.dumps(pending))
+    return entry
+
+
+def _confirm_keyboard(pid: str) -> dict:
+    return {"inline_keyboard": [[
+        {"text": "✅ Принять", "callback_data": f"ok:{pid}"},
+        {"text": "❌ Отмена", "callback_data": f"no:{pid}"},
+    ]]}
+
+
+def handle_callback(cb: dict) -> None:
+    cb_id = cb["id"]
+    data = cb.get("data", "")
+    action, _, pid = data.partition(":")
+    msg = cb.get("message") or {}
+    chat_id = (msg.get("chat") or {}).get("id")
+    msg_id = msg.get("message_id")
+    log(f"callback {data!r} from chat {chat_id}")
+
+    entry = _pop_pending(pid)
+    if not entry:
+        tg_api("answerCallbackQuery", callback_query_id=cb_id,
+               text="Уже обработано или устарело")
+        return
+
+    if action == "ok":
+        name = enqueue_task(entry["text"], chat_id)
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=f"Распознано:\n{entry['text']}\n\n✅ Задача {name} в очереди.")
+    else:
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=f"Распознано:\n{entry['text']}\n\n❌ Отменено.")
+    tg_api("answerCallbackQuery", callback_query_id=cb_id)
+
+
 def handle_update(upd: dict) -> None:
+    if cb := upd.get("callback_query"):
+        try:
+            handle_callback(cb)
+        except Exception as e:
+            log(f"callback error: {e}")
+        return
+
     msg = upd.get("message") or upd.get("edited_message") or {}
     chat_id = (msg.get("chat") or {}).get("id")
     sender = (msg.get("from") or {}).get("username", "?")
@@ -323,9 +382,11 @@ def handle_update(upd: dict) -> None:
                 tg_send(chat_id, "voice received, but STT_API_KEY is not set")
                 return
             text = transcribe(tg_download(voice["file_id"]))
-            tg_send(chat_id, f"Распознано:\n{text}")
-            name = enqueue_task(text, chat_id)
-            tg_send(chat_id, f"Задача {name} в очереди.")
+            pid = _save_pending({"chat_id": chat_id, "text": text,
+                                 "id": upd.get("update_id")})
+            log(f"pending confirm {pid} -> chat {chat_id}")
+            tg_api("sendMessage", chat_id=chat_id, text=f"Распознано:\n{text}",
+                   reply_markup=_confirm_keyboard(pid))
         elif text := (msg.get("text") or "").strip():
             log(f"text from @{sender} chat={chat_id}: {text[:100]}")
             if text.startswith("/"):
