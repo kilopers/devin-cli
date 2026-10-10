@@ -423,7 +423,6 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
                                   "literatureText": True},
             "languageRestriction": {"restrictionType": "WHITELIST",
                                     "languageCode": [YANDEX_LANG]},
-            "audioProcessingType": "AUDIO_PROCESSING_TYPE_FULL_DATA",
         },
     }
     if YANDEX_FOLDER_ID:
