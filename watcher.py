@@ -56,6 +56,7 @@ YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
 PENDING_FILE = TASKS_DIR / "tg-pending.json"  # pending id -> {chat_id, text}
+MODEL_FILE = TASKS_DIR / "model.txt"  # telegram-selected DEVIN_MODEL override
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -91,7 +92,8 @@ def run_task(task: Path) -> None:
     processing = task.with_name(task.name + ".processing")
     task.rename(processing)
 
-    env = dict(os.environ, DEVIN_TASK_FILE=str(processing))
+    env = dict(os.environ, DEVIN_TASK_FILE=str(processing),
+               DEVIN_MODEL=current_model())
     try:
         res = subprocess.run(
             [DEVIN_TASK],
@@ -371,6 +373,113 @@ def _confirm_keyboard(pid: str) -> dict:
     ]]}
 
 
+def current_model() -> str:
+    """Model for the next task: telegram override wins over DEVIN_MODEL env."""
+    try:
+        m = MODEL_FILE.read_text().strip()
+        if m:
+            return m
+    except Exception:
+        pass
+    return os.environ.get("DEVIN_MODEL", "swe")
+
+
+def set_model(name: str) -> None:
+    MODEL_FILE.write_text(name.strip())
+    log(f"model switched to {name}")
+
+
+def devin_models() -> list:
+    """Model slugs available to the account, via `devin models list`."""
+    try:
+        res = subprocess.run(
+            ["devin", "models", "list", "--format", "json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        data = json.loads(res.stdout)
+    except Exception as e:
+        log(f"devin models list failed: {e}")
+        return []
+    found = []
+
+    def walk(x) -> None:
+        if isinstance(x, dict):
+            for k in ("id", "slug", "model", "name"):
+                if isinstance(x.get(k), str):
+                    found.append(x[k])
+                    return
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+        elif isinstance(x, str):
+            found.append(x)
+
+    walk(data)
+    models = []
+    for m in found:
+        if m and m not in models:
+            models.append(m)
+    return models
+
+
+def status_text() -> str:
+    uptime = int(time.time() - _started_at)
+    h, m = uptime // 3600, uptime % 3600 // 60
+    queue = len(list(INBOX.glob("*.txt")))
+    return (f"uptime: {h}h {m}m\n"
+            f"model: {current_model()}\n"
+            f"queue: {queue} task(s)\n"
+            f"current: {STATE['current_task'] or '-'}\n"
+            f"last: {STATE['last_task']} ({STATE['last_status']})\n"
+            f"done: {STATE['tasks_done']}")
+
+
+def send_models(chat_id, msg_id=None) -> None:
+    models = devin_models()
+    cur = current_model()
+    if not models:
+        tg_send(chat_id,
+                f"Текущая модель: {cur}\nСписок недоступен — "
+                "`devin models list` не ответил. Задай явно: /model <name>")
+        return
+    kb = [[{"text": ("✅ " if m == cur else "") + m,
+            "callback_data": f"model:{m}"}] for m in models[:15]]
+    text = f"Текущая модель: {cur}\nВыбери модель:"
+    if msg_id:
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=text, reply_markup={"inline_keyboard": kb})
+    else:
+        tg_api("sendMessage", chat_id=chat_id, text=text,
+               reply_markup={"inline_keyboard": kb})
+
+
+def handle_command(chat_id, text: str) -> None:
+    cmd, _, arg = text.partition(" ")
+    cmd = cmd.lower().lstrip("/").split("@")[0]  # strip /cmd@botname
+    if cmd in ("menu", "start", "help"):
+        tg_api("sendMessage", chat_id=chat_id, text="Меню:",
+               reply_markup={"inline_keyboard": [[
+                   {"text": "🧠 Модели", "callback_data": "cmd:models"},
+                   {"text": "📊 Статус", "callback_data": "cmd:status"},
+               ]]})
+    elif cmd == "models":
+        send_models(chat_id)
+    elif cmd == "model":
+        if arg.strip():
+            set_model(arg.strip())
+            tg_send(chat_id, f"Модель: {arg.strip()}")
+        else:
+            send_models(chat_id)
+    elif cmd == "status":
+        tg_send(chat_id, status_text())
+    else:
+        tg_send(chat_id,
+                "Команды: /menu, /models, /model <name>, /status.\n"
+                "Или пришли задачу текстом/голосовым.")
+
+
 def handle_callback(cb: dict) -> None:
     cb_id = cb["id"]
     data = cb.get("data", "")
@@ -379,6 +488,23 @@ def handle_callback(cb: dict) -> None:
     chat_id = (msg.get("chat") or {}).get("id")
     msg_id = msg.get("message_id")
     log(f"callback {data!r} from chat {chat_id}")
+
+    if action == "model":
+        set_model(pid)
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=f"Модель переключена на {pid}.",
+               reply_markup={"inline_keyboard": []})
+        tg_api("answerCallbackQuery", callback_query_id=cb_id,
+               text=f"Модель: {pid}")
+        return
+    if data == "cmd:models":
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
+        send_models(chat_id, msg_id)
+        return
+    if data == "cmd:status":
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
+        tg_send(chat_id, status_text())
+        return
 
     entry = _pop_pending(pid)
     if not entry:
@@ -437,7 +563,7 @@ def handle_update(upd: dict) -> None:
         elif text := (msg.get("text") or "").strip():
             log(f"text from @{sender} chat={chat_id}: {text[:100]}")
             if text.startswith("/"):
-                tg_send(chat_id, "Пришли задачу текстом или голосовым сообщением.")
+                handle_command(chat_id, text)
                 return
             pid, entry = _pending_for_chat(chat_id)
             if pid:
@@ -477,6 +603,21 @@ def register_webhook() -> None:
         log(f"setWebhook failed: {e}")
 
 
+def register_commands() -> None:
+    """Native telegram Menu button next to the input field."""
+    if not TG_TOKEN:
+        return
+    try:
+        tg_api("setMyCommands", commands=[
+            {"command": "menu", "description": "меню бота"},
+            {"command": "models", "description": "выбор модели"},
+            {"command": "status", "description": "статус воркера"},
+        ])
+        log("telegram commands registered (menu button)")
+    except Exception as e:
+        log(f"setMyCommands failed: {e}")
+
+
 def _git_head() -> str:
     try:
         res = subprocess.run(
@@ -503,6 +644,7 @@ class StatusHandler(BaseHTTPRequestHandler):
 <tr><td>uptime</td><td>{h}h {m}m {s}s</td></tr>
 <tr><td>repo HEAD</td><td>{html.escape(_git_head())}</td></tr>
 <tr><td>queue</td><td>{queue} task(s) in inbox</td></tr>
+<tr><td>model</td><td>{html.escape(current_model())}</td></tr>
 <tr><td>current task</td><td>{html.escape(STATE["current_task"] or "-")}</td></tr>
 <tr><td>last task</td><td>{html.escape(str(STATE["last_task"]))} ({html.escape(str(STATE["last_status"]))})</td></tr>
 <tr><td>tasks done</td><td>{STATE["tasks_done"]}</td></tr>
@@ -568,6 +710,7 @@ def main() -> int:
     ensure_repo()
     start_bot()
     register_webhook()
+    register_commands()
     start_web()
     log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
     while True:
