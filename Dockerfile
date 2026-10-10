@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         make \
         socat \
+        gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Devin CLI.
@@ -22,6 +23,29 @@ RUN curl -fsSL https://cli.devin.ai/install.sh -o /tmp/devin-install.sh \
     && sed -i 's|"\$VERSION_DIR/bin/\$COMPILED_BIN_NAME" setup|true|' /tmp/devin-install.sh \
     && XDG_DATA_HOME=/opt/devin-install bash /tmp/devin-install.sh \
     && rm -f /tmp/devin-install.sh
+
+# Toolchain for user projects: Node.js 22 LTS (npm/Vite) + PHP 8.3 + Composer.
+# Dev servers the agent starts stay inside the container — it reaches them on
+# localhost directly, no host port mapping needed.
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /etc/apt/trusted.gpg.d/nodesource.gpg \
+    && echo "deb https://deb.nodesource.com/node_22.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list \
+    && curl -fsSL https://packages.sury.org/php/apt.gpg \
+        | gpg --dearmor -o /etc/apt/trusted.gpg.d/sury-php.gpg \
+    && echo "deb https://packages.sury.org/php/ bookworm main" \
+        > /etc/apt/sources.list.d/sury-php.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        nodejs \
+        zip unzip \
+        php8.3-cli php8.3-mbstring php8.3-xml php8.3-curl php8.3-zip \
+        php8.3-intl php8.3-gd php8.3-bcmath php8.3-sqlite3 \
+        php8.3-mysql php8.3-pgsql \
+    && rm -rf /var/lib/apt/lists/* \
+    && php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');" \
+    && php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer --quiet \
+    && rm -f /tmp/composer-setup.php \
+    && node --version && npm --version && php --version | head -1 && composer --version
 
 ENV PATH="/root/.local/bin:${PATH}"
 # Accept new SSH host keys without prompting (ssh dir is mounted read-only).
