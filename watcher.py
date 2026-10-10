@@ -175,25 +175,67 @@ def _digest_new_steps(path: Path, last_id: int) -> tuple:
     return [l for l in lines if l], last_id
 
 
-def progress_loop(chat_id, path: Path, proc: subprocess.Popen) -> None:
-    """While the task runs, tail the devin --export transcript and send
-    step digests to telegram (batched, at most every 20s)."""
-    last_id, last_sent, seen = 0, 0.0, 0
+ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+
+def progress_loop(chat_id, export_path: Path, out_path: Path,
+                  proc: subprocess.Popen, since: float) -> None:
+    """While the task runs, send live progress to telegram.
+
+    Primary source: devin-task's stdout/stderr captured to out_path (tail).
+    Bonus source: the --export file, or the live session transcript if the
+    export only lands at session end — parsed into step digests.
+    """
+    last_id, last_sent, tick = 0, 0.0, 0
+    offset, buf, seen_sizes = 0, [], {}
+    transcripts = Path.home() / ".local/share/devin/cli/transcripts"
+    live_transcript = None
     while proc.poll() is None:
         time.sleep(10)
+        tick += 1
         try:
-            size = path.stat().st_size if path.exists() else 0
+            if out_path.exists():
+                with out_path.open(errors="replace") as f:
+                    f.seek(offset)
+                    chunk = ANSI.sub("", f.read()).strip()
+                    offset = f.tell()
+                if chunk:
+                    buf.append(chunk)
         except Exception:
-            size = 0
-        steps_total = sum(
-            len((d.get("steps") or []) if isinstance(d, dict) else [])
-            for d in _load_transcript_docs(path))
-        if size != seen:
-            log(f"progress: export {size} bytes, {steps_total} steps")
-            seen = size
-        lines, last_id = _digest_new_steps(path, last_id)
-        if lines and time.time() - last_sent >= 20:
-            tg_send(chat_id, "🛠 " + "\n".join(lines)[:3500])
+            pass
+        src = export_path if export_path.exists() else None
+        if src is None:
+            if live_transcript is None:
+                try:
+                    cand = [f for f in transcripts.glob("*.json")
+                            if f.stat().st_mtime >= since]
+                    if cand:
+                        live_transcript = max(
+                            cand, key=lambda f: f.stat().st_mtime)
+                        log(f"progress: no export, tailing transcript "
+                            f"{live_transcript.name}")
+                except Exception:
+                    pass
+            src = live_transcript
+        if src is not None:
+            try:
+                sz = src.stat().st_size
+                if sz != seen_sizes.get(src):
+                    log(f"progress: {src.name} {sz} bytes")
+                    seen_sizes[src] = sz
+            except Exception:
+                pass
+            try:
+                lines, last_id = _digest_new_steps(src, last_id)
+                buf += lines
+            except Exception:
+                pass
+        elif tick % 6 == 0:
+            log("progress: no export file / live transcript yet")
+        if buf and time.time() - last_sent >= 20:
+            text = "\n".join(buf)
+            buf.clear()
+            tg_send(chat_id, "🛠 " + text[-3500:])
             last_sent = time.time()
 
 
@@ -231,29 +273,34 @@ def run_task(task: Path) -> None:
                REPLY_MODE=reply_mode(),
                DEVIN_EXPORT_FILE=str(export_path))
     chat_id = _load_chats().get(task.stem)
+    out_path = progress_dir / f"{task.stem}.out"
     global _task_proc
     try:
+        # stdout+stderr go to a file the progress thread tails — devin -p
+        # prints as it goes, so this gives live output for free.
         # start_new_session: own process group, so telegram /stop kills the
         # whole tree (devin-task -> devin -> its children), not just the shell
+        out_f = open(out_path, "w", errors="replace")
         _task_proc = subprocess.Popen(
             [DEVIN_TASK], env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=out_f, stderr=subprocess.STDOUT,
             text=True, start_new_session=True,
         )
         if chat_id:
             threading.Thread(
                 target=progress_loop, daemon=True,
-                args=(chat_id, export_path, _task_proc)).start()
+                args=(chat_id, export_path, out_path,
+                      _task_proc, started_ts)).start()
         try:
-            out, err = _task_proc.communicate(timeout=TASK_TIMEOUT)
+            _task_proc.wait(timeout=TASK_TIMEOUT)
             status = f"exit code: {_task_proc.returncode}"
         except subprocess.TimeoutExpired:
             kill_task()
-            out, err = _task_proc.communicate()
+            _task_proc.wait()
             status = f"TIMEOUT after {TASK_TIMEOUT}s"
-        body = out or ""
-        if err:
-            body += f"\n\n--- STDERR ---\n{err}"
+        out_f.close()
+        body = out_path.read_text(errors="replace") \
+            if out_path.exists() else ""
     finally:
         _task_proc = None
 
