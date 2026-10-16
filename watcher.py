@@ -180,6 +180,7 @@ def init_db() -> None:
         output MEDIUMTEXT NULL,
         task_status VARCHAR(255) NULL,
         commit_offered TINYINT NOT NULL DEFAULT 0,
+        model VARCHAR(80) NULL,
         created DOUBLE NOT NULL,
         started DOUBLE NULL,
         finished DOUBLE NULL,
@@ -198,6 +199,10 @@ def init_db() -> None:
         message_id BIGINT NULL,
         created DOUBLE NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    if not db_query("SELECT 1 FROM information_schema.COLUMNS"
+                    " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
+                    " AND COLUMN_NAME='model'", (MYSQL["database"],)):
+        db_exec("ALTER TABLE tasks ADD COLUMN model VARCHAR(80) NULL")
     # контейнер пересоздали посреди задачи — 'running' вернуть в очередь
     db_exec("UPDATE tasks SET status='queued' WHERE status='running'")
     log(f"mysql: connected to {MYSQL['host']}:{MYSQL['port']}/"
@@ -209,11 +214,12 @@ def _task_name(stem: str) -> str:
 
 
 def _insert_task(stem: str, prompt: str, source: str,
-                 project: str | None, chat_id, created: float) -> None:
-    db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt, "
-            "created) VALUES (%s,%s,%s,%s,%s,%s) "
+                 project: str | None, chat_id, created: float,
+                 model: str | None = None) -> None:
+    db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
+            " model, created) VALUES (%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
-            (stem, source, project, chat_id, prompt, created))
+            (stem, source, project, chat_id, prompt, model, created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -487,7 +493,8 @@ def run_task(task: dict) -> None:
     task_file = progress_dir / f"{stem}.task.txt"
     task_file.write_text(task["prompt"], errors="replace")
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
-               DEVIN_MODEL=current_model(), DEVIN_WORKDIR=str(workdir),
+               DEVIN_MODEL=task.get("model") or current_model(),
+               DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE="true" if continue_mode() else "false",
                REPLY_MODE=reply_mode(),
                DEVIN_EXPORT_FILE=str(export_path))
@@ -824,11 +831,12 @@ def enqueue_task(text: str, chat_id: int | None = None,
                  project: str | None = None, prefix: str = "tg") -> str:
     stem = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}" \
            f"-{(int(time.time() * 1000) % 100000):05d}"
-    proj = project or (current_project()[0] if multi_mode() else None)
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
-    _insert_task(stem, text, source, proj, chat_id, time.time())
+    proj = project or (current_project(source)[0] if multi_mode() else None)
+    model = current_model(source if source in ("web", "telegram") else "")
+    _insert_task(stem, text, source, proj, chat_id, time.time(), model)
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
-        f"project={proj}")
+        f"project={proj}, model={model}")
     return _task_name(stem)
 
 
@@ -912,19 +920,25 @@ def multi_mode() -> bool:
     return bool(list_projects())
 
 
-def current_project() -> tuple:
-    """(project name or None, workdir Path). Single mode: (None, WORKDIR)."""
+def current_project(scope: str = "telegram") -> tuple:
+    """(project name or None, workdir Path). Single mode: (None, WORKDIR).
+
+    Скоупы раздельные: у телеграма свой последний выбранный проект
+    (kv.project), у веба — свой (kv.project_web, fallback на телеграмовский).
+    """
     if not multi_mode():
         return None, WORKDIR
-    name = kv_get("project")
+    name = kv_get("project_web" if scope == "web" else "project")
+    if not name and scope == "web":
+        name = kv_get("project")
     if name and (PROJECTS_ROOT / name).is_dir():
         return name, PROJECTS_ROOT / name
     return None, PROJECTS_ROOT
 
 
-def set_project(name: str) -> None:
-    kv_set("project", name)
-    log(f"project switched to {name}")
+def set_project(name: str, scope: str = "telegram") -> None:
+    kv_set("project_web" if scope == "web" else "project", name)
+    log(f"project switched to {name} (scope {scope})")
 
 
 def project_label() -> str:
@@ -1008,14 +1022,19 @@ def send_mode_menu(chat_id, msg_id=None) -> None:
                reply_markup={"inline_keyboard": kb})
 
 
-def current_model() -> str:
-    """Model for the next task: UI/telegram override wins over DEVIN_MODEL."""
+def current_model(scope: str = "telegram") -> str:
+    """Default model for a scope ('web'|'telegram'): scoped kv wins,
+    then the legacy global override, then DEVIN_MODEL env."""
+    if scope:
+        m = kv_get(f"model_{scope}")
+        if m:
+            return m
     return kv_get("model") or os.environ.get("DEVIN_MODEL", "swe")
 
 
-def set_model(name: str) -> None:
-    kv_set("model", name.strip())
-    log(f"model switched to {name}")
+def set_model(name: str, scope: str = "telegram") -> None:
+    kv_set(f"model_{scope}", name.strip())
+    log(f"model switched to {name} (scope {scope})")
 
 
 def _models_from_json(data) -> list:
@@ -1607,19 +1626,19 @@ def api_status() -> dict:
         "last_task": STATE["last_task"],
         "last_status": STATE["last_status"],
         "tasks_done": STATE["tasks_done"],
-        "model": current_model(),
+        "model": current_model("web"),
         "project": project_label(),
         "mode": reply_mode(),
     }
 
 
 def api_projects() -> dict:
-    return {"projects": list_projects(), "current": current_project()[0],
+    return {"projects": list_projects(), "current": current_project("web")[0],
             "multi": multi_mode()}
 
 
 def api_models() -> dict:
-    return {"models": get_models(), "current": current_model()}
+    return {"models": get_models(), "current": current_model("web")}
 
 
 def _tail(path: Path, limit: int = 12000) -> str:
@@ -1657,6 +1676,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "name": _task_name(stem),
             "stem": stem,
             "project": r["project"] or "",
+            "model": r["model"] or "",
             "source": r["source"],
             "status": st,
             "task_status": r["task_status"] or "",
@@ -1731,13 +1751,13 @@ class StatusHandler(BaseHTTPRequestHandler):
                 if p not in list_projects():
                     return self._json({"ok": False,
                                        "error": "unknown project"}, 400)
-                set_project(p)
+                set_project(p, "web")
                 return self._json({"ok": True, "project": p})
             if path == "/api/model":
                 m = (body.get("model") or "").strip()
                 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", m):
                     return self._json({"ok": False, "error": "bad model"}, 400)
-                set_model(m)
+                set_model(m, "web")
                 return self._json({"ok": True, "model": m})
             text = (body.get("text") or "").strip()
             project = (body.get("project") or "").strip() or None

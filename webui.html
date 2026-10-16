@@ -181,7 +181,8 @@ function renderFeed(items) {
     <div class="card"><div class="card-content" style="padding:14px 18px">
       <div class="task-head">
         <span class="meta">${esc(t.name)} · ${new Date(t.created*1000).toLocaleString("ru-RU")}
-          <span class="src">${esc(SRC_RU[t.source] || t.source || "")}</span></span>
+          <span class="src">${esc(SRC_RU[t.source] || t.source || "")}</span>
+          ${t.model ? `<span class="src">${esc(t.model)}</span>` : ""}</span>
         ${chip(t)}
       </div>
       <div class="prompt">${esc(t.prompt)}</div>
