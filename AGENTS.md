@@ -32,7 +32,11 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   (default `/app/templates`); `/login` — обычная HTML-форма в стиле
   Material (чистый CSS, без JS и внешних CDN — React/MUI/Babel по CDN давали
   белый экран: UMD у MUI v6 нет, на мобильном CDN может резаться), ошибка
-  входа пробрасывается шаблону переменной `error`. Роуты под
+  входа пробрасывается шаблону переменной `error`. Мобильная адаптация
+  webui: ≤992px список проектов + селекты модели/режима + статус уезжают
+  в левый sidenav (гамбургер в шапке; те же DOM-ноды переносит matchMedia,
+  обработчики сохраняются), композер внизу переносится на две строки.
+  Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
   auth off). Telegram webhook (`POST /` и `POST /<any>` — корень тоже, иначе 405) и GET /status — публичные.

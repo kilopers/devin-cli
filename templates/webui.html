@@ -72,29 +72,60 @@
   #micStat { font-size: 12px; min-width: 44px; margin-right: 6px;
              white-space: nowrap; }
   @keyframes pulse { 50% { opacity: .35; } }
+  /* mobile: project tabs live in the left drawer (sidenav) instead of the
+     row under the navbar; model/mode selects + status move there too */
+  #hdrCtrls { display: contents; }
+  #mobileNav li.proj a.active { color: #3f51b5; font-weight: 600; }
+  #hdrCtrlsSlot { padding: 12px 16px; }
+  #hdrCtrlsSlot > * { float: none; }
+  #hdrCtrlsSlot #wstatus { display: block; color: #5f6368; font-size: 13px;
+      margin-bottom: 10px; }
+  #hdrCtrlsSlot #modelSel, #hdrCtrlsSlot #modeSel {
+      display: block; width: 100%; max-width: none; height: 38px;
+      margin: 0 0 10px; color: #212121; background: #fff;
+      border: 1px solid #dadce0; border-radius: 4px; font-size: 14px; }
+  @media (max-width: 992px) {
+    #tabs { display: none; }
+  }
+  @media (max-width: 600px) {
+    #feed { padding: 12px 8px 170px; }
+    .task-head { flex-wrap: wrap; }
+    #composer { padding: 10px 12px; }
+    #composer .inner { flex-wrap: wrap; }
+    #composer textarea { flex: 1 1 100%; }
+    #micStat { min-width: 0; }
+    #sendBtn { flex: 1; }
+  }
 </style>
 </head>
 <body>
 <header id="topbar">
   <nav class="indigo">
     <div class="nav-wrapper" style="padding:0 16px">
+      <a href="#" data-target="mobileNav" class="sidenav-trigger"
+         title="проекты и настройки"><i class="material-icons">menu</i></a>
       <span class="brand-logo" style="font-size:20px">Devin Worker</span>
       <a id="logoutBtn" href="#" class="right" title="выйти"
          style="padding:0 8px"><i class="material-icons">logout</i></a>
       <a id="profileBtn" href="#" class="right" title="профиль"
          style="padding:0 8px"><i class="material-icons">person</i></a>
-      <select id="modeSel" class="browser-default right"
+      <span id="hdrCtrls"><select id="modeSel" class="browser-default right"
               title="режим: код — меняет репо, вопрос — только отвечает">
         <option value="code">🛠 код</option>
         <option value="ask">💬 вопрос</option>
       </select>
       <select id="modelSel" class="browser-default right"
               title="модель Devin"></select>
-      <span class="right" id="wstatus" style="font-size:13px;opacity:.9">…</span>
+      <span class="right" id="wstatus" style="font-size:13px;opacity:.9">…</span></span>
     </div>
   </nav>
   <div id="tabs"></div>
 </header>
+<ul id="mobileNav" class="sidenav">
+  <li><a class="subheader">Проекты</a></li>
+  <li id="navDivider"><div class="divider"></div></li>
+  <li id="hdrCtrlsSlot"></li>
+</ul>
 <div id="feed"><div id="empty">Загрузка…</div></div>
 <div id="profileModal" class="modal" style="max-width:400px">
   <div class="modal-content">
@@ -146,6 +177,27 @@ const api = (u, o) => window["fetch"](u, o).then(r => {
   return r;
 });
 
+// project switch: from desktop tabs or the mobile drawer — the tab also
+// switches the worker's active project (like /project in telegram), so new
+// web tasks and devin sessions follow it; drawer closes after the pick
+function selectProject(p) {
+  currentProject = p;
+  if (multiMode)
+    api("/api/project", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({project: currentProject})})
+      .then(r => r.json()).then(d => {
+        if (!d.ok) M.toast({html: "Проект: " + (d.error || "?")});
+      }).catch(() => {});
+  document.querySelectorAll("#tabs a, #mobileNav li.proj a").forEach(x =>
+    x.classList.toggle("active", x.dataset.p === p));
+  feedItems.clear(); oldestStem = null;
+  hasMore = false; lastSig = "";
+  loadTasks();
+  const sn = M.Sidenav.getInstance(document.getElementById("mobileNav"));
+  if (sn) sn.close();
+}
+
 async function loadProjects() {
   const d = await (await api("/api/projects")).json();
   multiMode = d.projects.length > 0;
@@ -153,27 +205,23 @@ async function loadProjects() {
   const key = projs.join("|");
   if (key !== lastTabs) {
     lastTabs = key;
+    const cur = currentProject || d.current;
     document.getElementById("tabs").innerHTML = projs.map(p =>
-      `<a data-p="${esc(p)}" class="${p === (currentProject || d.current) ? "active" : ""}">${esc(p)}</a>`
+      `<a data-p="${esc(p)}" class="${p === cur ? "active" : ""}">${esc(p)}</a>`
     ).join("");
-    document.querySelectorAll("#tabs a").forEach(a =>
-      a.onclick = () => {
-        currentProject = a.dataset.p;
-        // the tab also switches the worker's active project (like /project
-        // in telegram) — new web tasks and devin sessions follow it
-        if (multiMode)
-          api("/api/project", {method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({project: currentProject})})
-            .then(r => r.json()).then(d => {
-              if (!d.ok) M.toast({html: "Проект: " + (d.error || "?")});
-            }).catch(() => {});
-        document.querySelectorAll("#tabs a").forEach(x =>
-          x.classList.toggle("active", x === a));
-        feedItems.clear(); oldestStem = null;
-        hasMore = false; lastSig = "";
-        loadTasks();
-      });
+    // the same list is mirrored into the mobile drawer
+    const navUl = document.getElementById("mobileNav");
+    navUl.querySelectorAll("li.proj").forEach(li => li.remove());
+    const divider = document.getElementById("navDivider");
+    projs.forEach(p => {
+      const li = document.createElement("li");
+      li.className = "proj";
+      li.innerHTML =
+        `<a data-p="${esc(p)}" class="${p === cur ? "active" : ""}">${esc(p)}</a>`;
+      navUl.insertBefore(li, divider);
+    });
+    document.querySelectorAll("#tabs a, #mobileNav li.proj a").forEach(a =>
+      a.onclick = () => selectProject(a.dataset.p));
   }
   if (!currentProject) currentProject = d.current || projs[0];
   document.getElementById("taskText").placeholder =
@@ -482,6 +530,29 @@ micBtn.onclick = async () => {
     micBtn.classList.add("rec");
   } catch (e) { M.toast({html: "Микрофон: " + e}); }
 };
+
+// mobile drawer (hamburger → projects + settings) and adaptive header:
+// on narrow screens the model/mode selects and status text physically move
+// from the navbar into the drawer — same DOM nodes, handlers stay wired
+M.Sidenav.init(document.getElementById("mobileNav"), {edge: "left"});
+const mqMobile = matchMedia("(max-width: 992px)");
+const hdrCtrls = {
+  home: document.getElementById("hdrCtrls"),
+  slot: document.getElementById("hdrCtrlsSlot"),
+  wstatus: document.getElementById("wstatus"),
+  model: document.getElementById("modelSel"),
+  mode: document.getElementById("modeSel"),
+};
+function placeHdrCtrls() {
+  if (mqMobile.matches)
+    hdrCtrls.slot.append(hdrCtrls.wstatus, hdrCtrls.model, hdrCtrls.mode);
+  else
+    hdrCtrls.home.append(hdrCtrls.mode, hdrCtrls.model, hdrCtrls.wstatus);
+}
+if (mqMobile.addEventListener)
+  mqMobile.addEventListener("change", placeHdrCtrls);
+else mqMobile.addListener(placeHdrCtrls);
+placeHdrCtrls();
 
 // profile modal (password change) + logout
 M.Modal.init(document.getElementById("profileModal"));
