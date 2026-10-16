@@ -1655,7 +1655,7 @@ def start_bot() -> None:
 
 
 def main() -> int:
-    global _bot_proc
+    global _bot_proc, _mihomo_proc
     for d in (INBOX, DONE, OUTBOX):
         d.mkdir(parents=True, exist_ok=True)
 
