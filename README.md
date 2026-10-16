@@ -182,7 +182,8 @@ nginx режет путь; работает всегда).
 На `http://server/` (тот же порт, что и webhook) — веб-морда на Materialize.
 HTTP-слой — Flask + waitress; страницы — Jinja2-шаблоны (`templates/`,
 `render_template`; путь переопределяется `TEMPLATES_DIR`), страница входа —
-на MUI (React + Material UI по CDN, форма остаётся обычным POST на `/login`).
+обычная HTML-форма в стиле Material (чистый CSS, без JS и CDN — открывается
+и на телефоне), POST на `/login`.
 Авторизация по сессии (один админ):
 
 - `/` и все `/api/*` требуют логина (`/login` — форма, сессия в cookie
@@ -242,7 +243,8 @@ HTTP-слой — Flask + waitress; страницы — Jinja2-шаблоны (
 (`{"project": "...", "text": "..."}`),
 `POST /api/stt` (octet-stream WAV → `{"ok": true, "text": "..."}`),
 `POST /api/commit` (`{"stem": "...", "action": "commit"|"skip"}`).
-Webhook Telegram работает как раньше: любой POST на не-`/api` путь.
+Webhook Telegram работает как раньше: любой POST на не-`/api` путь, включая корень `/`.
+При старте вотчер пишет в лог `last_error_message` из `getWebhookInfo`, если Telegram не смог доставить апдейты.
 
 ## Статус-страница
 

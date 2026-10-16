@@ -29,11 +29,13 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   задач, веб-интерфейс (`/` → `templates/webui.html` + JSON `/api/*`) и
   статус-страница (`/status`). HTTP-слой — Flask + waitress (`start_web`);
   страницы рендерятся через Jinja2 `render_template` из `TEMPLATES_DIR`
-  (default `/app/templates`); `/login` — форма на MUI (React+Material UI
-  по CDN), ошибка входа пробрасывается шаблону переменной `error`. Роуты под
+  (default `/app/templates`); `/login` — обычная HTML-форма в стиле
+  Material (чистый CSS, без JS и внешних CDN — React/MUI/Babel по CDN давали
+  белый экран: UMD у MUI v6 нет, на мобильном CDN может резаться), ошибка
+  входа пробрасывается шаблону переменной `error`. Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
-  auth off). Telegram webhook (`POST /<any>`) и GET /status — публичные.
+  auth off). Telegram webhook (`POST /` и `POST /<any>` — корень тоже, иначе 405) и GET /status — публичные.
   в отдельной процесс-группе (убивается по /stop).
 - Вся персистентность — в MySQL (сервис `mysql` в compose, pymysql,
   соединение per-thread через threading.local): таблица `tasks` (очередь,
