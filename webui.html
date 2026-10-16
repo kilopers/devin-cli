@@ -61,10 +61,11 @@
   .md th { background: #f1f3f4; }
   .md .hljs-addition { background: rgba(46,160,67,.18); }
   .md .hljs-deletion { background: rgba(248,81,73,.18); }
-  #modelSel { height: 30px; margin: 17px 10px 0 0; max-width: 320px;
+  #modelSel, #modeSel { height: 30px; margin: 17px 10px 0 0; max-width: 320px;
               background: rgba(255,255,255,.15); color: #fff; border: none;
               border-radius: 4px; font-size: 13px; padding: 0 6px; }
-  #modelSel option { color: #212121; }
+  #modelSel option, #modeSel option { color: #212121; }
+  #modeSel { max-width: 140px; }
 </style>
 </head>
 <body>
@@ -72,6 +73,11 @@
   <nav class="indigo">
     <div class="nav-wrapper" style="padding:0 16px">
       <span class="brand-logo" style="font-size:20px">Devin Worker</span>
+      <select id="modeSel" class="browser-default right"
+              title="режим: код — меняет репо, вопрос — только отвечает">
+        <option value="code">🛠 код</option>
+        <option value="ask">💬 вопрос</option>
+      </select>
       <select id="modelSel" class="browser-default right"
               title="модель Devin"></select>
       <span class="right" id="wstatus" style="font-size:13px;opacity:.9">…</span>
@@ -182,7 +188,8 @@ function renderFeed(items) {
       <div class="task-head">
         <span class="meta">${esc(t.name)} · ${new Date(t.created*1000).toLocaleString("ru-RU")}
           <span class="src">${esc(SRC_RU[t.source] || t.source || "")}</span>
-          ${t.model ? `<span class="src">${esc(t.model)}</span>` : ""}</span>
+          ${t.model ? `<span class="src">${esc(t.model)}</span>` : ""}
+          ${t.mode === "ask" ? '<span class="src">💬 вопрос</span>' : ""}</span>
         ${chip(t)}
       </div>
       <div class="prompt">${esc(t.prompt)}</div>
@@ -233,7 +240,20 @@ async function loadStatus() {
   document.getElementById("wstatus").textContent =
     (d.current_task ? `▶ ${d.current_task}` : "idle") +
     ` · очередь ${d.queue} · ${d.model}`;
+  const ms = document.getElementById("modeSel");
+  if (d.mode && document.activeElement !== ms) ms.value = d.mode;
 }
+
+// режим ответа — свой у веба (kv.reply_mode_web), у телеграма свой
+document.getElementById("modeSel").onchange = async e => {
+  const r = await fetch("/api/mode", {method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({mode: e.target.value})});
+  const d = await r.json();
+  M.toast({html: d.ok
+    ? (e.target.value === "ask" ? "Режим: ответ на вопрос" : "Режим: код")
+    : "Ошибка: " + (d.error || r.status)});
+};
 
 // model picker: catalog comes from `devin models list` (cached in
 // tasks/devin-models.json); the choice persists in tasks/model.txt

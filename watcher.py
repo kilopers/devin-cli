@@ -181,6 +181,7 @@ def init_db() -> None:
         task_status VARCHAR(255) NULL,
         commit_offered TINYINT NOT NULL DEFAULT 0,
         model VARCHAR(80) NULL,
+        reply_mode VARCHAR(8) NULL,
         created DOUBLE NOT NULL,
         started DOUBLE NULL,
         finished DOUBLE NULL,
@@ -199,10 +200,12 @@ def init_db() -> None:
         message_id BIGINT NULL,
         created DOUBLE NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
-    if not db_query("SELECT 1 FROM information_schema.COLUMNS"
-                    " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
-                    " AND COLUMN_NAME='model'", (MYSQL["database"],)):
-        db_exec("ALTER TABLE tasks ADD COLUMN model VARCHAR(80) NULL")
+    for col, ddl in (("model", "model VARCHAR(80) NULL"),
+                     ("reply_mode", "reply_mode VARCHAR(8) NULL")):
+        if not db_query("SELECT 1 FROM information_schema.COLUMNS"
+                        " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
+                        " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
+            db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
     # контейнер пересоздали посреди задачи — 'running' вернуть в очередь
     db_exec("UPDATE tasks SET status='queued' WHERE status='running'")
     log(f"mysql: connected to {MYSQL['host']}:{MYSQL['port']}/"
@@ -215,11 +218,13 @@ def _task_name(stem: str) -> str:
 
 def _insert_task(stem: str, prompt: str, source: str,
                  project: str | None, chat_id, created: float,
-                 model: str | None = None) -> None:
+                 model: str | None = None,
+                 reply_mode: str | None = None) -> None:
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
-            " model, created) VALUES (%s,%s,%s,%s,%s,%s,%s) "
+            " model, reply_mode, created) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
-            (stem, source, project, chat_id, prompt, model, created))
+            (stem, source, project, chat_id, prompt, model, reply_mode,
+             created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -496,7 +501,7 @@ def run_task(task: dict) -> None:
                DEVIN_MODEL=task.get("model") or current_model(),
                DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE="true" if continue_mode() else "false",
-               REPLY_MODE=reply_mode(),
+               REPLY_MODE=task.get("reply_mode") or reply_mode(),
                DEVIN_EXPORT_FILE=str(export_path))
     chat_id = task.get("chat_id")
     out_path = progress_dir / f"{stem}.out"
@@ -838,11 +843,14 @@ def enqueue_task(text: str, chat_id: int | None = None,
     stem = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}" \
            f"-{(int(time.time() * 1000) % 100000):05d}"
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
-    proj = project or (current_project(source)[0] if multi_mode() else None)
-    model = current_model(source if source in ("web", "telegram") else "")
-    _insert_task(stem, text, source, proj, chat_id, time.time(), model)
+    scope = source if source in ("web", "telegram") else ""
+    proj = project or (current_project(scope)[0] if multi_mode() else None)
+    model = current_model(scope)
+    rmode = reply_mode(scope)
+    _insert_task(stem, text, source, proj, chat_id, time.time(), model,
+                 rmode)
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
-        f"project={proj}, model={model}")
+        f"project={proj}, model={model}, mode={rmode}")
     return _task_name(stem)
 
 
@@ -999,17 +1007,22 @@ def send_session_menu(chat_id, msg_id=None) -> None:
                reply_markup={"inline_keyboard": kb})
 
 
-def reply_mode() -> str:
-    """'ask' = answer questions about the repo, no edits; 'code' = do tasks."""
+def reply_mode(scope: str = "telegram") -> str:
+    """'ask' = answer questions about the repo, no edits; 'code' = do tasks.
+    Scoped like model/project: web and telegram keep separate choices."""
+    if scope:
+        m = kv_get(f"reply_mode_{scope}")
+        if m in ("ask", "code"):
+            return m
     m = kv_get("reply_mode")
     if m in ("ask", "code"):
         return m
     return os.environ.get("REPLY_MODE", "code")
 
 
-def set_reply_mode(mode: str) -> None:
-    kv_set("reply_mode", mode)
-    log(f"reply mode -> {mode}")
+def set_reply_mode(mode: str, scope: str = "telegram") -> None:
+    kv_set(f"reply_mode_{scope}", mode)
+    log(f"reply mode -> {mode} (scope {scope})")
 
 
 def send_mode_menu(chat_id, msg_id=None) -> None:
@@ -1654,7 +1667,7 @@ def api_status() -> dict:
         "tasks_done": STATE["tasks_done"],
         "model": current_model("web"),
         "project": project_label(),
-        "mode": reply_mode(),
+        "mode": reply_mode("web"),
     }
 
 
@@ -1703,6 +1716,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "stem": stem,
             "project": r["project"] or "",
             "model": r["model"] or "",
+            "mode": r["reply_mode"] or "",
             "source": r["source"],
             "status": st,
             "task_status": r["task_status"] or "",
@@ -1766,7 +1780,8 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
-        if path in ("/api/tasks", "/api/model", "/api/project"):
+        if path in ("/api/tasks", "/api/model", "/api/project",
+                    "/api/mode"):
             length = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
@@ -1785,6 +1800,12 @@ class StatusHandler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "bad model"}, 400)
                 set_model(m, "web")
                 return self._json({"ok": True, "model": m})
+            if path == "/api/mode":
+                m = (body.get("mode") or "").strip()
+                if m not in ("ask", "code"):
+                    return self._json({"ok": False, "error": "bad mode"}, 400)
+                set_reply_mode(m, "web")
+                return self._json({"ok": True, "mode": m})
             text = (body.get("text") or "").strip()
             project = (body.get("project") or "").strip() or None
             if not text:

@@ -137,7 +137,8 @@ nginx режет путь; работает всегда).
   убивается вместе с дочерними процессами), воркер берёт следующую из очереди
 - `/mode` — режим ответа: «🛠 код» (обычная задача) или «💬 вопрос»
   (агент читает репо и отвечает, ничего не меняет и не коммитит).
-  Хранится в `kv` (`reply_mode`)
+  Хранится в `kv.reply_mode_telegram`; у веба свой — `kv.reply_mode_web`
+  (селект в шапке), задача фиксирует режим источника в `tasks.reply_mode`
 - `/status` — сводка: uptime, проект, модель, режимы, очередь,
   текущая/последняя задача, токены за 24ч и 7 дней, HEAD репо
 
@@ -199,11 +200,13 @@ nginx режет путь; работает всегда).
   `devin models list --format json` (кэш — `kv.models_cache`,
   обновляется при старте и лениво по запросу). Выбор пишется в
   `kv.model_web` — телеграмовский `/models` (`kv.model_telegram`)
-  не затрагивается.
+  не затрагивается. Рядом — селект режима «🛠 код / 💬 вопрос»
+  (`POST /api/mode` → `kv.reply_mode_web`).
 
 Старый статус-эндпоинт остался на `/status`. JSON-API: `GET /api/projects`,
 `POST /api/project` (`{"project": "..."}`), `GET /api/status`,
 `GET /api/models`, `POST /api/model` (`{"model": "swe-2"}`),
+`POST /api/mode` (`{"mode": "ask"|"code"}`),
 `GET /api/tasks?project=<имя>`, `POST /api/tasks`
 (`{"project": "...", "text": "..."}`). Webhook Telegram работает как раньше:
 любой POST на не-`/api` путь.

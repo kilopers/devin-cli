@@ -40,9 +40,11 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
 - Привязка задачи к проекту — колонка `tasks.project`; `run_task` берёт
   workdir из неё, иначе — текущий проект. Web-задачи имеют префикс `web-`,
   телеграм — `tg-`. Модель фиксируется при постановке (`tasks.model`).
-- Скоупы настроек раздельные: телеграм — `kv.project`/`kv.model_telegram`,
-  веб — `kv.project_web`/`kv.model_web`. `current_project()`/`current_model()`
-  принимают scope; в задачу попадают значения интерфейса-источника.
+- Скоупы настроек раздельные: телеграм — `kv.project`/`kv.model_telegram`/
+  `kv.reply_mode_telegram`, веб — `kv.project_web`/`kv.model_web`/
+  `kv.reply_mode_web`. `current_project()`/`current_model()`/`reply_mode()`
+  принимают scope; в задачу попадают значения интерфейса-источника
+  (`tasks.project`/`tasks.model`/`tasks.reply_mode`).
 - Новые env-переменные добавлять одновременно в `docker-compose.yml`,
   `.env.example` и README.
 - Devin CLI ставится latest (пин снят): пустой список моделей был не багом
