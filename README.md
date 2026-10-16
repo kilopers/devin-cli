@@ -182,9 +182,15 @@ nginx режет путь; работает всегда).
   (marked + DOMPurify + highlight.js по CDN). Опрос API — каждые 3 секунды;
   грузятся 5 последних задач, при прокрутке вверх AJAX догружает ещё по 5
   (`/api/tasks?limit=5&before=<stem>`).
+- В шапке — селект модели Devin: список с описаниями подтягивается из
+  `devin models list --format json` (кэш — `tasks/devin-models.json`,
+  обновляется при старте и лениво по запросу). Выбор пишется в тот же
+  `tasks/model.txt`, что и `/models` в телеграме — общий оверрайд над
+  `DEVIN_MODEL`.
 
 Старый статус-эндпоинт остался на `/status`. JSON-API: `GET /api/projects`,
-`GET /api/status`, `GET /api/tasks?project=<имя>`, `POST /api/tasks`
+`GET /api/status`, `GET /api/models`, `POST /api/model` (`{"model": "swe-2"}`),
+`GET /api/tasks?project=<имя>`, `POST /api/tasks`
 (`{"project": "...", "text": "..."}`). Привязка задача→проект хранится в
 `tasks/task-projects.json` — задачи из telegram помечаются выбранным на
 момент постановки проектом. Webhook Telegram работает как раньше: любой
@@ -215,7 +221,7 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
 | `PROJECT_DIR` | — (обязательна) | Папка проекта на сервере, монтируется в `/workspace`. Пустая → clone, с репо → pull |
-| `DEVIN_MODEL` | `swe` | Модель (`opus`, `sonnet`, `gpt`, `swe`, …) |
+| `DEVIN_MODEL` | `swe` | Модель (`opus`, `sonnet`, `gpt`, `swe`, …); перекрывается выбором в веб-селекте или `/models` (хранится в `tasks/model.txt`) |
 | `DEVIN_PERMISSION_MODE` | `bypass` | Режим разрешений Devin CLI |
 | `POLL_INTERVAL` | `30` | Период опроса `inbox/`, сек |
 | `TASK_TIMEOUT` | `7200` | Таймаут одной задачи, сек |
@@ -319,21 +325,15 @@ docker buildx build --platform linux/amd64,linux/arm64 \
     -t ghcr.io/kilopers/devin-cli:latest --push .
 ```
 
-Версия Devin CLI запинена build-аргументом `DEVIN_CLI_VERSION`
-(по умолчанию `3000.10.48`):
-
-```bash
-docker build --build-arg DEVIN_CLI_VERSION=3000.10.48 -t devin-cli .
-```
+Ставится всегда свежий Devin CLI (`install.sh` → latest).
 
 ## Замечания
 
 - Контейнер работает от `root` — файлы агента в `/workspace` будут root'овые.
 - `bypass` авто-аппрувит все команды агента — изоляция только сам контейнер.
-- **Devin CLI запинен на `3000.10.48`**: в `3000.11.x` при старте сессии сервер
-  отдаёт пустой список моделей (`Available models:` пустой, любой `--model`
-  падает с `Unknown model`), хотя `devin models list` показывает каталог, а
-  `auth status` — 858 разрешённых моделей. На `3000.10.48` та же команда
-  работает. Обновить `DEVIN_CLI_VERSION` в `Dockerfile`, когда Cognition
-  починит регрессию — проверить можно так:
+- Раньше Devin CLI был запинен на `3000.10.48` из-за пустого списка моделей
+  при создании сессии (`Available models:` пустой, любой `--model` падал с
+  `Unknown model`). Причиной оказался не релиз, а внешний HTTP-прокси: запрос
+  `GetCliModelConfigs` (remote config) через него не укладывался в таймаут.
+  Со встроенным mihomo проблема ушла — пин снят, проверка:
   `devin -p "ping" --model adaptive --respect-workspace-trust false`.

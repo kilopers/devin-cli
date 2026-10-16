@@ -65,6 +65,7 @@ YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
 PENDING_FILE = TASKS_DIR / "tg-pending.json"  # pending id -> {chat_id, text}
 MODEL_FILE = TASKS_DIR / "model.txt"  # telegram-selected DEVIN_MODEL override
+MODELS_FILE = TASKS_DIR / "devin-models.json"  # кэш каталога моделей
 COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> {chat_id, workdir}
 PROJECT_FILE = TASKS_DIR / "project.txt"  # selected project name (multi mode)
 SESSION_FILE = TASKS_DIR / "session-mode.txt"  # "continue" | "new"
@@ -853,39 +854,103 @@ def set_model(name: str) -> None:
     log(f"model switched to {name}")
 
 
+def _models_from_json(data) -> list:
+    """Normalize `devin models list --format json` to [{id, description}].
+
+    The exact schema isn't documented: families may nest runnable models
+    under "models"/"variants" and short names under "aliases". A family
+    name itself isn't a runnable model id, so it's never offered."""
+    out = []
+
+    def add(mid, desc=""):
+        if isinstance(mid, str) \
+                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", mid) \
+                and all(m["id"] != mid for m in out):
+            out.append({"id": mid,
+                        "description": desc if isinstance(desc, str) else ""})
+
+    def walk(x, desc=""):
+        if isinstance(x, dict):
+            d = x.get("description") or x.get("display_name") or desc
+            kids = next((x[k] for k in ("models", "variants", "items",
+                                        "children")
+                         if isinstance(x.get(k), list)), None)
+            mid = next((x[k] for k in ("id", "slug", "model")
+                        if isinstance(x.get(k), str)), None)
+            if mid is None and kids is None:
+                v = x.get("name")
+                if isinstance(v, str):
+                    mid = v  # leaf dict — name is the model id
+            if mid and kids is None:
+                add(mid, d)
+            fam = mid or (x.get("name") if isinstance(x.get("name"), str)
+                          else "")
+            for v in kids or []:
+                walk(v, d)
+            for a in x.get("aliases") or []:
+                if isinstance(a, str):
+                    add(a, f"алиас {fam}".strip())
+                else:
+                    walk(a, d)
+            if mid is None and kids is None:
+                for v in x.values():
+                    if isinstance(v, (dict, list)):
+                        walk(v, d)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v, desc)
+        elif isinstance(x, str):
+            add(x, desc)
+
+    walk(data)
+    return out
+
+
 def devin_models() -> list:
-    """Model slugs available to the account, via `devin models list`."""
+    """[{id, description}] via `devin models list --format json`.
+    Successful results are cached to disk — the catalog survives restarts
+    and is still served while the proxy warms up."""
     try:
         res = subprocess.run(
             ["devin", "models", "list", "--format", "json"],
             capture_output=True, text=True, timeout=30,
         )
-        data = json.loads(res.stdout)
+        models = _models_from_json(json.loads(res.stdout))
     except Exception as e:
         log(f"devin models list failed: {e}")
         return []
-    found = []
-
-    def walk(x) -> None:
-        if isinstance(x, dict):
-            for k in ("id", "slug", "model", "name"):
-                if isinstance(x.get(k), str):
-                    found.append(x[k])
-                    return
-            for v in x.values():
-                walk(v)
-        elif isinstance(x, list):
-            for v in x:
-                walk(v)
-        elif isinstance(x, str):
-            found.append(x)
-
-    walk(data)
-    models = []
-    for m in found:
-        if m and m not in models:
-            models.append(m)
+    if models:
+        try:
+            MODELS_FILE.write_text(json.dumps(models, ensure_ascii=False))
+        except OSError:
+            pass
     return models
+
+
+_models_cache: list | None = None
+_models_last_try = 0.0
+
+
+def get_models() -> list:
+    """Cached model catalog for the web UI; empty cache kicks off a
+    background `devin models list` refresh at most once a minute."""
+    global _models_cache, _models_last_try
+    if _models_cache is None:
+        try:
+            _models_cache = json.loads(MODELS_FILE.read_text())
+        except Exception:
+            _models_cache = []
+    if not _models_cache and time.time() - _models_last_try > 60:
+        _models_last_try = time.time()
+        threading.Thread(target=refresh_models, daemon=True).start()
+    return _models_cache
+
+
+def refresh_models() -> None:
+    global _models_cache
+    got = devin_models()
+    if got:
+        _models_cache = got
 
 
 def status_text() -> str:
@@ -915,8 +980,8 @@ def send_models(chat_id, msg_id=None) -> None:
                 f"Текущая модель: {cur}\nСписок недоступен — "
                 "`devin models list` не ответил. Задай явно: /model <name>")
         return
-    kb = [[{"text": ("✅ " if m == cur else "") + m,
-            "callback_data": f"model:{m}"}] for m in models[:15]]
+    kb = [[{"text": ("✅ " if m["id"] == cur else "") + m["id"],
+            "callback_data": f"model:{m['id']}"}] for m in models[:15]]
     text = f"Текущая модель: {cur}\nВыбери модель:"
     if msg_id:
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
@@ -1396,6 +1461,10 @@ def api_projects() -> dict:
             "multi": multi_mode()}
 
 
+def api_models() -> dict:
+    return {"models": get_models(), "current": current_model()}
+
+
 def _tail(path: Path, limit: int = 12000) -> str:
     try:
         data = path.read_bytes()
@@ -1504,6 +1573,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return self._json(api_status())
         if path == "/api/projects":
             return self._json(api_projects())
+        if path == "/api/models":
+            return self._json(api_models())
         if path == "/api/tasks":
             qs = urllib.parse.parse_qs(parsed.query)
             try:
@@ -1520,12 +1591,19 @@ class StatusHandler(BaseHTTPRequestHandler):
         self._legacy_status_page()
 
     def do_POST(self) -> None:
-        if urllib.parse.urlparse(self.path).path == "/api/tasks":
+        path = urllib.parse.urlparse(self.path).path
+        if path in ("/api/tasks", "/api/model"):
             length = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
             except ValueError:
                 return self._json({"ok": False, "error": "bad json"}, 400)
+            if path == "/api/model":
+                m = (body.get("model") or "").strip()
+                if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", m):
+                    return self._json({"ok": False, "error": "bad model"}, 400)
+                set_model(m)
+                return self._json({"ok": True, "model": m})
             text = (body.get("text") or "").strip()
             project = (body.get("project") or "").strip() or None
             if not text:
@@ -1665,6 +1743,8 @@ def main() -> int:
     register_webhook()
     register_commands()
     start_web()
+    # каталог моделей для веб-селекта — в фоне: mihomo может ещё мерить ноды
+    threading.Thread(target=refresh_models, daemon=True).start()
     log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
     while True:
         try:

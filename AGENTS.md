@@ -36,10 +36,13 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   `tasks/*.txt|*.json` — должно переживать рестарты контейнера.
 - Новые env-переменные добавлять одновременно в `docker-compose.yml`,
   `.env.example` и README.
-- Версия Devin CLI запинена build-аргументом `DEVIN_CLI_VERSION` в Dockerfile:
-  `3000.11.x` отдаёт пустой список моделей при создании сессии — регрессия,
-  на `3000.10.48` всё работает. Не поднимать, не проверив
-  `devin -p "ping" --model adaptive` в контейнере.
+- Devin CLI ставится latest (пин снят): пустой список моделей был не багом
+  `3000.11.x`, а таймаутом remote config (`GetCliModelConfigs`) через внешний
+  HTTP-прокси — лечится встроенным mihomo.
+- Выбор модели: веб-селект в шапке (`GET /api/models`, `POST /api/model`) и
+  `/models` в телеграме пишут в общий `tasks/model.txt` — приоритет над
+  `DEVIN_MODEL`. Каталог моделей кэшируется в `tasks/devin-models.json`
+  (обновляется при старте и лениво раз в минуту, пока пуст).
 - В образ встроен mihomo (прокси на 127.0.0.1:7890): watcher стартует его,
   если смонтирован `/mihomo/config.yaml`, и сам выставляет `*_proxy` env
   (явные HTTP(S)_PROXY в .env важнее). Шаблон — `mihomo.example.yaml`,

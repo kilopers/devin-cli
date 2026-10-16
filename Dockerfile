@@ -14,16 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка Devin CLI.
-# Версия запинена: в 3000.11.x при создании сессии сервер отдаёт пустой список
-# моделей ("Available models:" пустой, любой --model падает) — на 3000.10.48
-# та же команда работает. Поднять DEVIN_CLI_VERSION, когда Cognition починит.
-# Версионированный setup.sh ставит ровно указанную версию; он завершается
-# запуском интерактивного `devin setup` — строка вырезается, сборка не виснет.
-# Ставим в /opt/devin-install (а не в ~/.local/share/devin), чтобы примонтированный
-# data-dir не перекрыл установленный бинарник.
-ARG DEVIN_CLI_VERSION=3000.10.48
-RUN curl -fsSL "https://static.devin.ai/cli/${DEVIN_CLI_VERSION}/setup.sh" -o /tmp/devin-install.sh \
+# Установка Devin CLI (всегда latest: пустой список моделей был не версией,
+# а таймаутом remote config через внешний прокси — лечится mihomo ниже).
+# install.sh завершается запуском интерактивного `devin setup` — строка
+# вырезается, сборка не виснет. Ставим в /opt/devin-install (а не в
+# ~/.local/share/devin), чтобы примонтированный data-dir не перекрыл бинарник.
+RUN curl -fsSL https://cli.devin.ai/install.sh -o /tmp/devin-install.sh \
     && sed -i 's|"\$VERSION_DIR/bin/\$COMPILED_BIN_NAME" setup|true|' /tmp/devin-install.sh \
     && XDG_DATA_HOME=/opt/devin-install bash /tmp/devin-install.sh \
     && rm -f /tmp/devin-install.sh
