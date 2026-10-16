@@ -27,7 +27,10 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
 
 - `watcher.py` — единственный долгоживущий процесс: webhook Telegram, очередь
   задач, веб-интерфейс (`/` → `webui.html` + JSON `/api/*`) и статус-страница
-  (`/status`). Задачи запускает через `devin-task` (entrypoint.sh)
+  (`/status`). HTTP-слой — Flask + waitress (`start_web`); роуты под
+  `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
+  сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
+  auth off). Telegram webhook (`POST /<any>`) и GET /status — публичные.
   в отдельной процесс-группе (убивается по /stop).
 - Вся персистентность — в MySQL (сервис `mysql` в compose, pymysql,
   соединение per-thread через threading.local): таблица `tasks` (очередь,

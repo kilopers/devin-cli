@@ -15,10 +15,12 @@ Tasks run sequentially, oldest first.
 
 import array
 import base64
+import functools
 import html
 import json
 import os
 import re
+import secrets
 import signal
 import socket
 import struct
@@ -29,8 +31,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+from flask import Flask, Response, jsonify, redirect, request, send_file, \
+    session
+from waitress import serve
+from werkzeug.security import check_password_hash, generate_password_hash
 
 try:
     import pymysql
@@ -71,6 +77,14 @@ STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
 YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 WEBUI_FILE = Path(os.environ.get("WEBUI_FILE", "/app/webui.html"))
+LOGIN_FILE = WEBUI_FILE.parent / "login.html"
+# Web UI auth: single admin account. The password hash lives in
+# kv.admin_password_hash — seeded from WEB_ADMIN_PASSWORD on first use,
+# afterwards the profile page rewrites the kv copy (env is a bootstrap only).
+# Empty WEB_ADMIN_PASSWORD and no seeded hash = auth disabled (local dev).
+WEB_ADMIN_USER = os.environ.get("WEB_ADMIN_USER", "admin")
+WEB_ADMIN_PASSWORD = os.environ.get("WEB_ADMIN_PASSWORD", "")
+WEB_SESSION_SECRET = os.environ.get("WEB_SESSION_SECRET", "")
 # Вся персистентность — в MySQL (сервис `mysql` из compose). На диске остаются
 # только транзитные артефакты выполнения: .progress/<stem>.out (живой вывод
 # devin) и .progress/<stem>.json (экспорт транскрипта для статистики).
@@ -1809,151 +1823,241 @@ def api_tasks(project: str | None = None, limit: int = 5,
     return {"tasks": page, "has_more": has_more}
 
 
-class StatusHandler(BaseHTTPRequestHandler):
-    def _json(self, obj, code: int = 200) -> None:
-        data = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+# --- Flask app (replaces the hand-rolled BaseHTTPRequestHandler) -------------
+# Same sync/threaded model as before — waitress runs handler threads; the
+# blocking urllib/subprocess/PyMySQL code inside is unchanged.
 
-    def _serve_file(self, path: Path, ctype: str) -> bool:
-        try:
-            data = path.read_bytes()
-        except OSError:
-            return False
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-        return True
+app = Flask(__name__)
+app.config.update(SESSION_COOKIE_HTTPONLY=True,
+                  SESSION_COOKIE_SAMESITE="Lax")
 
-    def do_GET(self) -> None:
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        if path == "/api/status":
-            return self._json(api_status())
-        if path == "/api/projects":
-            return self._json(api_projects())
-        if path == "/api/models":
-            return self._json(api_models())
-        if path == "/api/tasks":
-            qs = urllib.parse.parse_qs(parsed.query)
-            try:
-                limit = int((qs.get("limit") or ["5"])[0])
-            except ValueError:
-                limit = 5
-            return self._json(api_tasks(
-                (qs.get("project") or [None])[0],
-                min(max(limit, 1), 50),
-                (qs.get("before") or [None])[0]))
-        if path in ("/", "/index.html") and \
-                self._serve_file(WEBUI_FILE, "text/html; charset=utf-8"):
-            return
-        self._legacy_status_page()
+_admin_pw_hash: str | None = None  # cached; seeded into kv from env once
 
-    def do_POST(self) -> None:
-        path = urllib.parse.urlparse(self.path).path
-        if path == "/api/stt":
-            # browser mic → WAV octet-stream → STT → {text}
-            length = int(self.headers.get("Content-Length") or 0)
-            audio = self.rfile.read(length)
-            if not audio or len(audio) > 16_000_000:
-                return self._json({"ok": False, "error": "bad audio"}, 400)
-            try:
-                text = web_transcribe(audio)
-            except Exception as e:
-                log(f"web stt failed: {e}")
-                return self._json({"ok": False, "error": str(e)[:300]}, 502)
-            log(f"web stt <- {len(audio)} bytes: {text!r}")
-            return self._json({"ok": True, "text": text})
-        if path in ("/api/tasks", "/api/model", "/api/project",
-                    "/api/mode", "/api/commit"):
-            length = int(self.headers.get("Content-Length") or 0)
-            try:
-                body = json.loads(self.rfile.read(length) or b"{}")
-            except ValueError:
-                return self._json({"ok": False, "error": "bad json"}, 400)
-            if path == "/api/project":
-                p = (body.get("project") or "").strip()
-                if p not in list_projects():
-                    return self._json({"ok": False,
-                                       "error": "unknown project"}, 400)
-                set_project(p, "web")
-                return self._json({"ok": True, "project": p})
-            if path == "/api/model":
-                m = (body.get("model") or "").strip()
-                if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", m):
-                    return self._json({"ok": False, "error": "bad model"}, 400)
-                set_model(m, "web")
-                return self._json({"ok": True, "model": m})
-            if path == "/api/mode":
-                m = (body.get("mode") or "").strip()
-                if m not in ("ask", "code"):
-                    return self._json({"ok": False, "error": "bad mode"}, 400)
-                set_reply_mode(m, "web")
-                return self._json({"ok": True, "mode": m})
-            if path == "/api/commit":
-                # same as tg commit/skip buttons: {"stem","action"}
-                stem = (body.get("stem") or "").strip()
-                action = (body.get("action") or "").strip()
-                row = task_row(stem)
-                if not row or not row.get("commit_offered"):
-                    return self._json({"ok": False,
-                                       "error": "уже обработано"}, 409)
-                db_exec("UPDATE tasks SET commit_offered=0 WHERE stem=%s",
-                        (stem,))
-                proj = row.get("project")
-                cworkdir = (PROJECTS_ROOT / proj) \
-                    if (proj and PROJECTS_ROOT
-                        and (PROJECTS_ROOT / proj).is_dir()) else WORKDIR
-                if action == "commit":
-                    result = do_commit(stem, cworkdir)
-                    log(f"web commit accepted for {stem}")
-                    return self._json({"ok": True, "result": result})
-                log(f"web commit skipped for {stem}")
-                return self._json({"ok": True, "skipped": True})
-            text = (body.get("text") or "").strip()
-            project = (body.get("project") or "").strip() or None
-            if not text:
-                return self._json({"ok": False, "error": "empty text"}, 400)
-            if len(text) > 20000:
-                return self._json({"ok": False, "error": "text too long"}, 400)
-            if multi_mode() and project not in list_projects():
-                return self._json({"ok": False, "error": "unknown project"},
-                                  400)
-            name = enqueue_task(text, project=project, prefix="web")
-            return self._json({"ok": True, "name": name}, 201)
-        # any other POST path is treated as the telegram webhook — robust
-        # against whatever path prefix the reverse proxy preserves
-        if TG_WEBHOOK_SECRET and \
-                self.headers.get("X-Telegram-Bot-Api-Secret-Token") != TG_WEBHOOK_SECRET:
-            log(f"POST {self.path}: bad webhook secret — 403")
-            self.send_response(403)
-            self.end_headers()
-            return
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length)
-        self.send_response(200)
-        self.end_headers()
-        try:
-            upd = json.loads(body)
-        except ValueError:
-            log(f"POST {self.path}: bad JSON ({length} bytes), ignored")
-            return
-        log(f"POST {self.path}: update_id={upd.get('update_id')}, "
-            f"{length} bytes")
-        threading.Thread(target=handle_update, args=(upd,), daemon=True).start()
 
-    def _legacy_status_page(self) -> None:
-        uptime = int(time.time() - _started_at)
-        h, m, s = uptime // 3600, uptime % 3600 // 60, uptime % 60
-        queue = db_query(
-            "SELECT COUNT(*) AS n FROM tasks WHERE status='queued'")[0]["n"]
-        bot = "running" if (_bot_proc and _bot_proc.poll() is None) else "off"
-        body = f"""<!doctype html><html><head><meta charset="utf-8">
+def _admin_hash() -> str:
+    """Hash of the single admin account from kv.admin_password_hash —
+    seeded there from WEB_ADMIN_PASSWORD on first use; /api/password
+    rewrites the kv copy afterwards (env is only a bootstrap)."""
+    global _admin_pw_hash
+    if _admin_pw_hash is None:
+        _admin_pw_hash = kv_get("admin_password_hash")
+        if not _admin_pw_hash and WEB_ADMIN_PASSWORD:
+            _admin_pw_hash = generate_password_hash(WEB_ADMIN_PASSWORD)
+            kv_set("admin_password_hash", _admin_pw_hash)
+            log(f"web admin password seeded from WEB_ADMIN_PASSWORD "
+                f"(user {WEB_ADMIN_USER})")
+    return _admin_pw_hash
+
+
+def login_required(fn):
+    """Session gate: 401 JSON for /api/*, redirect to /login for pages.
+    Disabled entirely when no admin password is configured."""
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        if _admin_hash() and not session.get("uid"):
+            if request.path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "auth required"}), 401
+            return redirect("/login")
+        return fn(*a, **kw)
+    return wrapper
+
+
+def _req_json() -> dict:
+    return request.get_json(silent=True) or {}
+
+
+@app.route("/login", methods=["GET", "POST"])
+def _login():
+    if not _admin_hash():          # no password configured → auth off
+        return redirect("/")
+    if request.method == "POST":
+        user = request.form.get("user", "")
+        pw = request.form.get("password", "")
+        if user == WEB_ADMIN_USER and \
+                check_password_hash(_admin_hash(), pw):
+            session["uid"] = user
+            log(f"web login ok: {user}")
+            return redirect("/")
+        log(f"web login failed: {user!r}")
+        return redirect("/login?err=1")
+    if session.get("uid"):
+        return redirect("/")
+    return send_file(LOGIN_FILE)
+
+
+@app.post("/logout")
+def _logout():
+    session.clear()
+    return redirect("/login")
+
+
+@app.post("/api/password")
+@login_required
+def _api_password():
+    global _admin_pw_hash
+    body = _req_json()
+    if not check_password_hash(_admin_hash(), body.get("current") or ""):
+        return jsonify({"ok": False,
+                        "error": "неверный текущий пароль"}), 403
+    new = body.get("new") or ""
+    if len(new) < 6:
+        return jsonify({"ok": False,
+                        "error": "новый пароль короче 6 символов"}), 400
+    _admin_pw_hash = generate_password_hash(new)
+    kv_set("admin_password_hash", _admin_pw_hash)
+    log("web admin password changed via profile")
+    return jsonify({"ok": True})
+
+
+@app.get("/api/status")
+@login_required
+def _api_status():
+    return jsonify(api_status())
+
+
+@app.get("/api/projects")
+@login_required
+def _api_projects():
+    return jsonify(api_projects())
+
+
+@app.get("/api/models")
+@login_required
+def _api_models():
+    return jsonify(api_models())
+
+
+@app.get("/api/tasks")
+@login_required
+def _api_tasks():
+    try:
+        limit = int(request.args.get("limit", "5"))
+    except ValueError:
+        limit = 5
+    return jsonify(api_tasks(request.args.get("project"),
+                             min(max(limit, 1), 50),
+                             request.args.get("before")))
+
+
+@app.post("/api/stt")
+@login_required
+def _api_stt():
+    # browser mic → WAV octet-stream → STT → {text}
+    audio = request.get_data()
+    if not audio or len(audio) > 16_000_000:
+        return jsonify({"ok": False, "error": "bad audio"}), 400
+    try:
+        text = web_transcribe(audio)
+    except Exception as e:
+        log(f"web stt failed: {e}")
+        return jsonify({"ok": False, "error": str(e)[:300]}), 502
+    log(f"web stt <- {len(audio)} bytes: {text!r}")
+    return jsonify({"ok": True, "text": text})
+
+
+@app.post("/api/project")
+@login_required
+def _api_project():
+    p = (_req_json().get("project") or "").strip()
+    if p not in list_projects():
+        return jsonify({"ok": False, "error": "unknown project"}), 400
+    set_project(p, "web")
+    return jsonify({"ok": True, "project": p})
+
+
+@app.post("/api/model")
+@login_required
+def _api_model():
+    m = (_req_json().get("model") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", m):
+        return jsonify({"ok": False, "error": "bad model"}), 400
+    set_model(m, "web")
+    return jsonify({"ok": True, "model": m})
+
+
+@app.post("/api/mode")
+@login_required
+def _api_mode():
+    m = (_req_json().get("mode") or "").strip()
+    if m not in ("ask", "code"):
+        return jsonify({"ok": False, "error": "bad mode"}), 400
+    set_reply_mode(m, "web")
+    return jsonify({"ok": True, "mode": m})
+
+
+@app.post("/api/commit")
+@login_required
+def _api_commit():
+    # same as tg commit/skip buttons: {"stem","action"}
+    body = _req_json()
+    stem = (body.get("stem") or "").strip()
+    action = (body.get("action") or "").strip()
+    row = task_row(stem)
+    if not row or not row.get("commit_offered"):
+        return jsonify({"ok": False, "error": "уже обработано"}), 409
+    db_exec("UPDATE tasks SET commit_offered=0 WHERE stem=%s", (stem,))
+    proj = row.get("project")
+    cworkdir = (PROJECTS_ROOT / proj) \
+        if (proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir()) \
+        else WORKDIR
+    if action == "commit":
+        result = do_commit(stem, cworkdir)
+        log(f"web commit accepted for {stem}")
+        return jsonify({"ok": True, "result": result})
+    log(f"web commit skipped for {stem}")
+    return jsonify({"ok": True, "skipped": True})
+
+
+@app.post("/api/tasks")
+@login_required
+def _api_task_new():
+    body = _req_json()
+    text = (body.get("text") or "").strip()
+    project = (body.get("project") or "").strip() or None
+    if not text:
+        return jsonify({"ok": False, "error": "empty text"}), 400
+    if len(text) > 20000:
+        return jsonify({"ok": False, "error": "text too long"}), 400
+    if multi_mode() and project not in list_projects():
+        return jsonify({"ok": False, "error": "unknown project"}), 400
+    name = enqueue_task(text, project=project, prefix="web")
+    return jsonify({"ok": True, "name": name}), 201
+
+
+@app.get("/")
+@app.get("/index.html")
+@login_required
+def _index():
+    return send_file(WEBUI_FILE)
+
+
+@app.post("/<path:_any>")
+def _webhook(_any):
+    # any POST to a non-/api path is the telegram webhook — robust against
+    # whatever path prefix the reverse proxy preserves; secret-token check
+    if TG_WEBHOOK_SECRET and \
+            request.headers.get("X-Telegram-Bot-Api-Secret-Token") \
+            != TG_WEBHOOK_SECRET:
+        log(f"POST /{_any}: bad webhook secret — 403")
+        return "", 403
+    body = request.get_data()
+    try:
+        upd = json.loads(body)
+    except ValueError:
+        log(f"POST /{_any}: bad JSON ({len(body)} bytes), ignored")
+        return "", 200
+    log(f"POST /{_any}: update_id={upd.get('update_id')}, {len(body)} bytes")
+    threading.Thread(target=handle_update, args=(upd,), daemon=True).start()
+    return "", 200
+
+
+def _legacy_status_page() -> str:
+    uptime = int(time.time() - _started_at)
+    h, m, s = uptime // 3600, uptime % 3600 // 60, uptime % 60
+    queue = db_query(
+        "SELECT COUNT(*) AS n FROM tasks WHERE status='queued'")[0]["n"]
+    bot = "running" if (_bot_proc and _bot_proc.poll() is None) else "off"
+    return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>devin watcher</title></head>
 <body style="font-family:monospace;max-width:640px;margin:40px auto">
 <h1>devin watcher — I'm working</h1>
@@ -1970,21 +2074,27 @@ class StatusHandler(BaseHTTPRequestHandler):
 <tr><td>telegram bot</td><td>{bot}</td></tr>
 </table>
 </body></html>"""
-        data = body.encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
 
-    def log_message(self, *args) -> None:  # keep docker logs clean
-        pass
+
+@app.get("/status")
+@app.get("/<path:_any>")   # unknown GET → status page (public, as before)
+def _status_page(_any: str = ""):
+    return Response(_legacy_status_page(), mimetype="text/html")
 
 
 def start_web() -> None:
-    server = ThreadingHTTPServer(("0.0.0.0", WEB_PORT), StatusHandler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    log(f"status page on :{WEB_PORT}")
+    # env wins; otherwise a generated key persisted in kv — sessions survive
+    # container restarts either way
+    app.secret_key = WEB_SESSION_SECRET or kv_get("session_secret") \
+        or secrets.token_hex(32)
+    kv_set("session_secret", app.secret_key)
+    threading.Thread(
+        target=lambda: serve(app, host="0.0.0.0", port=WEB_PORT,
+                             threads=16, channel_timeout=600),
+        daemon=True).start()
+    log(f"web ui on :{WEB_PORT}"
+        + ("" if _admin_hash()
+           else " — auth OFF (set WEB_ADMIN_PASSWORD to enable)"))
 
 
 def start_mihomo() -> None:

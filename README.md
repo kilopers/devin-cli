@@ -179,7 +179,19 @@ nginx режет путь; работает всегда).
 
 ## Веб-интерфейс
 
-На `http://server/` (тот же порт, что и webhook) — веб-морда на Materialize:
+На `http://server/` (тот же порт, что и webhook) — веб-морда на Materialize.
+HTTP-слой — Flask + waitress; авторизация по сессии (один админ):
+
+- `/` и все `/api/*` требуют логина (`/login` — форма, сессия в cookie
+  HttpOnly+SameSite=Lax; `secret_key` из `WEB_SESSION_SECRET` или
+  сгенерированный в `kv.session_secret` — переживает рестарты).
+- Пароль хранится хешем в `kv.admin_password_hash`: сидится из
+  `WEB_ADMIN_PASSWORD` при первом запуске, дальше меняется в профиле
+  (иконка person в шапке → модалка; `POST /api/password`). Сброс: удали
+  ключ `admin_password_hash` из kv и задай `WEB_ADMIN_PASSWORD` заново.
+  Пустой `WEB_ADMIN_PASSWORD` без сида = веб без авторизации (dev).
+- Публичными остаются `/status` и telegram-webhook (POST на любой не-`/api`
+  путь, проверка по `TELEGRAM_WEBHOOK_SECRET`).
 
 - Вкладки сверху — по одной на каждый проект из `./projects` (мультирежим).
   Клик по вкладке переключает **веб-скоуп** проекта (`POST /api/project` →

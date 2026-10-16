@@ -79,6 +79,10 @@
   <nav class="indigo">
     <div class="nav-wrapper" style="padding:0 16px">
       <span class="brand-logo" style="font-size:20px">Devin Worker</span>
+      <a id="logoutBtn" href="#" class="right" title="выйти"
+         style="padding:0 8px"><i class="material-icons">logout</i></a>
+      <a id="profileBtn" href="#" class="right" title="профиль"
+         style="padding:0 8px"><i class="material-icons">person</i></a>
       <select id="modeSel" class="browser-default right"
               title="режим: код — меняет репо, вопрос — только отвечает">
         <option value="code">🛠 код</option>
@@ -92,6 +96,26 @@
   <div id="tabs"></div>
 </header>
 <div id="feed"><div id="empty">Загрузка…</div></div>
+<div id="profileModal" class="modal" style="max-width:400px">
+  <div class="modal-content">
+    <h6 style="margin-top:0">Смена пароля</h6>
+    <div class="input-field">
+      <input id="pwCur" type="password" autocomplete="current-password">
+      <label for="pwCur">Текущий пароль</label>
+    </div>
+    <div class="input-field">
+      <input id="pwNew" type="password" autocomplete="new-password">
+      <label for="pwNew">Новый пароль (мин. 6 символов)</label>
+    </div>
+    <div class="input-field">
+      <input id="pwNew2" type="password" autocomplete="new-password">
+      <label for="pwNew2">Новый пароль ещё раз</label>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <a id="pwSave" class="btn indigo waves-effect waves-light">Сохранить</a>
+  </div>
+</div>
 <div id="composer">
   <div class="inner">
     <textarea id="taskText" placeholder="Задача для Devin по проекту «…» — Ctrl+Enter чтобы отправить"></textarea>
@@ -116,8 +140,14 @@ let hasMore = false, loadingOlder = false, lastSig = "";
 const esc = s => s.replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
+// every API call goes through this — a 401 (expired session) → /login
+const api = (u, o) => window["fetch"](u, o).then(r => {
+  if (r.status === 401) { location = "/login"; throw new Error("401"); }
+  return r;
+});
+
 async function loadProjects() {
-  const d = await (await fetch("/api/projects")).json();
+  const d = await (await api("/api/projects")).json();
   multiMode = d.projects.length > 0;
   const projs = d.projects.length ? d.projects : ["workspace"];
   const key = projs.join("|");
@@ -132,7 +162,7 @@ async function loadProjects() {
         // the tab also switches the worker's active project (like /project
         // in telegram) — new web tasks and devin sessions follow it
         if (multiMode)
-          fetch("/api/project", {method: "POST",
+          api("/api/project", {method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({project: currentProject})})
             .then(r => r.json()).then(d => {
@@ -224,7 +254,7 @@ function renderFeed(items) {
 // commit/push offer on a finished task — same actions as tg buttons
 async function commitAct(stem, action) {
   try {
-    const r = await fetch("/api/commit", {method: "POST",
+    const r = await api("/api/commit", {method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({stem, action})});
     const d = await r.json();
@@ -245,7 +275,7 @@ async function commitAct(stem, action) {
 // poll: newest page only — merges updates/new arrivals into the feed
 async function loadTasks() {
   if (!currentProject) return;
-  const d = await (await fetch("/api/tasks?project=" +
+  const d = await (await api("/api/tasks?project=" +
     encodeURIComponent(currentProject) + "&limit=5")).json();
   if (!feedItems.size) hasMore = d.has_more;
   renderFeed(mergeTasks(d.tasks));
@@ -257,7 +287,7 @@ async function loadOlder() {
   loadingOlder = true;
   renderFeed(feedNow());
   try {
-    const d = await (await fetch("/api/tasks?project=" +
+    const d = await (await api("/api/tasks?project=" +
       encodeURIComponent(currentProject) + "&limit=5&before=" +
       encodeURIComponent(oldestStem))).json();
     const prevH = document.body.scrollHeight, prevY = scrollY;
@@ -275,7 +305,7 @@ async function loadOlder() {
 addEventListener("scroll", () => { if (scrollY < 200) loadOlder(); });
 
 async function loadStatus() {
-  const d = await (await fetch("/api/status")).json();
+  const d = await (await api("/api/status")).json();
   document.getElementById("wstatus").textContent =
     (d.current_task ? `▶ ${d.current_task}` : "idle") +
     ` · очередь ${d.queue} · ${d.model}`;
@@ -285,7 +315,7 @@ async function loadStatus() {
 
 // режим ответа — свой у веба (kv.reply_mode_web), у телеграма свой
 document.getElementById("modeSel").onchange = async e => {
-  const r = await fetch("/api/mode", {method: "POST",
+  const r = await api("/api/mode", {method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({mode: e.target.value})});
   const d = await r.json();
@@ -299,7 +329,7 @@ document.getElementById("modeSel").onchange = async e => {
 let lastModelsSig = "";
 async function loadModels() {
   try {
-    const d = await (await fetch("/api/models")).json();
+    const d = await (await api("/api/models")).json();
     const sel = document.getElementById("modelSel");
     const sig = JSON.stringify(d.models) + "=>" + d.current;
     if (sig !== lastModelsSig && document.activeElement !== sel) {
@@ -316,7 +346,7 @@ async function loadModels() {
 }
 
 document.getElementById("modelSel").onchange = async e => {
-  const r = await fetch("/api/model", {method: "POST",
+  const r = await api("/api/model", {method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({model: e.target.value})});
   const d = await r.json();
@@ -332,7 +362,7 @@ async function send() {
   const btn = document.getElementById("sendBtn");
   btn.disabled = true;
   try {
-    const r = await fetch("/api/tasks", {method: "POST",
+    const r = await api("/api/tasks", {method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({project: currentProject === "workspace" ? null : currentProject,
                             text})});
@@ -406,12 +436,12 @@ micBtn.onclick = async () => {
     // длинные записи идут через async-путь — показываем прогресс сервера
     sttPoll = setInterval(async () => {
       try {
-        const s = await (await fetch("/api/status")).json();
+        const s = await (await api("/api/status")).json();
         if (s.stt_status) micStat.textContent = s.stt_status;
       } catch (e) {}
     }, 3000);
     try {
-      const resp = await fetch("/api/stt", {method: "POST",
+      const resp = await api("/api/stt", {method: "POST",
         headers: {"Content-Type": "application/octet-stream"}, body: wav});
       const d = await resp.json();
       if (d.ok && d.text.trim()) {
@@ -451,6 +481,34 @@ micBtn.onclick = async () => {
     micStat.textContent = "00:00";
     micBtn.classList.add("rec");
   } catch (e) { M.toast({html: "Микрофон: " + e}); }
+};
+
+// profile modal (password change) + logout
+M.Modal.init(document.getElementById("profileModal"));
+document.getElementById("profileBtn").onclick = e => {
+  e.preventDefault();
+  M.Modal.getInstance(document.getElementById("profileModal")).open();
+};
+document.getElementById("logoutBtn").onclick = e => {
+  e.preventDefault();
+  api("/logout", {method: "POST"}).finally(() => location = "/login");
+};
+document.getElementById("pwSave").onclick = async () => {
+  const cur = document.getElementById("pwCur"),
+        n1 = document.getElementById("pwNew"),
+        n2 = document.getElementById("pwNew2");
+  if (n1.value !== n2.value)
+    return M.toast({html: "Новые пароли не совпадают"});
+  try {
+    const d = await (await api("/api/password", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({current: cur.value, new: n1.value})})).json();
+    M.toast({html: d.ok ? "Пароль изменён" : "Ошибка: " + (d.error || "?")});
+    if (d.ok) {
+      M.Modal.getInstance(document.getElementById("profileModal")).close();
+      cur.value = n1.value = n2.value = "";
+    }
+  } catch (e) { M.toast({html: "Сеть: " + e}); }
 };
 
 document.getElementById("sendBtn").onclick = send;

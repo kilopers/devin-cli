@@ -50,6 +50,12 @@ services:
       STT_MODEL: ${STT_MODEL:-whisper-1}
       YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID:-}
       YANDEX_LANG: ${YANDEX_LANG:-ru-RU}
+      # Веб-авторизация: один админ; хеш пароля сидится в kv из
+      # WEB_ADMIN_PASSWORD при первом запуске, дальше меняется в профиле.
+      # Пустой пароль + пустой kv = вход без авторизации (только для dev).
+      WEB_ADMIN_USER: ${WEB_ADMIN_USER:-admin}
+      WEB_ADMIN_PASSWORD: ${WEB_ADMIN_PASSWORD:-}
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-}
       # Всё состояние воркера — в MySQL (сервис mysql ниже): очередь и история
       # задач, вывод devin, проект/модель/режимы, pending-подтверждения.
       MYSQL_HOST: ${MYSQL_HOST:-mysql}

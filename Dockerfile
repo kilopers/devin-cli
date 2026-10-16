@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         python3-pymysql \
         python3-cryptography \
+        python3-flask \
+        python3-waitress \
         make \
         socat \
         gnupg \
@@ -72,6 +74,7 @@ RUN mkdir -p /root/.config/devin \
 COPY entrypoint.sh /usr/local/bin/devin-task
 COPY watcher.py /app/watcher.py
 COPY webui.html /app/webui.html
+COPY login.html /app/login.html
 COPY bot.py /app/bot.py
 RUN chmod +x /usr/local/bin/devin-task /app/watcher.py /app/bot.py
 
