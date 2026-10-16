@@ -12,7 +12,9 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
 результат уходит в `tasks/outbox/` и обратно в чат. Голосовые сообщения
 распознаются Yandex SpeechKit v3 async, перед постановкой задачи текст
 подтверждается inline-кнопками. Сборка — GitHub Actions → GHCR только под `linux/amd64` (сервер x86),
-кэш слоёв `type=gha` — деплой `docker compose up -d` на сервере.
+кэш слоёв `type=gha` — деплой `docker compose up -d` на сервере;
+автообновление — `watchtower` (метка `com.centurylinklabs.watchtower.enable`,
+5 мин, требует `docker login ghcr.io` на хосте).
 
 ## Коммиты и язык
 

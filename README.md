@@ -43,6 +43,43 @@ docker compose logs -f
 
 Креды живут в `./devin-data/` — авторизация переживает перезапуски и ребилды.
 
+## Автообновление образа (watchtower)
+
+Сервис `watchtower` в compose раз в 5 минут спрашивает GHCR: если `:latest`
+пересобрался (push в main → GitHub Actions), делает `pull` и пересоздаёт
+контейнер `devin` сам — ручной `docker compose pull && up -d` не нужен.
+Учти: пересоздание — это SIGTERM контейнеру, выполняющаяся задача умрёт.
+
+Один раз на сервере нужен логин в GHCR (см. PAT ниже):
+
+```bash
+echo $GITHUB_PAT | docker login ghcr.io -u kilopers --password-stdin
+docker compose up -d   # поднимет и watchtower
+```
+
+## GitHub PAT — clone/pull/push и GHCR без SSH-ключей
+
+1. github.com → аватар → **Settings** → **Developer settings** →
+   **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**.
+2. Scopes: **`repo`** (клонировать/пулить/пушить приватные репо) и
+   **`read:packages`** (docker pull из GHCR; `write:packages` — если пушишь
+   образы вручную).
+3. Скопируй токен сразу — второй раз его не покажут.
+
+```bash
+# git по HTTPS: логин — GitHub username, пароль — токен
+git clone https://github.com/kilopers/devin-cli.git
+# чтобы не вводить каждый раз:
+git config --global credential.helper store
+
+# GHCR на сервере:
+echo <TOKEN> | docker login ghcr.io -u <github-username> --password-stdin
+```
+
+Тот же PAT используется воркеру в `GIT_REPO_URL` вида
+`https://<TOKEN>@github.com/org/repo.git` — но помни: токен остаётся
+в `.git/config` открытым текстом.
+
 ## Как кидать задачи
 
 ```bash
