@@ -24,6 +24,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -67,6 +68,8 @@ COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> {chat_id, workdir}
 PROJECT_FILE = TASKS_DIR / "project.txt"  # selected project name (multi mode)
 SESSION_FILE = TASKS_DIR / "session-mode.txt"  # "continue" | "new"
 MODE_FILE = TASKS_DIR / "reply-mode.txt"  # "code" | "ask"
+TASK_PROJECTS_FILE = TASKS_DIR / "task-projects.json"  # task stem -> project
+WEBUI_FILE = Path(os.environ.get("WEBUI_FILE", "/app/webui.html"))
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -263,7 +266,11 @@ def run_task(task: Path) -> None:
     task.rename(processing)
 
     started_ts = time.time()
-    _, workdir = current_project()
+    tproj = _load_task_projects().get(task.stem)
+    if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
+        workdir = PROJECTS_ROOT / tproj
+    else:
+        _, workdir = current_project()
     progress_dir = TASKS_DIR / ".progress"
     progress_dir.mkdir(exist_ok=True)
     export_path = progress_dir / f"{task.stem}.json"
@@ -617,11 +624,28 @@ def _save_chat(task_stem: str, chat_id: int) -> None:
     TG_CHATS_FILE.write_text(json.dumps(chats))
 
 
-def enqueue_task(text: str, chat_id: int) -> str:
-    name = f"tg-{time.strftime('%Y%m%d-%H%M%S')}-{int(time.time() * 1000) % 100000}.txt"
+def _load_task_projects() -> dict:
+    return _load_json(TASK_PROJECTS_FILE)
+
+
+def _save_task_project(task_stem: str, project: str) -> None:
+    projs = _load_task_projects()
+    projs[task_stem] = project
+    TASK_PROJECTS_FILE.write_text(json.dumps(projs))
+
+
+def enqueue_task(text: str, chat_id: int | None = None,
+                 project: str | None = None, prefix: str = "tg") -> str:
+    name = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}-{(int(time.time() * 1000) % 100000):05d}.txt"
     (INBOX / name).write_text(text)
-    _save_chat(Path(name).stem, chat_id)
-    log(f"task file {INBOX / name} written, chat_id={chat_id} remembered")
+    stem = Path(name).stem
+    if chat_id is not None:
+        _save_chat(stem, chat_id)
+    proj = project or (current_project()[0] if multi_mode() else None)
+    if proj:
+        _save_task_project(stem, proj)
+    log(f"task file {INBOX / name} written, chat_id={chat_id}, "
+        f"project={proj}")
     return name
 
 
@@ -1340,8 +1364,171 @@ def _git_head() -> str:
         return "n/a"
 
 
+# --- web UI / JSON API -------------------------------------------------------
+
+def api_status() -> dict:
+    return {
+        "uptime": int(time.time() - _started_at),
+        "queue": len(list(INBOX.glob("*.txt"))),
+        "current_task": STATE["current_task"],
+        "last_task": STATE["last_task"],
+        "last_status": STATE["last_status"],
+        "tasks_done": STATE["tasks_done"],
+        "model": current_model(),
+        "project": project_label(),
+        "mode": reply_mode(),
+    }
+
+
+def api_projects() -> dict:
+    return {"projects": list_projects(), "current": current_project()[0],
+            "multi": multi_mode()}
+
+
+def _tail(path: Path, limit: int = 12000) -> str:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    return ANSI.sub("", data[-limit:].decode(errors="replace")).strip()
+
+
+def _head(path: Path, limit: int = 300) -> str:
+    try:
+        with path.open("rb") as f:
+            return f.read(limit).decode(errors="replace")
+    except OSError:
+        return ""
+
+
+def api_tasks(project: str | None = None) -> dict:
+    """Task feed: queued (inbox), running (current), done (done/) — each with
+    its prompt and a tail of live/final output."""
+    projmap = _load_task_projects()
+    running = Path(STATE["current_task"]).stem \
+        if STATE["current_task"] else None
+    seen = {}
+    for f in sorted(INBOX.glob("*.txt"), key=lambda p: p.stat().st_mtime):
+        seen[f.stem] = (f, "queued")
+    for f in sorted(DONE.glob("*.txt"), key=lambda p: p.stat().st_mtime):
+        seen[f.stem] = (f, "done")
+    items = []
+    for stem, (f, st) in seen.items():
+        if stem == running:
+            st = "running"
+        proj = projmap.get(stem) or ""
+        # tasks without a recorded project show up under every tab
+        if project and proj and proj != project:
+            continue
+        try:
+            prompt = f.read_text(errors="replace").strip()
+        except OSError:
+            prompt = ""
+        out, tstatus = "", ""
+        if st == "running":
+            out = _tail(TASKS_DIR / ".progress" / f"{stem}.out")
+        elif st == "done":
+            resp = OUTBOX / f"{stem}.response.txt"
+            for line in _head(resp).splitlines():
+                if line.startswith("status:"):
+                    tstatus = line.split(":", 1)[1].strip()
+            raw = _tail(resp)
+            # drop the "task/status/started/====" header block when the
+            # whole response fits in the tail window
+            out = (raw.split("=" * 60, 1)[1].strip()
+                   if raw.startswith("task:") and "=" * 60 in raw else raw)
+        src = ("web" if stem.startswith("web-") else
+               "telegram" if stem.startswith("tg-") else "file")
+        items.append({
+            "name": f"{stem}.txt",
+            "stem": stem,
+            "project": proj,
+            "source": src,
+            "status": st,
+            "task_status": tstatus,
+            "created": int(f.stat().st_mtime),
+            "prompt": prompt[:2000],
+            "output": out,
+        })
+    return {"tasks": items[-80:]}
+
+
 class StatusHandler(BaseHTTPRequestHandler):
+    def _json(self, obj, code: int = 200) -> None:
+        data = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_file(self, path: Path, ctype: str) -> bool:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return False
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+        return True
+
     def do_GET(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        if path == "/api/status":
+            return self._json(api_status())
+        if path == "/api/projects":
+            return self._json(api_projects())
+        if path == "/api/tasks":
+            qs = urllib.parse.parse_qs(parsed.query)
+            return self._json(api_tasks((qs.get("project") or [None])[0]))
+        if path in ("/", "/index.html") and \
+                self._serve_file(WEBUI_FILE, "text/html; charset=utf-8"):
+            return
+        self._legacy_status_page()
+
+    def do_POST(self) -> None:
+        if urllib.parse.urlparse(self.path).path == "/api/tasks":
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except ValueError:
+                return self._json({"ok": False, "error": "bad json"}, 400)
+            text = (body.get("text") or "").strip()
+            project = (body.get("project") or "").strip() or None
+            if not text:
+                return self._json({"ok": False, "error": "empty text"}, 400)
+            if len(text) > 20000:
+                return self._json({"ok": False, "error": "text too long"}, 400)
+            if multi_mode() and project not in list_projects():
+                return self._json({"ok": False, "error": "unknown project"},
+                                  400)
+            name = enqueue_task(text, project=project, prefix="web")
+            return self._json({"ok": True, "name": name}, 201)
+        # any other POST path is treated as the telegram webhook — robust
+        # against whatever path prefix the reverse proxy preserves
+        if TG_WEBHOOK_SECRET and \
+                self.headers.get("X-Telegram-Bot-Api-Secret-Token") != TG_WEBHOOK_SECRET:
+            log(f"POST {self.path}: bad webhook secret — 403")
+            self.send_response(403)
+            self.end_headers()
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length)
+        self.send_response(200)
+        self.end_headers()
+        try:
+            upd = json.loads(body)
+        except ValueError:
+            log(f"POST {self.path}: bad JSON ({length} bytes), ignored")
+            return
+        log(f"POST {self.path}: update_id={upd.get('update_id')}, "
+            f"{length} bytes")
+        threading.Thread(target=handle_update, args=(upd,), daemon=True).start()
+
+    def _legacy_status_page(self) -> None:
         uptime = int(time.time() - _started_at)
         h, m, s = uptime // 3600, uptime % 3600 // 60, uptime % 60
         queue = len(list(INBOX.glob("*.txt")))
@@ -1369,28 +1556,6 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
-
-    def do_POST(self) -> None:
-        # any POST path is treated as the telegram webhook — robust against
-        # whatever path prefix the reverse proxy preserves
-        if TG_WEBHOOK_SECRET and \
-                self.headers.get("X-Telegram-Bot-Api-Secret-Token") != TG_WEBHOOK_SECRET:
-            log(f"POST {self.path}: bad webhook secret — 403")
-            self.send_response(403)
-            self.end_headers()
-            return
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length)
-        self.send_response(200)
-        self.end_headers()
-        try:
-            upd = json.loads(body)
-        except ValueError:
-            log(f"POST {self.path}: bad JSON ({length} bytes), ignored")
-            return
-        log(f"POST {self.path}: update_id={upd.get('update_id')}, "
-            f"{length} bytes")
-        threading.Thread(target=handle_update, args=(upd,), daemon=True).start()
 
     def log_message(self, *args) -> None:  # keep docker logs clean
         pass
