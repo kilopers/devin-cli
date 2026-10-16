@@ -299,7 +299,21 @@ docker buildx build --platform linux/amd64,linux/arm64 \
     -t ghcr.io/kilopers/devin-cli:latest --push .
 ```
 
+Версия Devin CLI запинена build-аргументом `DEVIN_CLI_VERSION`
+(по умолчанию `3000.10.48`):
+
+```bash
+docker build --build-arg DEVIN_CLI_VERSION=3000.10.48 -t devin-cli .
+```
+
 ## Замечания
 
 - Контейнер работает от `root` — файлы агента в `/workspace` будут root'овые.
 - `bypass` авто-аппрувит все команды агента — изоляция только сам контейнер.
+- **Devin CLI запинен на `3000.10.48`**: в `3000.11.x` при старте сессии сервер
+  отдаёт пустой список моделей (`Available models:` пустой, любой `--model`
+  падает с `Unknown model`), хотя `devin models list` показывает каталог, а
+  `auth status` — 858 разрешённых моделей. На `3000.10.48` та же команда
+  работает. Обновить `DEVIN_CLI_VERSION` в `Dockerfile`, когда Cognition
+  починит регрессию — проверить можно так:
+  `devin -p "ping" --model adaptive --respect-workspace-trust false`.

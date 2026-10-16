@@ -36,6 +36,10 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   `tasks/*.txt|*.json` — должно переживать рестарты контейнера.
 - Новые env-переменные добавлять одновременно в `docker-compose.yml`,
   `.env.example` и README.
+- Версия Devin CLI запинена build-аргументом `DEVIN_CLI_VERSION` в Dockerfile:
+  `3000.11.x` отдаёт пустой список моделей при создании сессии — регрессия,
+  на `3000.10.48` всё работает. Не поднимать, не проверив
+  `devin -p "ping" --model adaptive` в контейнере.
 
 ## Проверка перед коммитом
 
