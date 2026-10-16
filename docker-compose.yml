@@ -4,6 +4,9 @@ services:
     image: ghcr.io/kilopers/devin-cli:latest
     restart: unless-stopped
     entrypoint: ["python3", "/app/watcher.py"]
+    depends_on:
+      mysql:
+        condition: service_healthy
     labels:
       # watchtower watches only containers with this label
       - "com.centurylinklabs.watchtower.enable=true"
@@ -47,6 +50,13 @@ services:
       STT_MODEL: ${STT_MODEL:-whisper-1}
       YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID:-}
       YANDEX_LANG: ${YANDEX_LANG:-ru-RU}
+      # Всё состояние воркера — в MySQL (сервис mysql ниже): очередь и история
+      # задач, вывод devin, проект/модель/режимы, pending-подтверждения.
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_USER:-devin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?задай в .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-devin_worker}
       # Optional outbound proxy — devin API and telegram only; git always
       # goes direct. Empty = direct connections.
       HTTP_PROXY: ${HTTP_PROXY:-}
@@ -66,6 +76,27 @@ services:
       - ./mihomo:/mihomo
       # Git over SSH (optional — comment out if you push over HTTPS).
       - ${HOME}/.ssh:/root/.ssh:ro
+
+  # MySQL: очередь/история задач и всё состояние воркера (таблицы создаются
+  # сами при старте; файлы tasks/*.txt|*.json импортируются один раз).
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-devin_worker}
+      MYSQL_USER: ${MYSQL_USER:-devin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?задай в .env}
+      MYSQL_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1",
+             "-u", "root", "-p$${MYSQL_RANDOM_ROOT_PASSWORD:-x}"]
+      # random root password: ping needs no auth for the check below
+      start_period: 20s
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   # Auto-deploy: polls GHCR every 5 min; when :latest changes, pulls it and
   # recreates the devin container (SIGTERM — a task in flight is killed).

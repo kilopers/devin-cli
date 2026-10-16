@@ -93,7 +93,7 @@
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
-let currentProject = null, lastTabs = "";
+let currentProject = null, lastTabs = "", multiMode = false;
 let feedItems = new Map(), oldestStem = null;
 let hasMore = false, loadingOlder = false, lastSig = "";
 
@@ -102,6 +102,7 @@ const esc = s => s.replace(/[&<>"']/g, c =>
 
 async function loadProjects() {
   const d = await (await fetch("/api/projects")).json();
+  multiMode = d.projects.length > 0;
   const projs = d.projects.length ? d.projects : ["workspace"];
   const key = projs.join("|");
   if (key !== lastTabs) {
@@ -112,6 +113,15 @@ async function loadProjects() {
     document.querySelectorAll("#tabs a").forEach(a =>
       a.onclick = () => {
         currentProject = a.dataset.p;
+        // the tab also switches the worker's active project (like /project
+        // in telegram) — new web tasks and devin sessions follow it
+        if (multiMode)
+          fetch("/api/project", {method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({project: currentProject})})
+            .then(r => r.json()).then(d => {
+              if (!d.ok) M.toast({html: "Проект: " + (d.error || "?")});
+            }).catch(() => {});
         document.querySelectorAll("#tabs a").forEach(x =>
           x.classList.toggle("active", x === a));
         feedItems.clear(); oldestStem = null;

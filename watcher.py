@@ -30,6 +30,12 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+try:
+    import pymysql
+    import pymysql.cursors
+except ImportError:
+    pymysql = None
+
 TASKS_DIR = Path(os.environ.get("TASKS_DIR", "/tasks"))
 INBOX = TASKS_DIR / "inbox"
 DONE = TASKS_DIR / "done"
@@ -62,16 +68,20 @@ STT_BASE_URL = os.environ.get("STT_BASE_URL", "https://api.openai.com/v1")
 STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
 YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
-TG_CHATS_FILE = TASKS_DIR / "tg-chats.json"  # task stem -> chat_id
-PENDING_FILE = TASKS_DIR / "tg-pending.json"  # pending id -> {chat_id, text}
-MODEL_FILE = TASKS_DIR / "model.txt"  # telegram-selected DEVIN_MODEL override
-MODELS_FILE = TASKS_DIR / "devin-models.json"  # кэш каталога моделей
-COMMITS_FILE = TASKS_DIR / "tg-commits.json"  # task stem -> {chat_id, workdir}
-PROJECT_FILE = TASKS_DIR / "project.txt"  # selected project name (multi mode)
-SESSION_FILE = TASKS_DIR / "session-mode.txt"  # "continue" | "new"
-MODE_FILE = TASKS_DIR / "reply-mode.txt"  # "code" | "ask"
-TASK_PROJECTS_FILE = TASKS_DIR / "task-projects.json"  # task stem -> project
 WEBUI_FILE = Path(os.environ.get("WEBUI_FILE", "/app/webui.html"))
+# Вся персистентность — в MySQL (сервис `mysql` из compose). На диске остаются
+# только транзитные артефакты выполнения: .progress/<stem>.out (живой вывод
+# devin) и .progress/<stem>.json (экспорт транскрипта для статистики).
+MYSQL = {
+    "host": os.environ.get("MYSQL_HOST", "mysql"),
+    "port": int(os.environ.get("MYSQL_PORT", "3306")),
+    "user": os.environ.get("MYSQL_USER", "devin"),
+    "password": os.environ.get("MYSQL_PASSWORD", ""),
+    "database": os.environ.get("MYSQL_DATABASE", "devin_worker"),
+    "charset": "utf8mb4",
+    "autocommit": True,
+    "cursorclass": pymysql.cursors.DictCursor if pymysql else None,
+}
 # mihomo (Clash Meta) — встроенный прокси: бинарь в образе, конфиг монтируется
 # с хоста. Стартует только при наличии config.yaml, слушает 127.0.0.1:7890.
 MIHOMO_DIR = Path(os.environ.get("MIHOMO_DIR", "/mihomo"))
@@ -105,6 +115,189 @@ STATE = {
 
 def log(msg: str) -> None:
     print(f"[watcher] {time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", flush=True)
+
+
+# --- MySQL ------------------------------------------------------------------
+# Одно соединение на поток (вотчер многопоточный: http-сервер, telegram-
+# колбэки, прогресс-тред). autocommit — транзакции не нужны, запросы точечные.
+
+_db_tls = threading.local()
+
+
+def db():
+    """Per-thread pymysql connection with transparent reconnect."""
+    conn = getattr(_db_tls, "conn", None)
+    if conn is None or not conn.open:
+        conn = pymysql.connect(**MYSQL)
+        _db_tls.conn = conn
+    conn.ping(reconnect=True)
+    return conn
+
+
+def db_query(sql: str, params=()) -> list:
+    with db().cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+
+def db_exec(sql: str, params=()) -> int:
+    with db().cursor() as cur:
+        return cur.execute(sql, params)
+
+
+def kv_get(key: str, default: str = "") -> str:
+    rows = db_query("SELECT v FROM kv WHERE k=%s", (key,))
+    return rows[0]["v"] if rows else default
+
+
+def kv_set(key: str, val: str) -> None:
+    db_exec("INSERT INTO kv (k, v) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE v=VALUES(v)", (key, val))
+
+
+def init_db() -> None:
+    """Create tables and retry until MySQL is up (first boot takes a while)."""
+    if pymysql is None:
+        log("FATAL: pymysql not installed — worker cannot store state")
+        raise SystemExit(1)
+    for attempt in range(1, 61):
+        try:
+            db()
+            break
+        except Exception as e:
+            log(f"mysql not ready ({e}); retry {attempt}/60")
+            time.sleep(2)
+    else:
+        log("FATAL: mysql unreachable after 120s — giving up")
+        raise SystemExit(1)
+    db_exec("""CREATE TABLE IF NOT EXISTS tasks (
+        stem VARCHAR(80) PRIMARY KEY,
+        source VARCHAR(16) NOT NULL DEFAULT 'file',
+        project VARCHAR(255) NULL,
+        chat_id BIGINT NULL,
+        status ENUM('queued','running','done') NOT NULL DEFAULT 'queued',
+        prompt MEDIUMTEXT NOT NULL,
+        output MEDIUMTEXT NULL,
+        task_status VARCHAR(255) NULL,
+        commit_offered TINYINT NOT NULL DEFAULT 0,
+        created DOUBLE NOT NULL,
+        started DOUBLE NULL,
+        finished DOUBLE NULL,
+        KEY idx_status (status),
+        KEY idx_created (created)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    db_exec("""CREATE TABLE IF NOT EXISTS kv (
+        k VARCHAR(64) PRIMARY KEY,
+        v MEDIUMTEXT
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    db_exec("""CREATE TABLE IF NOT EXISTS pending (
+        pid VARCHAR(64) PRIMARY KEY,
+        chat_id BIGINT NOT NULL,
+        text MEDIUMTEXT NOT NULL,
+        project VARCHAR(255) NULL,
+        message_id BIGINT NULL,
+        created DOUBLE NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # контейнер пересоздали посреди задачи — 'running' вернуть в очередь
+    db_exec("UPDATE tasks SET status='queued' WHERE status='running'")
+    log(f"mysql: connected to {MYSQL['host']}:{MYSQL['port']}/"
+        f"{MYSQL['database']}, schema ready")
+
+
+def _task_name(stem: str) -> str:
+    return f"{stem}.txt"
+
+
+def _insert_task(stem: str, prompt: str, source: str,
+                 project: str | None, chat_id, created: float) -> None:
+    db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt, "
+            "created) VALUES (%s,%s,%s,%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
+            (stem, source, project, chat_id, prompt, created))
+
+
+def task_row(stem: str) -> dict | None:
+    rows = db_query("SELECT * FROM tasks WHERE stem=%s", (stem,))
+    return rows[0] if rows else None
+
+
+def ingest_inbox_files() -> None:
+    """Externally dropped *.txt files still work: import into the tasks
+    table, then remove the file (queue itself lives in MySQL now)."""
+    for f in sorted(INBOX.glob("*.txt"), key=lambda p: p.stat().st_mtime):
+        try:
+            stem = f.stem
+            src = {"tg": "telegram", "web": "web"}.get(
+                stem.split("-", 1)[0], "file")
+            proj = current_project()[0] if multi_mode() else None
+            _insert_task(stem, f.read_text(errors="replace"), src,
+                         proj, None, f.stat().st_mtime)
+            f.unlink()
+            log(f"inbox file {f.name} imported into mysql")
+        except Exception as e:
+            log(f"inbox import of {f.name} failed: {e}")
+
+
+def migrate_files_to_db() -> None:
+    """One-time import of the old file-based state (guarded by a kv flag):
+    inbox/done/outbox + task-projects, tg-chats, pending and the small
+    *.txt settings. Old files are left on disk untouched."""
+    if kv_get("files_migrated"):
+        return
+    kv_set("files_migrated", "1")
+    try:
+        chats = _load_json(TASKS_DIR / "tg-chats.json")
+        projs = _load_json(TASKS_DIR / "task-projects.json")
+        seen = set()
+        for d, st in ((INBOX, "queued"), (DONE, "done")):
+            for f in sorted(d.glob("*.txt"),
+                            key=lambda p: p.stat().st_mtime):
+                stem = f.stem
+                seen.add(stem)
+                src = {"tg": "telegram", "web": "web"}.get(
+                    stem.split("-", 1)[0], "file")
+                out = status = None
+                if st == "done":
+                    resp = OUTBOX / f"{stem}.response.txt"
+                    if resp.exists():
+                        raw = resp.read_text(errors="replace")
+                        for line in raw[:400].splitlines():
+                            if line.startswith("status:"):
+                                status = line.split(":", 1)[1].strip()
+                        out = (raw.split("=" * 60, 1)[1].strip()
+                               if "=" * 60 in raw else raw)
+                db_exec("INSERT INTO tasks (stem, source, project, chat_id,"
+                        " status, prompt, output, task_status, created)"
+                        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                        " ON DUPLICATE KEY UPDATE stem=stem",
+                        (stem, src, projs.get(stem), chats.get(stem), st,
+                         f.read_text(errors="replace"), out, status,
+                         f.stat().st_mtime))
+        # .processing files were running when the container died — requeue
+        for f in INBOX.glob("*.txt.processing"):
+            db_exec("UPDATE tasks SET status='queued' WHERE stem=%s",
+                    (f.name[:-len(".txt.processing")],))
+        for pid, e in _load_json(TASKS_DIR / "tg-pending.json").items():
+            db_exec("INSERT INTO pending (pid, chat_id, text, project,"
+                    " message_id, created) VALUES (%s,%s,%s,%s,%s,%s)"
+                    " ON DUPLICATE KEY UPDATE text=VALUES(text)",
+                    (str(pid), e.get("chat_id") or 0, e.get("text") or "",
+                     e.get("project"), e.get("message_id"),
+                     float(e.get("id") or time.time())))
+        for fname, key in (("model.txt", "model"),
+                           ("project.txt", "project"),
+                           ("session-mode.txt", "session_mode"),
+                           ("reply-mode.txt", "reply_mode")):
+            p = TASKS_DIR / fname
+            if p.exists():
+                kv_set(key, p.read_text().strip())
+        p = TASKS_DIR / "devin-models.json"
+        if p.exists():
+            kv_set("models_cache", p.read_text())
+        log(f"file state migrated into mysql ({len(seen)} tasks)")
+    except Exception as e:
+        kv_set("files_migrated", "")
+        log(f"file->mysql migration failed (will retry): {e}")
 
 
 def _tool_line(tc: dict) -> str:
@@ -266,33 +459,40 @@ def kill_task() -> None:
         _task_proc.kill()
 
 
-def next_task() -> Path | None:
-    tasks = sorted(INBOX.glob("*.txt"), key=lambda p: p.stat().st_mtime)
-    return tasks[0] if tasks else None
+def next_task() -> dict | None:
+    ingest_inbox_files()
+    rows = db_query("SELECT * FROM tasks WHERE status='queued'"
+                    " ORDER BY created LIMIT 1")
+    return rows[0] if rows else None
 
 
-def run_task(task: Path) -> None:
-    log(f"processing {task.name}")
-    STATE["current_task"] = task.name
-    processing = task.with_name(task.name + ".processing")
-    task.rename(processing)
+def run_task(task: dict) -> None:
+    stem, name = task["stem"], _task_name(task["stem"])
+    log(f"processing {name}")
+    STATE["current_task"] = name
+    db_exec("UPDATE tasks SET status='running', started=%s WHERE stem=%s",
+            (time.time(), stem))
 
     started_ts = time.time()
-    tproj = _load_task_projects().get(task.stem)
+    tproj = task.get("project")
     if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
         workdir = PROJECTS_ROOT / tproj
     else:
         _, workdir = current_project()
     progress_dir = TASKS_DIR / ".progress"
     progress_dir.mkdir(exist_ok=True)
-    export_path = progress_dir / f"{task.stem}.json"
-    env = dict(os.environ, DEVIN_TASK_FILE=str(processing),
+    export_path = progress_dir / f"{stem}.json"
+    # devin-task reads the prompt from a file — keep that contract via a
+    # transient file in .progress/
+    task_file = progress_dir / f"{stem}.task.txt"
+    task_file.write_text(task["prompt"], errors="replace")
+    env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
                DEVIN_MODEL=current_model(), DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE="true" if continue_mode() else "false",
                REPLY_MODE=reply_mode(),
                DEVIN_EXPORT_FILE=str(export_path))
-    chat_id = _load_chats().get(task.stem)
-    out_path = progress_dir / f"{task.stem}.out"
+    chat_id = task.get("chat_id")
+    out_path = progress_dir / f"{stem}.out"
     global _task_proc
     try:
         # stdout+stderr go to a file the progress thread tails — devin -p
@@ -323,19 +523,13 @@ def run_task(task: Path) -> None:
     finally:
         _task_proc = None
 
-    response = OUTBOX / f"{task.stem}.response.txt"
-    response.write_text(
-        f"task:    {task.name}\n"
-        f"status:  {status}\n"
-        f"started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"{'=' * 60}\n\n{body}"
-    )
-    processing.rename(DONE / task.name)
-    STATE.update(current_task=None, last_task=task.name,
+    db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
+            " finished=%s WHERE stem=%s", (body, status, time.time(), stem))
+    STATE.update(current_task=None, last_task=name,
                  last_status=status, tasks_done=STATE["tasks_done"] + 1)
-    log(f"done {task.name} -> outbox/{response.name} ({status})")
+    log(f"done {name} ({status}), output -> mysql")
     if TG_TOKEN:
-        notify_chat(task.stem, f"{task.name}\n{status}\n\n{response.read_text()[-3500:]}")
+        notify_chat(stem, f"{name}\n{status}\n\n{body[-3500:]}")
         if chat_id:
             send_task_stats(chat_id, started_ts)
             offer_commit(task, chat_id, workdir)
@@ -626,69 +820,51 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
-def _load_chats() -> dict:
-    return _load_json(TG_CHATS_FILE)
-
-
-def _save_chat(task_stem: str, chat_id: int) -> None:
-    chats = _load_chats()
-    chats[task_stem] = chat_id
-    TG_CHATS_FILE.write_text(json.dumps(chats))
-
-
-def _load_task_projects() -> dict:
-    return _load_json(TASK_PROJECTS_FILE)
-
-
-def _save_task_project(task_stem: str, project: str) -> None:
-    projs = _load_task_projects()
-    projs[task_stem] = project
-    TASK_PROJECTS_FILE.write_text(json.dumps(projs))
-
-
 def enqueue_task(text: str, chat_id: int | None = None,
                  project: str | None = None, prefix: str = "tg") -> str:
-    name = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}-{(int(time.time() * 1000) % 100000):05d}.txt"
-    (INBOX / name).write_text(text)
-    stem = Path(name).stem
-    if chat_id is not None:
-        _save_chat(stem, chat_id)
+    stem = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}" \
+           f"-{(int(time.time() * 1000) % 100000):05d}"
     proj = project or (current_project()[0] if multi_mode() else None)
-    if proj:
-        _save_task_project(stem, proj)
-    log(f"task file {INBOX / name} written, chat_id={chat_id}, "
+    source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
+    _insert_task(stem, text, source, proj, chat_id, time.time())
+    log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
         f"project={proj}")
-    return name
+    return _task_name(stem)
 
 
 def _save_pending(entry: dict) -> str:
-    pending = _load_json(PENDING_FILE)
     pid = str(entry.get("id") or int(time.time() * 1000))
-    pending[pid] = entry
-    PENDING_FILE.write_text(json.dumps(pending))
+    db_exec("INSERT INTO pending (pid, chat_id, text, project, message_id,"
+            " created) VALUES (%s,%s,%s,%s,%s,%s)"
+            " ON DUPLICATE KEY UPDATE text=VALUES(text),"
+            " message_id=VALUES(message_id)",
+            (pid, entry.get("chat_id") or 0, entry.get("text") or "",
+             entry.get("project"), entry.get("message_id"), time.time()))
     return pid
 
 
 def _pop_pending(pid: str) -> dict | None:
-    pending = _load_json(PENDING_FILE)
-    entry = pending.pop(pid, None)
-    PENDING_FILE.write_text(json.dumps(pending))
-    return entry
+    rows = db_query("SELECT * FROM pending WHERE pid=%s", (str(pid),))
+    if not rows:
+        return None
+    db_exec("DELETE FROM pending WHERE pid=%s", (str(pid),))
+    return dict(rows[0], id=pid)
 
 
 def _pending_for_chat(chat_id) -> tuple:
     """Newest open pending entry for this chat, or (None, None)."""
-    found = (None, None)
-    for pid, e in _load_json(PENDING_FILE).items():
-        if str(e.get("chat_id")) == str(chat_id):
-            found = (pid, e)
-    return found
+    rows = db_query("SELECT * FROM pending WHERE chat_id=%s"
+                    " ORDER BY created DESC LIMIT 1", (chat_id,))
+    if not rows:
+        return None, None
+    return rows[0]["pid"], dict(rows[0], id=rows[0]["pid"])
 
 
 def _update_pending(pid: str, entry: dict) -> None:
-    pending = _load_json(PENDING_FILE)
-    pending[pid] = entry
-    PENDING_FILE.write_text(json.dumps(pending))
+    db_exec("UPDATE pending SET text=%s, project=%s, message_id=%s"
+            " WHERE pid=%s",
+            (entry.get("text") or "", entry.get("project"),
+             entry.get("message_id"), str(pid)))
 
 
 def _pending_text(entry: dict) -> str:
@@ -740,17 +916,14 @@ def current_project() -> tuple:
     """(project name or None, workdir Path). Single mode: (None, WORKDIR)."""
     if not multi_mode():
         return None, WORKDIR
-    try:
-        name = PROJECT_FILE.read_text().strip()
-    except Exception:
-        name = ""
+    name = kv_get("project")
     if name and (PROJECTS_ROOT / name).is_dir():
         return name, PROJECTS_ROOT / name
     return None, PROJECTS_ROOT
 
 
 def set_project(name: str) -> None:
-    PROJECT_FILE.write_text(name)
+    kv_set("project", name)
     log(f"project switched to {name}")
 
 
@@ -778,15 +951,15 @@ def send_projects(chat_id, msg_id=None) -> None:
 
 
 def continue_mode() -> bool:
-    """Session mode for the next task: telegram override wins over env."""
-    try:
-        return SESSION_FILE.read_text().strip() == "continue"
-    except Exception:
-        return os.environ.get("DEVIN_CONTINUE", "").lower() == "true"
+    """Session mode for the next task: UI/telegram override wins over env."""
+    m = kv_get("session_mode")
+    if m in ("continue", "new"):
+        return m == "continue"
+    return os.environ.get("DEVIN_CONTINUE", "").lower() == "true"
 
 
 def set_session_mode(mode: str) -> None:
-    SESSION_FILE.write_text(mode)
+    kv_set("session_mode", mode)
     log(f"session mode -> {mode}")
 
 
@@ -808,17 +981,14 @@ def send_session_menu(chat_id, msg_id=None) -> None:
 
 def reply_mode() -> str:
     """'ask' = answer questions about the repo, no edits; 'code' = do tasks."""
-    try:
-        m = MODE_FILE.read_text().strip()
-        if m in ("ask", "code"):
-            return m
-    except Exception:
-        pass
+    m = kv_get("reply_mode")
+    if m in ("ask", "code"):
+        return m
     return os.environ.get("REPLY_MODE", "code")
 
 
 def set_reply_mode(mode: str) -> None:
-    MODE_FILE.write_text(mode)
+    kv_set("reply_mode", mode)
     log(f"reply mode -> {mode}")
 
 
@@ -839,18 +1009,12 @@ def send_mode_menu(chat_id, msg_id=None) -> None:
 
 
 def current_model() -> str:
-    """Model for the next task: telegram override wins over DEVIN_MODEL env."""
-    try:
-        m = MODEL_FILE.read_text().strip()
-        if m:
-            return m
-    except Exception:
-        pass
-    return os.environ.get("DEVIN_MODEL", "swe")
+    """Model for the next task: UI/telegram override wins over DEVIN_MODEL."""
+    return kv_get("model") or os.environ.get("DEVIN_MODEL", "swe")
 
 
 def set_model(name: str) -> None:
-    MODEL_FILE.write_text(name.strip())
+    kv_set("model", name.strip())
     log(f"model switched to {name}")
 
 
@@ -921,8 +1085,8 @@ def devin_models() -> list:
         return []
     if models:
         try:
-            MODELS_FILE.write_text(json.dumps(models, ensure_ascii=False))
-        except OSError:
+            kv_set("models_cache", json.dumps(models, ensure_ascii=False))
+        except Exception:
             pass
     return models
 
@@ -937,7 +1101,7 @@ def get_models() -> list:
     global _models_cache, _models_last_try
     if _models_cache is None:
         try:
-            _models_cache = json.loads(MODELS_FILE.read_text())
+            _models_cache = json.loads(kv_get("models_cache") or "[]")
         except Exception:
             _models_cache = []
     if not _models_cache and time.time() - _models_last_try > 60:
@@ -956,7 +1120,8 @@ def refresh_models() -> None:
 def status_text() -> str:
     uptime = int(time.time() - _started_at)
     h, m = uptime // 3600, uptime % 3600 // 60
-    queue = len(list(INBOX.glob("*.txt")))
+    queue = db_query(
+        "SELECT COUNT(*) AS n FROM tasks WHERE status='queued'")[0]["n"]
     day, nday, week, nweek = usage_totals()
     sess = "continue" if continue_mode() else "new"
     return ("📊 Статус воркера\n"
@@ -1065,20 +1230,7 @@ def _git(workdir, *args) -> tuple:
     return res.returncode, (res.stdout + res.stderr).strip()
 
 
-def _save_commit_pending(stem: str, chat_id, workdir) -> None:
-    pending = _load_json(COMMITS_FILE)
-    pending[stem] = {"chat_id": chat_id, "workdir": str(workdir)}
-    COMMITS_FILE.write_text(json.dumps(pending))
-
-
-def _pop_commit_pending(stem: str) -> dict | None:
-    pending = _load_json(COMMITS_FILE)
-    entry = pending.pop(stem, None)
-    COMMITS_FILE.write_text(json.dumps(pending))
-    return entry
-
-
-def offer_commit(task: Path, chat_id, workdir) -> None:
+def offer_commit(task: dict, chat_id, workdir) -> None:
     """After a task: show repo state with commit/push/skip buttons."""
     try:
         _, st = _git(workdir, "status", "--porcelain")
@@ -1094,14 +1246,15 @@ def offer_commit(task: Path, chat_id, workdir) -> None:
         label = f"✅ Закоммитить и запушить ({dirty} файл(ов))"
     else:
         label = f"⬆ Запушить {unpushed} коммит(ов)"
-    _save_commit_pending(task.stem, chat_id, workdir)
+    stem = task["stem"]
+    db_exec("UPDATE tasks SET commit_offered=1 WHERE stem=%s", (stem,))
     tg_api("sendMessage", chat_id=chat_id,
            text=f"В репо: {dirty} незакоммиченных, {unpushed} незапушенных. Что делаем?",
            reply_markup={"inline_keyboard": [
-               [{"text": label, "callback_data": f"commit:{task.stem}"}],
-               [{"text": "⏭ Пропустить", "callback_data": f"skip:{task.stem}"}],
+               [{"text": label, "callback_data": f"commit:{stem}"}],
+               [{"text": "⏭ Пропустить", "callback_data": f"skip:{stem}"}],
            ]})
-    log(f"commit offer for {task.stem}: dirty={dirty} unpushed={unpushed}")
+    log(f"commit offer for {stem}: dirty={dirty} unpushed={unpushed}")
 
 
 def do_commit(stem: str, workdir) -> str:
@@ -1110,11 +1263,10 @@ def do_commit(stem: str, workdir) -> str:
     out = []
     if st:
         msg = f"task: {stem}"
-        try:
-            first = (DONE / f"{stem}.txt").read_text().strip().splitlines()[0]
+        row = task_row(stem)
+        if row and row["prompt"]:
+            first = row["prompt"].strip().splitlines()[0]
             msg = f"task: {first[:70]}"
-        except Exception:
-            pass
         for args in (("add", "-A"), ("commit", "-m", msg)):
             rc, o = _git(workdir, *args)
             out.append(o)
@@ -1258,13 +1410,16 @@ def handle_callback(cb: dict) -> None:
                text=f"Проект: {pid}")
         return
     if action in ("commit", "skip"):
-        centry = _pop_commit_pending(pid)
-        if not centry:
+        row = task_row(pid)
+        if not row or not row.get("commit_offered"):
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Уже обработано")
             return
-        cworkdir = (centry.get("workdir") if isinstance(centry, dict)
-                    else WORKDIR)
+        db_exec("UPDATE tasks SET commit_offered=0 WHERE stem=%s", (pid,))
+        proj = row.get("project")
+        cworkdir = (PROJECTS_ROOT / proj) \
+            if (proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir()) \
+            else WORKDIR
         if action == "commit":
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Коммичу и пушу…")
@@ -1389,7 +1544,8 @@ def handle_update(upd: dict) -> None:
 
 
 def notify_chat(task_stem: str, response_text: str) -> None:
-    chat_id = _load_chats().get(task_stem)
+    row = task_row(task_stem)
+    chat_id = row.get("chat_id") if row else None
     if not chat_id:
         log(f"no chat mapping for {task_stem} — result not sent to telegram")
         return
@@ -1445,7 +1601,8 @@ def _git_head() -> str:
 def api_status() -> dict:
     return {
         "uptime": int(time.time() - _started_at),
-        "queue": len(list(INBOX.glob("*.txt"))),
+        "queue": db_query(
+            "SELECT COUNT(*) AS n FROM tasks WHERE status='queued'")[0]["n"],
         "current_task": STATE["current_task"],
         "last_task": STATE["last_task"],
         "last_status": STATE["last_status"],
@@ -1473,67 +1630,38 @@ def _tail(path: Path, limit: int = 12000) -> str:
     return ANSI.sub("", data[-limit:].decode(errors="replace")).strip()
 
 
-def _head(path: Path, limit: int = 300) -> str:
-    try:
-        with path.open("rb") as f:
-            return f.read(limit).decode(errors="replace")
-    except OSError:
-        return ""
-
-
 def api_tasks(project: str | None = None, limit: int = 5,
               before: str | None = None) -> dict:
-    """Task feed, oldest -> newest: queued (inbox), running (.processing),
-    done (done/). The UI loads the newest `limit` tasks first and pages
-    upward on scroll — `before` is a stem cursor: return up to `limit`
-    items immediately older than that task (immune to new arrivals)."""
-    projmap = _load_task_projects()
+    """Task feed, oldest -> newest, from the tasks table. The UI loads the
+    newest `limit` tasks first and pages upward on scroll — `before` is a
+    stem cursor: return up to `limit` items immediately older than that
+    task (immune to new arrivals)."""
     running = Path(STATE["current_task"]).stem \
         if STATE["current_task"] else None
-    seen = {}
-    for f in sorted(INBOX.glob("*.txt"), key=lambda p: p.stat().st_mtime):
-        seen[f.stem] = (f, "queued")
-    for f in sorted(INBOX.glob("*.txt.processing"),
-                    key=lambda p: p.stat().st_mtime):
-        seen[f.name[:-len(".txt.processing")]] = (f, "running")
-    for f in sorted(DONE.glob("*.txt"), key=lambda p: p.stat().st_mtime):
-        seen[f.stem] = (f, "done")
+    sql, params = "SELECT * FROM tasks", []
+    # tasks without a recorded project show up under every tab
+    if project:
+        sql += " WHERE project=%s OR project IS NULL"
+        params.append(project)
+    rows = db_query(sql + " ORDER BY created", params)
     items = []
-    for stem, (f, st) in seen.items():
-        if stem == running:
-            st = "running"
-        proj = projmap.get(stem) or ""
-        # tasks without a recorded project show up under every tab
-        if project and proj and proj != project:
-            continue
-        try:
-            prompt = f.read_text(errors="replace").strip()
-        except OSError:
-            prompt = ""
-        out, tstatus = "", ""
+    for r in rows:
+        stem = r["stem"]
+        st = "running" if stem == running else r["status"]
+        out = ""
         if st == "running":
             out = _tail(TASKS_DIR / ".progress" / f"{stem}.out")
         elif st == "done":
-            resp = OUTBOX / f"{stem}.response.txt"
-            for line in _head(resp).splitlines():
-                if line.startswith("status:"):
-                    tstatus = line.split(":", 1)[1].strip()
-            raw = _tail(resp)
-            # drop the "task/status/started/====" header block when the
-            # whole response fits in the tail window
-            out = (raw.split("=" * 60, 1)[1].strip()
-                   if raw.startswith("task:") and "=" * 60 in raw else raw)
-        src = ("web" if stem.startswith("web-") else
-               "telegram" if stem.startswith("tg-") else "file")
+            out = r["output"] or ""
         items.append({
-            "name": f"{stem}.txt",
+            "name": _task_name(stem),
             "stem": stem,
-            "project": proj,
-            "source": src,
+            "project": r["project"] or "",
+            "source": r["source"],
             "status": st,
-            "task_status": tstatus,
-            "created": int(f.stat().st_mtime),
-            "prompt": prompt[:2000],
+            "task_status": r["task_status"] or "",
+            "created": int(r["created"]),
+            "prompt": (r["prompt"] or "")[:2000],
             "output": out,
         })
     if before:
@@ -1592,12 +1720,19 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
-        if path in ("/api/tasks", "/api/model"):
+        if path in ("/api/tasks", "/api/model", "/api/project"):
             length = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
             except ValueError:
                 return self._json({"ok": False, "error": "bad json"}, 400)
+            if path == "/api/project":
+                p = (body.get("project") or "").strip()
+                if p not in list_projects():
+                    return self._json({"ok": False,
+                                       "error": "unknown project"}, 400)
+                set_project(p)
+                return self._json({"ok": True, "project": p})
             if path == "/api/model":
                 m = (body.get("model") or "").strip()
                 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", m):
@@ -1639,7 +1774,8 @@ class StatusHandler(BaseHTTPRequestHandler):
     def _legacy_status_page(self) -> None:
         uptime = int(time.time() - _started_at)
         h, m, s = uptime // 3600, uptime % 3600 // 60, uptime % 60
-        queue = len(list(INBOX.glob("*.txt")))
+        queue = db_query(
+            "SELECT COUNT(*) AS n FROM tasks WHERE status='queued'")[0]["n"]
         bot = "running" if (_bot_proc and _bot_proc.poll() is None) else "off"
         body = f"""<!doctype html><html><head><meta charset="utf-8">
 <title>devin watcher</title></head>
@@ -1737,6 +1873,8 @@ def main() -> int:
     for d in (INBOX, DONE, OUTBOX):
         d.mkdir(parents=True, exist_ok=True)
 
+    init_db()
+    migrate_files_to_db()
     ensure_repo()
     start_mihomo()
     start_bot()

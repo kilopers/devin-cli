@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ripgrep \
         jq \
         python3 \
+        python3-pymysql \
         make \
         socat \
         gnupg \
