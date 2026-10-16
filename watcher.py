@@ -2090,6 +2090,18 @@ def _favicon():
     return app.send_static_file("favicon.ico")
 
 
+@app.get("/sw.js")
+def _service_worker():
+    # PWA service worker — served from the root path so its scope covers "/"
+    # (a script under /static/ could only control /static/*); the spec
+    # requires the Service-Worker-Allowed header for a scope that wide.
+    # no-cache: SW updates must be picked up promptly.
+    resp = app.send_static_file("sw.js")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.get("/status")
 @app.get("/<path:_any>")   # unknown GET → status page (public, as before)
 def _status_page(_any: str = ""):

@@ -6,7 +6,13 @@
 <title>Devin Worker</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="/static/favicon.ico" sizes="48x48">
-<link rel="apple-touch-icon" href="/static/icon.png">
+<link rel="apple-touch-icon" href="/static/apple-icon.png">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Devin Worker">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#3f51b5">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -601,6 +607,10 @@ loadProjects().then(loadTasks);
 loadStatus();
 loadModels();
 setInterval(() => { loadStatus(); loadTasks(); loadModels(); }, 3000);
+
+// PWA: registers /sw.js so Chrome offers "Install app" (see manifest link)
+if ("serviceWorker" in navigator)
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
 </script>
 </body>
 </html>

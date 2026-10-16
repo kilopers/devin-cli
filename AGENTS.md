@@ -37,9 +37,12 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   в левый sidenav (гамбургер в шапке; те же DOM-ноды переносит matchMedia,
   обработчики сохраняются), композер внизу переносится на две строки.
   Иконка приложения — официальный логотип Devin, скачан с devin.ai
-  (`static/favicon.svg|favicon.ico|icon.png`, отдаётся штатным
+  (`static/favicon.svg|favicon.ico|icon.png|apple-icon.png`, отдаётся штатным
   `/static/*`; `/favicon.ico` — отдельный роут, иначе браузеры ловили
-  status-page из catch-all). Роуты под
+  status-page из catch-all). Установка на рабочий стол телефона — PWA:
+  `static/manifest.webmanifest` + `sw.js` с роута `/sw.js` (нужен заголовок
+  `Service-Worker-Allowed: /` — скоуп шире `/static/`); SW кэширует только
+  `/static/*`, `/api/*` и POST'ы идут в сеть. Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
   auth off). Telegram webhook (`POST /` и `POST /<any>` — корень тоже, иначе 405) и GET /status — публичные.

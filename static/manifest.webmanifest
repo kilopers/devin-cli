@@ -1,0 +1,19 @@
+{
+  "name": "Devin Worker",
+  "short_name": "Devin",
+  "description": "Devin CLI worker — задачи из веба и Telegram",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#3f51b5",
+  "icons": [
+    {"src": "/static/favicon.svg", "sizes": "any",
+     "type": "image/svg+xml", "purpose": "any"},
+    {"src": "/static/icon.png", "sizes": "568x568",
+     "type": "image/png", "purpose": "any"},
+    {"src": "/static/icon.png", "sizes": "568x568",
+     "type": "image/png", "purpose": "maskable"}
+  ]
+}
