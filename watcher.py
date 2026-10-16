@@ -1709,6 +1709,10 @@ def register_webhook() -> None:
             params["secret_token"] = TG_WEBHOOK_SECRET
         tg_api("setWebhook", **params)
         log(f"telegram webhook registered: {TG_WEBHOOK_URL}")
+        info = tg_api("getWebhookInfo").get("result") or {}
+        if err := info.get("last_error_message"):
+            log(f"telegram webhook last error: {err} "
+                f"(pending updates: {info.get('pending_update_count', 0)})")
     except Exception as e:
         log(f"setWebhook failed: {e}")
 
@@ -2033,8 +2037,9 @@ def _index():
     return render_template("webui.html")
 
 
+@app.post("/")
 @app.post("/<path:_any>")
-def _webhook(_any):
+def _webhook(_any: str = ""):
     # any POST to a non-/api path is the telegram webhook — robust against
     # whatever path prefix the reverse proxy preserves; secret-token check
     if TG_WEBHOOK_SECRET and \
