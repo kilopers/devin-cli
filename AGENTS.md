@@ -54,10 +54,13 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   `/models` в телеграме — по скоупам выше; приоритет над `DEVIN_MODEL`.
   Каталог моделей кэшируется в `kv.models_cache` (обновляется при старте и
   лениво раз в минуту, пока пуст).
-- Веб-микрофон: кнопка 🎙 рядом с «В работу» пишет PCM16 → WAV и шлёт
-  `POST /api/stt` (octet-stream, ≤8 МБ); ответ дописывается в textarea.
-  Распознаёт тем же `STT_PROVIDER`; для yandex WAV → LPCM sync-запрос
-  (`web_transcribe`, частота берётся из WAV-заголовка).
+- Веб-микрофон: кнопка 🎙 рядом с «В работу» пишет PCM16 → WAV @16kHz
+  (ресемпл на клиенте) и шлёт `POST /api/stt` (octet-stream, ≤16 МБ);
+  ответ дописывается в textarea. У кнопки — таймер записи и статус
+  распознавания (`STATE["stt"]` → `GET /api/status.stt_status`).
+  Распознаёт тем же `STT_PROVIDER`; для yandex в `web_transcribe` вилка:
+  <28с — v1 sync (LPCM), длиннее — v3 async с WAV-контейнером
+  (`_wav_wrap`), как у телеграм-голосовых.
 - Оффер коммита общий для всех источников: `offer_commit` ставит
   `tasks.commit_offered` при грязном репо/непушнутых коммитах после задачи,
   телеграм жмёт инлайн-кнопки, веб — `POST /api/commit` (одноразово,

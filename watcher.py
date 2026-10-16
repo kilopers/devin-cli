@@ -21,6 +21,7 @@ import os
 import re
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -111,6 +112,7 @@ STATE = {
     "last_task": "-",
     "last_status": "-",
     "tasks_done": 0,
+    "stt": None,   # live web-STT status text, shown in the UI
 }
 
 
@@ -786,8 +788,10 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
         "content": base64.b64encode(audio).decode(),
         "recognitionModel": {
             "model": "general",
-            "audioFormat": {"containerAudio":
-                            {"containerAudioType": "OGG_OPUS"}},
+            "audioFormat": {"containerAudio": {"containerAudioType": (
+                "WAV" if mime in ("audio/wav", "audio/x-wav", "audio/L16",
+                                  "application/octet-stream")
+                else "OGG_OPUS")}},
             "textNormalization": {"textNormalization":
                                   "TEXT_NORMALIZATION_ENABLED",
                                   "literatureText": True},
@@ -859,9 +863,22 @@ def _pcm_resample(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
     return dst.tobytes()
 
 
+def _wav_wrap(pcm: bytes, rate: int) -> bytes:
+    """Canonical 44-byte RIFF header + PCM16 mono — WAV container for the
+    v3 async API."""
+    return (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " +
+            struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) +
+            b"data" + struct.pack("<I", len(pcm)) + pcm)
+
+
 def web_transcribe(wav: bytes) -> str:
-    """Browser mic → WAV → STT. Yandex gets raw LPCM + the real sample
-    rate; gemini/openai take the WAV file as-is."""
+    """Browser mic → WAV → STT. Yandex: <28s LPCM sync, longer clips go
+    through the v3 async path with progress in STATE["stt"]; gemini/openai
+    take the WAV file as-is."""
+    def _status(msg: str) -> None:
+        STATE["stt"] = msg
+        log(f"web stt: {msg}")
+
     if STT_PROVIDER == "yandex":
         if not STT_API_KEY:
             raise RuntimeError("STT не настроен: нет STT_API_KEY (yandex)")
@@ -869,7 +886,16 @@ def web_transcribe(wav: bytes) -> str:
         pcm = wav[44:] if wav[:4] == b"RIFF" else wav
         if rate not in (8000, 16000, 48000):   # safety net for odd clients
             pcm, rate = _pcm_resample(pcm, rate, 16000), 16000
-        return yandex_transcribe_sync(pcm, "audio/L16", rate)
+        duration = len(pcm) / 2 / rate
+        try:
+            if duration < 28:
+                return yandex_transcribe_sync(pcm, "audio/L16", rate)
+            _status(f"Запись {duration:.0f}с — длинная, ушла в асинхронное "
+                    "распознавание Яндекса")
+            return yandex_transcribe(_wav_wrap(pcm, rate), "audio/wav",
+                                     on_status=_status)
+        finally:
+            STATE["stt"] = None
     if STT_PROVIDER == "gemini" and not GEMINI_API_KEY:
         raise RuntimeError("STT не настроен: нет GEMINI_API_KEY")
     if STT_PROVIDER not in ("gemini", "yandex") and not STT_API_KEY:
@@ -1716,6 +1742,7 @@ def api_status() -> dict:
         "model": current_model("web"),
         "project": project_label(),
         "mode": reply_mode("web"),
+        "stt_status": STATE.get("stt") or "",
     }
 
 
@@ -1833,7 +1860,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             # browser mic → WAV octet-stream → STT → {text}
             length = int(self.headers.get("Content-Length") or 0)
             audio = self.rfile.read(length)
-            if not audio or len(audio) > 8_000_000:
+            if not audio or len(audio) > 16_000_000:
                 return self._json({"ok": False, "error": "bad audio"}, 400)
             try:
                 text = web_transcribe(audio)

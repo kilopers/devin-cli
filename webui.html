@@ -69,6 +69,8 @@
   #micBtn { border-radius: 50%; height: 42px; padding: 0; width: 42px; }
   #micBtn.rec { color: #e53935; animation: pulse 1s infinite; }
   #micBtn i.spinning { animation: rot .8s linear infinite; }
+  #micStat { font-size: 12px; min-width: 44px; margin-right: 6px;
+             white-space: nowrap; }
   @keyframes pulse { 50% { opacity: .35; } }
 </style>
 </head>
@@ -96,6 +98,7 @@
     <button id="micBtn" class="btn-flat" title="надиктовать голосом">
       <i class="material-icons">mic</i>
     </button>
+    <span id="micStat" class="grey-text"></span>
     <button id="sendBtn" class="btn indigo waves-effect waves-light">
       <i class="material-icons left">send</i>В работу
     </button>
@@ -382,11 +385,16 @@ function encodeWav(chunks, rate) {
   return buf;
 }
 
+const micStat = document.getElementById("micStat");
+const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
+                    String(Math.floor(s % 60)).padStart(2, "0");
+let sttPoll = null;
+
 micBtn.onclick = async () => {
   const ic = micBtn.querySelector("i");
   if (rec) {  // стоп → распознавание
     const r = rec; rec = null;
-    clearTimeout(r.timer);
+    clearTimeout(r.timer); clearInterval(r.clock);
     r.proc.disconnect(); r.src.disconnect(); r.gain.disconnect();
     r.stream.getTracks().forEach(t => t.stop());
     const wav = encodeWav(resample(r.chunks, r.ctx.sampleRate, STT_RATE),
@@ -394,6 +402,14 @@ micBtn.onclick = async () => {
     r.ctx.close();
     micBtn.classList.remove("rec");
     ic.textContent = "hourglass_empty"; ic.classList.add("spinning");
+    micStat.textContent = "распознаю…";
+    // длинные записи идут через async-путь — показываем прогресс сервера
+    sttPoll = setInterval(async () => {
+      try {
+        const s = await (await fetch("/api/status")).json();
+        if (s.stt_status) micStat.textContent = s.stt_status;
+      } catch (e) {}
+    }, 3000);
     try {
       const resp = await fetch("/api/stt", {method: "POST",
         headers: {"Content-Type": "application/octet-stream"}, body: wav});
@@ -409,6 +425,8 @@ micBtn.onclick = async () => {
         M.toast({html: "Ничего не распознано"});
       }
     } catch (e) { M.toast({html: "STT сеть: " + e}); }
+    clearInterval(sttPoll); sttPoll = null;
+    micStat.textContent = "";
     ic.classList.remove("spinning"); ic.textContent = "mic";
     return;
   }
@@ -424,8 +442,13 @@ micBtn.onclick = async () => {
     proc.onaudioprocess = e =>
       chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
     src.connect(proc); proc.connect(gain); gain.connect(ctx.destination);
+    const t0 = Date.now();
     rec = {ctx, proc, src, gain, stream, chunks,
-           timer: setTimeout(() => { if (rec) micBtn.click(); }, 120000)};
+           clock: setInterval(
+             () => micStat.textContent = fmtDur((Date.now() - t0) / 1000),
+             250),
+           timer: setTimeout(() => { if (rec) micBtn.click(); }, 300000)};
+    micStat.textContent = "00:00";
     micBtn.classList.add("rec");
   } catch (e) { M.toast({html: "Микрофон: " + e}); }
 };
