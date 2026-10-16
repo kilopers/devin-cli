@@ -24,7 +24,7 @@ RUN curl -fsSL https://cli.devin.ai/install.sh -o /tmp/devin-install.sh \
     && XDG_DATA_HOME=/opt/devin-install bash /tmp/devin-install.sh \
     && rm -f /tmp/devin-install.sh
 
-# Toolchain for user projects: Node.js 22 LTS (npm/Vite) + PHP 8.3 + Composer.
+# Toolchain for user projects: Node.js 22 LTS (npm/Vite) + PHP 8.5 + Composer.
 # Dev servers the agent starts stay inside the container — it reaches them on
 # localhost directly, no host port mapping needed.
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
@@ -38,9 +38,9 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
     && apt-get update && apt-get install -y --no-install-recommends \
         nodejs \
         zip unzip \
-        php8.3-cli php8.3-mbstring php8.3-xml php8.3-curl php8.3-zip \
-        php8.3-intl php8.3-gd php8.3-bcmath php8.3-sqlite3 \
-        php8.3-mysql php8.3-pgsql \
+        php8.5-cli php8.5-mbstring php8.5-xml php8.5-curl php8.5-zip \
+        php8.5-intl php8.5-gd php8.5-bcmath php8.5-sqlite3 \
+        php8.5-mysql php8.5-pgsql \
     && rm -rf /var/lib/apt/lists/* \
     && php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');" \
     && php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer --quiet \
