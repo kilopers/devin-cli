@@ -51,9 +51,17 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   `3000.11.x`, а таймаутом remote config (`GetCliModelConfigs`) через внешний
   HTTP-прокси — лечится встроенным mihomo.
 - Выбор модели: веб-селект в шапке (`GET /api/models`, `POST /api/model`) и
-  `/models` в телеграме пишут в общий `tasks/model.txt` — приоритет над
-  `DEVIN_MODEL`. Каталог моделей кэшируется в `tasks/devin-models.json`
-  (обновляется при старте и лениво раз в минуту, пока пуст).
+  `/models` в телеграме — по скоупам выше; приоритет над `DEVIN_MODEL`.
+  Каталог моделей кэшируется в `kv.models_cache` (обновляется при старте и
+  лениво раз в минуту, пока пуст).
+- Веб-микрофон: кнопка 🎙 рядом с «В работу» пишет PCM16 → WAV и шлёт
+  `POST /api/stt` (octet-stream, ≤8 МБ); ответ дописывается в textarea.
+  Распознаёт тем же `STT_PROVIDER`; для yandex WAV → LPCM sync-запрос
+  (`web_transcribe`, частота берётся из WAV-заголовка).
+- Оффер коммита общий для всех источников: `offer_commit` ставит
+  `tasks.commit_offered` при грязном репо/непушнутых коммитах после задачи,
+  телеграм жмёт инлайн-кнопки, веб — `POST /api/commit` (одноразово,
+  кто первый нажал).
 - В образ встроен mihomo (прокси на 127.0.0.1:7890): watcher стартует его,
   если смонтирован `/mihomo/config.yaml`, и сам выставляет `*_proxy` env
   (явные HTTP(S)_PROXY в .env важнее). Шаблон — `mihomo.example.yaml`,

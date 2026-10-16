@@ -66,6 +66,10 @@
               border-radius: 4px; font-size: 13px; padding: 0 6px; }
   #modelSel option, #modeSel option { color: #212121; }
   #modeSel { max-width: 140px; }
+  #micBtn { border-radius: 50%; height: 42px; padding: 0; width: 42px; }
+  #micBtn.rec { color: #e53935; animation: pulse 1s infinite; }
+  #micBtn i.spinning { animation: rot .8s linear infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
 </style>
 </head>
 <body>
@@ -89,6 +93,9 @@
 <div id="composer">
   <div class="inner">
     <textarea id="taskText" placeholder="Задача для Devin по проекту «…» — Ctrl+Enter чтобы отправить"></textarea>
+    <button id="micBtn" class="btn-flat" title="надиктовать голосом">
+      <i class="material-icons">mic</i>
+    </button>
     <button id="sendBtn" class="btn indigo waves-effect waves-light">
       <i class="material-icons left">send</i>В работу
     </button>
@@ -175,6 +182,7 @@ function mergeTasks(list) {
 
 function renderFeed(items) {
   const sig = items.map(t => t.stem + t.status + (t.task_status || "") +
+    (t.commit_offered ? "C" : "") +
     (t.output || "").length).join() + "|" + loadingOlder;
   if (sig === lastSig) return;
   lastSig = sig;
@@ -196,11 +204,39 @@ function renderFeed(items) {
       ${t.output ? (t.status === "done"
         ? `<div class="md">${renderMd(t.output)}</div>`
         : `<pre class="out">${esc(t.output)}</pre>`) : ""}
+      ${t.commit_offered ? `
+      <div style="margin-top:10px">
+        <button class="btn-small green waves-effect waves-light"
+          onclick="commitAct('${esc(t.stem)}','commit')">✅ закоммитить и запушить</button>
+        <button class="btn-flat"
+          onclick="commitAct('${esc(t.stem)}','skip')">⏭ пропустить</button>
+      </div>` : ""}
     </div></div>`).join("")
     : '<div id="empty">Задач пока нет — напиши первую внизу.</div>');
   if (nearBottom) scrollTo(0, document.body.scrollHeight);
   const lastOut = feed.querySelector(".card:last-child pre.out");
   if (lastOut && nearBottom) lastOut.scrollTop = lastOut.scrollHeight;
+}
+
+// commit/push offer on a finished task — same actions as tg buttons
+async function commitAct(stem, action) {
+  try {
+    const r = await fetch("/api/commit", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({stem, action})});
+    const d = await r.json();
+    if (d.ok && d.skipped) {
+      M.toast({html: "Пропущено — изменения остались в репо"});
+    } else if (d.ok) {
+      const tail = (d.result || "").trim();
+      M.toast({html: "Закоммичено и запушено" + (tail
+        ? `<pre style="white-space:pre-wrap;text-align:left;max-width:90vw">` +
+          esc(tail.slice(-900)) + `</pre>` : ""), displayLength: 8000});
+    } else {
+      M.toast({html: "Коммит: " + (d.error || r.status)});
+    }
+  } catch (e) { M.toast({html: "Коммит сеть: " + e}); }
+  loadTasks();
 }
 
 // poll: newest page only — merges updates/new arrivals into the feed
@@ -303,6 +339,75 @@ async function send() {
   } catch (e) { M.toast({html: "Сеть: " + e}); }
   btn.disabled = false;
 }
+
+// voice dictation: AudioContext → PCM16 WAV → /api/stt → append to textarea
+let rec = null;
+const micBtn = document.getElementById("micBtn");
+
+function encodeWav(chunks, rate) {
+  const len = chunks.reduce((a, c) => a + c.length, 0);
+  const buf = new ArrayBuffer(44 + len * 2), v = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++)
+    v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, "RIFF"); v.setUint32(4, 36 + len * 2, true); ws(8, "WAVEfmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  ws(36, "data"); v.setUint32(40, len * 2, true);
+  let o = 44;
+  for (const ch of chunks)
+    for (let i = 0; i < ch.length; i++, o += 2) {
+      const s = Math.max(-1, Math.min(1, ch[i]));
+      v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+  return buf;
+}
+
+micBtn.onclick = async () => {
+  const ic = micBtn.querySelector("i");
+  if (rec) {  // стоп → распознавание
+    const r = rec; rec = null;
+    clearTimeout(r.timer);
+    r.proc.disconnect(); r.src.disconnect(); r.gain.disconnect();
+    r.stream.getTracks().forEach(t => t.stop());
+    const wav = encodeWav(r.chunks, r.ctx.sampleRate);
+    r.ctx.close();
+    micBtn.classList.remove("rec");
+    ic.textContent = "hourglass_empty"; ic.classList.add("spinning");
+    try {
+      const resp = await fetch("/api/stt", {method: "POST",
+        headers: {"Content-Type": "application/octet-stream"}, body: wav});
+      const d = await resp.json();
+      if (d.ok && d.text.trim()) {
+        const ta = document.getElementById("taskText");
+        ta.value = (ta.value ? ta.value.replace(/\s+$/, "") + " " : "") +
+                   d.text.trim();
+        ta.focus();
+      } else if (!d.ok) {
+        M.toast({html: "STT: " + (d.error || resp.status)});
+      } else {
+        M.toast({html: "Ничего не распознано"});
+      }
+    } catch (e) { M.toast({html: "STT сеть: " + e}); }
+    ic.classList.remove("spinning"); ic.textContent = "mic";
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const gain = ctx.createGain();       // в ноль — чтобы не было эха
+    gain.gain.value = 0;
+    const chunks = [];
+    proc.onaudioprocess = e =>
+      chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    src.connect(proc); proc.connect(gain); gain.connect(ctx.destination);
+    rec = {ctx, proc, src, gain, stream, chunks,
+           timer: setTimeout(() => { if (rec) micBtn.click(); }, 120000)};
+    micBtn.classList.add("rec");
+  } catch (e) { M.toast({html: "Микрофон: " + e}); }
+};
 
 document.getElementById("sendBtn").onclick = send;
 document.getElementById("taskText").addEventListener("keydown", e => {

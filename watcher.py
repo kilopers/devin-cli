@@ -546,11 +546,11 @@ def run_task(task: dict) -> None:
     STATE.update(current_task=None, last_task=name,
                  last_status=status, tasks_done=STATE["tasks_done"] + 1)
     log(f"done {name} ({status}), output -> mysql")
+    offer_commit(task, chat_id, workdir)
     if TG_TOKEN:
         notify_chat(stem, f"{name}\n{status}\n\n{body[-3500:]}")
         if chat_id:
             send_task_stats(chat_id, started_ts)
-            offer_commit(task, chat_id, workdir)
 
 
 def ensure_repo() -> None:
@@ -746,10 +746,14 @@ def _collect_recognition_text(raw: str) -> str:
     return " ".join(refined or finals).strip()
 
 
-def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg") -> str:
-    """SpeechKit v1 sync recognition — fast path for short clips (≤~30s)."""
+def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg",
+                           rate: int = 48000) -> str:
+    """SpeechKit v1 sync recognition — fast path for short clips (≤~30s).
+    mime audio/wav / raw PCM -> format=lpcm (browser mic path)."""
     started = time.time()
-    qs = f"?lang={YANDEX_LANG}&format=oggopus&sampleRateHertz=48000"
+    fmt = "lpcm" if mime in ("audio/wav", "audio/x-wav", "audio/L16",
+                             "application/octet-stream") else "oggopus"
+    qs = f"?lang={YANDEX_LANG}&format={fmt}&sampleRateHertz={rate}"
     if YANDEX_FOLDER_ID:
         qs += f"&folderId={YANDEX_FOLDER_ID}"
     req = urllib.request.Request(
@@ -829,6 +833,28 @@ def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None,
     if STT_PROVIDER == "gemini":
         return gemini_transcribe(audio, mime)
     return openai_transcribe(audio, mime)
+
+
+def _wav_rate(wav: bytes) -> int:
+    if wav[:4] == b"RIFF" and len(wav) > 28:
+        return int.from_bytes(wav[24:28], "little")
+    return 16000
+
+
+def web_transcribe(wav: bytes) -> str:
+    """Browser mic → WAV → STT. Yandex gets raw LPCM + the real sample
+    rate; gemini/openai take the WAV file as-is."""
+    if STT_PROVIDER == "yandex":
+        if not STT_API_KEY:
+            raise RuntimeError("STT не настроен: нет STT_API_KEY (yandex)")
+        return yandex_transcribe_sync(
+            wav[44:] if wav[:4] == b"RIFF" else wav,
+            "audio/L16", _wav_rate(wav))
+    if STT_PROVIDER == "gemini" and not GEMINI_API_KEY:
+        raise RuntimeError("STT не настроен: нет GEMINI_API_KEY")
+    if STT_PROVIDER not in ("gemini", "yandex") and not STT_API_KEY:
+        raise RuntimeError("STT не настроен: нет STT_API_KEY")
+    return transcribe(wav, "audio/wav")
 
 
 def _load_json(path: Path) -> dict:
@@ -1289,7 +1315,7 @@ def _git_diff_since(workdir, before: str, max_lines: int = 250) -> str:
 
 
 def offer_commit(task: dict, chat_id, workdir) -> None:
-    """After a task: show repo state with commit/push/skip buttons."""
+    """After a task: flag commit_offered (web buttons) + tg buttons if chat."""
     try:
         _, st = _git(workdir, "status", "--porcelain")
         dirty = len(st.splitlines()) if st else 0
@@ -1300,19 +1326,21 @@ def offer_commit(task: dict, chat_id, workdir) -> None:
         return
     if not dirty and not unpushed:
         return
+    stem = task["stem"]
+    db_exec("UPDATE tasks SET commit_offered=1 WHERE stem=%s", (stem,))
+    log(f"commit offer for {stem}: dirty={dirty} unpushed={unpushed}")
+    if not chat_id or not TG_TOKEN:
+        return
     if dirty:
         label = f"✅ Закоммитить и запушить ({dirty} файл(ов))"
     else:
         label = f"⬆ Запушить {unpushed} коммит(ов)"
-    stem = task["stem"]
-    db_exec("UPDATE tasks SET commit_offered=1 WHERE stem=%s", (stem,))
     tg_api("sendMessage", chat_id=chat_id,
            text=f"В репо: {dirty} незакоммиченных, {unpushed} незапушенных. Что делаем?",
            reply_markup={"inline_keyboard": [
                [{"text": label, "callback_data": f"commit:{stem}"}],
                [{"text": "⏭ Пропустить", "callback_data": f"skip:{stem}"}],
            ]})
-    log(f"commit offer for {stem}: dirty={dirty} unpushed={unpushed}")
 
 
 def do_commit(stem: str, workdir) -> str:
@@ -1720,6 +1748,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "source": r["source"],
             "status": st,
             "task_status": r["task_status"] or "",
+            "commit_offered": bool(r["commit_offered"]),
             "created": int(r["created"]),
             "prompt": (r["prompt"] or "")[:2000],
             "output": out,
@@ -1780,8 +1809,21 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
+        if path == "/api/stt":
+            # browser mic → WAV octet-stream → STT → {text}
+            length = int(self.headers.get("Content-Length") or 0)
+            audio = self.rfile.read(length)
+            if not audio or len(audio) > 8_000_000:
+                return self._json({"ok": False, "error": "bad audio"}, 400)
+            try:
+                text = web_transcribe(audio)
+            except Exception as e:
+                log(f"web stt failed: {e}")
+                return self._json({"ok": False, "error": str(e)[:300]}, 502)
+            log(f"web stt <- {len(audio)} bytes: {text!r}")
+            return self._json({"ok": True, "text": text})
         if path in ("/api/tasks", "/api/model", "/api/project",
-                    "/api/mode"):
+                    "/api/mode", "/api/commit"):
             length = int(self.headers.get("Content-Length") or 0)
             try:
                 body = json.loads(self.rfile.read(length) or b"{}")
@@ -1806,6 +1848,26 @@ class StatusHandler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "bad mode"}, 400)
                 set_reply_mode(m, "web")
                 return self._json({"ok": True, "mode": m})
+            if path == "/api/commit":
+                # same as tg commit/skip buttons: {"stem","action"}
+                stem = (body.get("stem") or "").strip()
+                action = (body.get("action") or "").strip()
+                row = task_row(stem)
+                if not row or not row.get("commit_offered"):
+                    return self._json({"ok": False,
+                                       "error": "уже обработано"}, 409)
+                db_exec("UPDATE tasks SET commit_offered=0 WHERE stem=%s",
+                        (stem,))
+                proj = row.get("project")
+                cworkdir = (PROJECTS_ROOT / proj) \
+                    if (proj and PROJECTS_ROOT
+                        and (PROJECTS_ROOT / proj).is_dir()) else WORKDIR
+                if action == "commit":
+                    result = do_commit(stem, cworkdir)
+                    log(f"web commit accepted for {stem}")
+                    return self._json({"ok": True, "result": result})
+                log(f"web commit skipped for {stem}")
+                return self._json({"ok": True, "skipped": True})
             text = (body.get("text") or "").strip()
             project = (body.get("project") or "").strip() or None
             if not text:
