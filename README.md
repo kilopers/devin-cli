@@ -142,7 +142,9 @@ nginx режет путь; работает всегда).
   отображаются там же (бейдж источника: web/telegram) — видны и промежуточный
   лог (сырой хвост `.progress/<task>.out` во время выполнения), и финальный
   ответ. Финальный ответ рендерится как Markdown с подсветкой кода и diff'ов
-  (marked + DOMPurify + highlight.js по CDN). Опрос API — каждые 3 секунды.
+  (marked + DOMPurify + highlight.js по CDN). Опрос API — каждые 3 секунды;
+  грузятся 5 последних задач, при прокрутке вверх AJAX догружает ещё по 5
+  (`/api/tasks?limit=5&before=<stem>`).
 
 Старый статус-эндпоинт остался на `/status`. JSON-API: `GET /api/projects`,
 `GET /api/status`, `GET /api/tasks?project=<имя>`, `POST /api/tasks`

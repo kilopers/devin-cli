@@ -1401,15 +1401,21 @@ def _head(path: Path, limit: int = 300) -> str:
         return ""
 
 
-def api_tasks(project: str | None = None) -> dict:
-    """Task feed: queued (inbox), running (current), done (done/) — each with
-    its prompt and a tail of live/final output."""
+def api_tasks(project: str | None = None, limit: int = 5,
+              before: str | None = None) -> dict:
+    """Task feed, oldest -> newest: queued (inbox), running (.processing),
+    done (done/). The UI loads the newest `limit` tasks first and pages
+    upward on scroll — `before` is a stem cursor: return up to `limit`
+    items immediately older than that task (immune to new arrivals)."""
     projmap = _load_task_projects()
     running = Path(STATE["current_task"]).stem \
         if STATE["current_task"] else None
     seen = {}
     for f in sorted(INBOX.glob("*.txt"), key=lambda p: p.stat().st_mtime):
         seen[f.stem] = (f, "queued")
+    for f in sorted(INBOX.glob("*.txt.processing"),
+                    key=lambda p: p.stat().st_mtime):
+        seen[f.name[:-len(".txt.processing")]] = (f, "running")
     for f in sorted(DONE.glob("*.txt"), key=lambda p: p.stat().st_mtime):
         seen[f.stem] = (f, "done")
     items = []
@@ -1450,7 +1456,13 @@ def api_tasks(project: str | None = None) -> dict:
             "prompt": prompt[:2000],
             "output": out,
         })
-    return {"tasks": items[-80:]}
+    if before:
+        idx = next((i for i, t in enumerate(items)
+                    if t["stem"] == before), len(items))
+        page, has_more = items[max(0, idx - limit):idx], idx > limit
+    else:
+        page, has_more = items[-limit:], len(items) > limit
+    return {"tasks": page, "has_more": has_more}
 
 
 class StatusHandler(BaseHTTPRequestHandler):
@@ -1483,7 +1495,14 @@ class StatusHandler(BaseHTTPRequestHandler):
             return self._json(api_projects())
         if path == "/api/tasks":
             qs = urllib.parse.parse_qs(parsed.query)
-            return self._json(api_tasks((qs.get("project") or [None])[0]))
+            try:
+                limit = int((qs.get("limit") or ["5"])[0])
+            except ValueError:
+                limit = 5
+            return self._json(api_tasks(
+                (qs.get("project") or [None])[0],
+                min(max(limit, 1), 50),
+                (qs.get("before") or [None])[0]))
         if path in ("/", "/index.html") and \
                 self._serve_file(WEBUI_FILE, "text/html; charset=utf-8"):
             return

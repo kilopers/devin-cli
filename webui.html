@@ -84,7 +84,9 @@
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
-let currentProject = null, lastFeed = "", lastTabs = "";
+let currentProject = null, lastTabs = "";
+let feedItems = new Map(), oldestStem = null;
+let hasMore = false, loadingOlder = false, lastSig = "";
 
 const esc = s => s.replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -103,7 +105,9 @@ async function loadProjects() {
         currentProject = a.dataset.p;
         document.querySelectorAll("#tabs a").forEach(x =>
           x.classList.toggle("active", x === a));
-        lastFeed = ""; loadTasks();
+        feedItems.clear(); oldestStem = null;
+        hasMore = false; lastSig = "";
+        loadTasks();
       });
   }
   if (!currentProject) currentProject = d.current || projs[0];
@@ -134,17 +138,27 @@ function renderMd(text) {
   return div.innerHTML;
 }
 
-async function loadTasks() {
-  if (!currentProject) return;
-  const d = await (await fetch("/api/tasks?project=" +
-    encodeURIComponent(currentProject))).json();
-  const sig = JSON.stringify(d).length + "|" +
-    (d.tasks.length ? d.tasks[d.tasks.length-1].output.length : 0) + "|" + d.tasks.length;
-  if (sig === lastFeed) return;
-  lastFeed = sig;
+const feedNow = () =>
+  [...feedItems.values()].sort((a, b) => a.created - b.created);
+
+function mergeTasks(list) {
+  list.forEach(t => feedItems.set(t.stem, t));
+  const items = feedNow();
+  oldestStem = items.length ? items[0].stem : null;
+  return items;
+}
+
+function renderFeed(items) {
+  const sig = items.map(t => t.stem + t.status + (t.task_status || "") +
+    (t.output || "").length).join() + "|" + loadingOlder;
+  if (sig === lastSig) return;
+  lastSig = sig;
   const feed = document.getElementById("feed");
   const nearBottom = innerHeight + scrollY >= document.body.offsetHeight - 120;
-  feed.innerHTML = d.tasks.length ? d.tasks.map(t => `
+  feed.innerHTML =
+    (loadingOlder ? '<div class="center grey-text" style="padding:6px">' +
+      '<span class="spin"></span>загружаю ранние…</div>' : "") +
+    (items.length ? items.map(t => `
     <div class="card"><div class="card-content" style="padding:14px 18px">
       <div class="task-head">
         <span class="meta">${esc(t.name)} · ${new Date(t.created*1000).toLocaleString("ru-RU")}
@@ -156,11 +170,43 @@ async function loadTasks() {
         ? `<div class="md">${renderMd(t.output)}</div>`
         : `<pre class="out">${esc(t.output)}</pre>`) : ""}
     </div></div>`).join("")
-    : '<div id="empty">Задач пока нет — напиши первую внизу.</div>';
+    : '<div id="empty">Задач пока нет — напиши первую внизу.</div>');
   if (nearBottom) scrollTo(0, document.body.scrollHeight);
   const lastOut = feed.querySelector(".card:last-child pre.out");
   if (lastOut && nearBottom) lastOut.scrollTop = lastOut.scrollHeight;
 }
+
+// poll: newest page only — merges updates/new arrivals into the feed
+async function loadTasks() {
+  if (!currentProject) return;
+  const d = await (await fetch("/api/tasks?project=" +
+    encodeURIComponent(currentProject) + "&limit=5")).json();
+  if (!feedItems.size) hasMore = d.has_more;
+  renderFeed(mergeTasks(d.tasks));
+}
+
+// scroll to top loads the 5 tasks right before the oldest one shown
+async function loadOlder() {
+  if (!hasMore || loadingOlder || !oldestStem) return;
+  loadingOlder = true;
+  renderFeed(feedNow());
+  try {
+    const d = await (await fetch("/api/tasks?project=" +
+      encodeURIComponent(currentProject) + "&limit=5&before=" +
+      encodeURIComponent(oldestStem))).json();
+    const prevH = document.body.scrollHeight, prevY = scrollY;
+    hasMore = d.tasks.some(t => !feedItems.has(t.stem)) ? d.has_more : false;
+    const items = mergeTasks(d.tasks);
+    loadingOlder = false;
+    renderFeed(items);
+    scrollTo(0, prevY + document.body.scrollHeight - prevH);
+  } catch (e) {
+    loadingOlder = false;
+    renderFeed(feedNow());
+  }
+}
+
+addEventListener("scroll", () => { if (scrollY < 200) loadOlder(); });
 
 async function loadStatus() {
   const d = await (await fetch("/api/status")).json();
@@ -181,7 +227,7 @@ async function send() {
       body: JSON.stringify({project: currentProject === "workspace" ? null : currentProject,
                             text})});
     const d = await r.json();
-    if (d.ok) { ta.value = ""; lastFeed = ""; loadTasks(); }
+    if (d.ok) { ta.value = ""; lastSig = ""; loadTasks(); }
     else M.toast({html: "Ошибка: " + (d.error || r.status)});
   } catch (e) { M.toast({html: "Сеть: " + e}); }
   btn.disabled = false;
