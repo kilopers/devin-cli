@@ -26,8 +26,11 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
 ## Архитектура
 
 - `watcher.py` — единственный долгоживущий процесс: webhook Telegram, очередь
-  задач, веб-интерфейс (`/` → `webui.html` + JSON `/api/*`) и статус-страница
-  (`/status`). HTTP-слой — Flask + waitress (`start_web`); роуты под
+  задач, веб-интерфейс (`/` → `templates/webui.html` + JSON `/api/*`) и
+  статус-страница (`/status`). HTTP-слой — Flask + waitress (`start_web`);
+  страницы рендерятся через Jinja2 `render_template` из `TEMPLATES_DIR`
+  (default `/app/templates`); `/login` — форма на MUI (React+Material UI
+  по CDN), ошибка входа пробрасывается шаблону переменной `error`. Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
   auth off). Telegram webhook (`POST /<any>`) и GET /status — публичные.

@@ -180,7 +180,10 @@ nginx режет путь; работает всегда).
 ## Веб-интерфейс
 
 На `http://server/` (тот же порт, что и webhook) — веб-морда на Materialize.
-HTTP-слой — Flask + waitress; авторизация по сессии (один админ):
+HTTP-слой — Flask + waitress; страницы — Jinja2-шаблоны (`templates/`,
+`render_template`; путь переопределяется `TEMPLATES_DIR`), страница входа —
+на MUI (React + Material UI по CDN, форма остаётся обычным POST на `/login`).
+Авторизация по сессии (один админ):
 
 - `/` и все `/api/*` требуют логина (`/login` — форма, сессия в cookie
   HttpOnly+SameSite=Lax; `secret_key` из `WEB_SESSION_SECRET` или

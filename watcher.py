@@ -33,8 +33,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, redirect, request, send_file, \
-    session
+from flask import Flask, Response, jsonify, redirect, render_template, \
+    request, session
 from waitress import serve
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -76,8 +76,9 @@ STT_BASE_URL = os.environ.get("STT_BASE_URL", "https://api.openai.com/v1")
 STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
 YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
-WEBUI_FILE = Path(os.environ.get("WEBUI_FILE", "/app/webui.html"))
-LOGIN_FILE = WEBUI_FILE.parent / "login.html"
+# Web UI pages are Jinja2 templates rendered by Flask (render_template):
+# templates/login.html — MUI login form, templates/webui.html — main page.
+TEMPLATES_DIR = Path(os.environ.get("TEMPLATES_DIR", "/app/templates"))
 # Web UI auth: single admin account. The password hash lives in
 # kv.admin_password_hash — seeded from WEB_ADMIN_PASSWORD on first use,
 # afterwards the profile page rewrites the kv copy (env is a bootstrap only).
@@ -1827,7 +1828,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
 # Same sync/threaded model as before — waitress runs handler threads; the
 # blocking urllib/subprocess/PyMySQL code inside is unchanged.
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
 app.config.update(SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE="Lax")
 
@@ -1882,7 +1883,8 @@ def _login():
         return redirect("/login?err=1")
     if session.get("uid"):
         return redirect("/")
-    return send_file(LOGIN_FILE)
+    return render_template("login.html",
+                           error=bool(request.args.get("err")))
 
 
 @app.post("/logout")
@@ -2028,7 +2030,7 @@ def _api_task_new():
 @app.get("/index.html")
 @login_required
 def _index():
-    return send_file(WEBUI_FILE)
+    return render_template("webui.html")
 
 
 @app.post("/<path:_any>")
