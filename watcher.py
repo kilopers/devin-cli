@@ -19,6 +19,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -70,6 +71,10 @@ SESSION_FILE = TASKS_DIR / "session-mode.txt"  # "continue" | "new"
 MODE_FILE = TASKS_DIR / "reply-mode.txt"  # "code" | "ask"
 TASK_PROJECTS_FILE = TASKS_DIR / "task-projects.json"  # task stem -> project
 WEBUI_FILE = Path(os.environ.get("WEBUI_FILE", "/app/webui.html"))
+# mihomo (Clash Meta) — встроенный прокси: бинарь в образе, конфиг монтируется
+# с хоста. Стартует только при наличии config.yaml, слушает 127.0.0.1:7890.
+MIHOMO_DIR = Path(os.environ.get("MIHOMO_DIR", "/mihomo"))
+MIHOMO_PROXY = os.environ.get("MIHOMO_PROXY", "http://127.0.0.1:7890")
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:
@@ -79,8 +84,14 @@ if _proxy:
 else:
     TG_OPENER = urllib.request.build_opener()
 
+# Яндекс (SpeechKit) ходит напрямую всегда — как git: пустой ProxyHandler
+# игнорирует и явный прокси, и *_proxy env (РФ-сервису европейский выход
+# mihomo не нужен и может быть заблокирован).
+DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 _bot_proc: subprocess.Popen | None = None
 _task_proc: subprocess.Popen | None = None  # running devin-task, killable via telegram
+_mihomo_proc: subprocess.Popen | None = None
 _started_at = time.time()
 
 STATE = {
@@ -475,7 +486,7 @@ def _yandex_request(path: str, body: dict | None = None) -> str:
         method="POST" if body is not None else "GET",
     )
     try:
-        with TG_OPENER.open(req, timeout=120) as r:
+        with DIRECT_OPENER.open(req, timeout=120) as r:
             return r.read().decode()
     except urllib.error.HTTPError as e:
         raise RuntimeError(
@@ -535,7 +546,7 @@ def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg") -> str:
         method="POST")
     log(f"stt -> yandex v1 sync, {len(audio)} bytes, lang={YANDEX_LANG}")
     try:
-        with TG_OPENER.open(req, timeout=60) as r:
+        with DIRECT_OPENER.open(req, timeout=60) as r:
             res = json.loads(r.read())
     except urllib.error.HTTPError as e:
         raise RuntimeError(
@@ -1586,6 +1597,51 @@ def start_web() -> None:
     log(f"status page on :{WEB_PORT}")
 
 
+def start_mihomo() -> None:
+    """Run mihomo when /mihomo/config.yaml is mounted.
+
+    mihomo exposes a local HTTP/SOCKS5 proxy at MIHOMO_PROXY (default
+    127.0.0.1:7890) forwarding to the nodes from the config. If no explicit
+    *_proxy env is set, it becomes the default proxy for the devin API and
+    telegram — children inherit os.environ, TG_OPENER is rebuilt for the
+    in-process webhook handler. Git stays direct either way.
+    """
+    global _mihomo_proc, TG_OPENER
+    cfg = MIHOMO_DIR / "config.yaml"
+    if not cfg.exists():
+        return
+    if _mihomo_proc and _mihomo_proc.poll() is None:
+        return
+    try:
+        _mihomo_proc = subprocess.Popen(["mihomo", "-d", str(MIHOMO_DIR)])
+    except FileNotFoundError:
+        log("mihomo config found but the binary is missing — not starting")
+        return
+    log(f"mihomo started (config {cfg}), waiting for {MIHOMO_PROXY}")
+    port = int(MIHOMO_PROXY.rsplit(":", 1)[-1])
+    for _ in range(50):
+        if _mihomo_proc.poll() is not None:
+            log(f"mihomo exited ({_mihomo_proc.returncode}) — "
+                "check /mihomo/config.yaml; running without it")
+            return
+        try:
+            socket.create_connection(("127.0.0.1", port), 0.2).close()
+            break
+        except OSError:
+            time.sleep(0.2)
+    else:
+        log("mihomo port did not open in 10s — continuing anyway")
+    if not (os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")):
+        os.environ["HTTPS_PROXY"] = os.environ["HTTP_PROXY"] = MIHOMO_PROXY
+        os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1")
+        os.environ.setdefault("no_proxy", "localhost,127.0.0.1")
+        TG_OPENER = urllib.request.build_opener(
+            urllib.request.ProxyHandler(
+                {"http": MIHOMO_PROXY, "https": MIHOMO_PROXY}))
+        log(f"proxy -> {MIHOMO_PROXY} (mihomo) for devin API and telegram; "
+            "git stays direct")
+
+
 def start_bot() -> None:
     """Run bot.py in parallel when TELEGRAM_BOT_TOKEN is set."""
     global _bot_proc
@@ -1604,6 +1660,7 @@ def main() -> int:
         d.mkdir(parents=True, exist_ok=True)
 
     ensure_repo()
+    start_mihomo()
     start_bot()
     register_webhook()
     register_commands()
@@ -1616,6 +1673,10 @@ def main() -> int:
                 # clean exit (e.g. INTERVAL<=0 one-shot mode) — don't restart
                 log(f"telegram bot exited ({_bot_proc.returncode}), restarting")
                 start_bot()
+            if _mihomo_proc and _mihomo_proc.poll() is not None:
+                log(f"mihomo exited ({_mihomo_proc.returncode}), restarting")
+                _mihomo_proc = None
+                start_mihomo()
             task = next_task()
             if task is None:
                 time.sleep(POLL_INTERVAL)
@@ -1625,6 +1686,8 @@ def main() -> int:
             log("stopping")
             if _bot_proc:
                 _bot_proc.terminate()
+            if _mihomo_proc:
+                _mihomo_proc.terminate()
             return 0
         except Exception as e:  # keep the watcher alive no matter what
             log(f"ERROR: {e}")

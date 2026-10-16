@@ -243,7 +243,23 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 
 ## Прокси
 
-Если devin API и telegram доступны только через прокси, задай в `.env`:
+**Встроенный mihomo (Clash Meta) — рекомендуемый вариант.** В образ уже
+вшит бинарник mihomo; если рядом с compose-файлом есть `mihomo/config.yaml`,
+watcher сам поднимает его при старте, и трафик devin API и telegram идёт
+через `http://127.0.0.1:7890` → дальше на ноды из конфига (VLESS и т.д.):
+
+```bash
+mkdir -p mihomo
+cp mihomo.example.yaml mihomo/config.yaml   # впиши свои ноды в proxies:
+docker compose up -d
+```
+
+Шаблон группы `Прокси` — `url-test` с `include-all`: ноды подхватываются
+из `proxies:` автоматически, ездит через самую быструю. Менять ноду —
+править `mihomo/config.yaml` и `docker compose restart devin`.
+`mihomo/` в `.gitignore` — ключи подписки не уедут в репо.
+
+**Внешний прокси** — если mihomo не нужен, а прокси один готовый:
 
 ```bash
 HTTP_PROXY=http://user:password@proxy.company.local:3128
@@ -252,11 +268,15 @@ HTTPS_PROXY=http://user:password@proxy.company.local:3128
 
 Прокси применяется к **Devin API** (`proxy.mode=manual` в конфиге devin) и
 **telegram-боту** (явный `ProxyHandler`, креды маскируются в логах).
-Пустые значения = прямые соединения.
+Явные `HTTP(S)_PROXY` имеют приоритет над mihomo; пусто + нет
+`mihomo/config.yaml` = прямые соединения.
 
 **Git прокси игнорирует**: `http.proxy ""` в gitconfig + срезание `*_proxy`
 для clone/pull/push — работает и для команд git, которые запускает сам
 агент. SSH и HTTPS remote идут напрямую независимо от прокси.
+
+**Яндекс SpeechKit тоже напрямую**: запросы STT ходят отдельным opener'ом,
+игнорирующим любой прокси — РФ-сервису европейский выход не нужен.
 
 ## One-shot режим (без compose)
 

@@ -1,0 +1,74 @@
+# Конфиг mihomo (Clash Meta) — встроенный прокси воркера.
+#
+# Как включить:
+#   mkdir -p mihomo && cp mihomo.example.yaml mihomo/config.yaml
+#   → впиши свои ноды в proxies: (проще всего — вставь секцию целиком
+#     из конфига подписки; формат тот же, что у Clash/Mihomo)
+#   → docker compose up -d
+#
+# watcher при старте видит /mihomo/config.yaml, поднимает mihomo и направляет
+# devin API и telegram на http://127.0.0.1:7890. Явные HTTP(S)_PROXY в .env
+# имеют приоритет — задай их, если нужен другой прокси. Git ходит напрямую.
+#
+# ВНИМАНИЕ: mihomo/config.yaml содержит ключи подписки — НЕ коммить,
+# каталог mihomo/ в .gitignore.
+
+# Если вставляешь конфиг подписки целиком — выкинь секции tun:, redir-port,
+# sniffer: и hosts: — в контейнере работаем только как локальный прокси
+# (TUN требует NET_ADMIN и /dev/net/tun, тут это не нужно).
+
+# HTTP+SOCKS5 вход. Без allow-lan слушает только 127.0.0.1 — снаружи
+# контейнера порт недоступен, и это нормально (клиенты — процессы внутри).
+mixed-port: 7890
+log-level: warning
+tcp-concurrent: true
+unified-delay: true
+
+# DNS для резолва доменов нод (иногда местный DNS их портит).
+dns:
+  enable: true
+  ipv6: false
+  nameserver:
+    - 77.88.8.8
+    - 1.1.1.1
+  proxy-server-nameserver:
+    - 77.88.8.8
+    - 1.1.1.1
+
+proxies:
+  # ПРИМЕР VLESS-Reality ноды — замени на свои из подписки.
+  - name: "proxy-1"
+    type: vless
+    server: example.com          # адрес ноды
+    port: 443
+    network: tcp
+    udp: true
+    uuid: "00000000-0000-0000-0000-000000000000"   # uuid из подписки
+    packet-encoding: xudp
+    tls: true
+    servername: example.com       # SNI из подписки
+    reality-opts:
+      public-key: "REPLACE_ME"    # public-key из подписки
+      short-id: ""
+    client-fingerprint: firefox
+  # - name: "proxy-2"             # остальные ноды — тем же форматом
+  #   ...
+
+proxy-groups:
+  # Автовыбор: раз в 5 минут меряет задержку и ездит через самую быструю
+  # ноду; include-all забирает всё из proxies: — список нод править не нужно.
+  - name: Прокси
+    type: url-test
+    include-all: true
+    url: "http://connectivitycheck.gstatic.com/generate_204"
+    interval: 300
+    tolerance: 50   # мс — не дёргать ноду из-за мелкого джиттера
+
+rules:
+  # РФ-сервисы напрямую (страховка: воркер и так шлёт Яндекс мимо прокси,
+  # но правило сработает для всего остального, что попадёт в mihomo).
+  - "DOMAIN-SUFFIX,yandex.net,DIRECT"
+  - "DOMAIN-SUFFIX,yandex.ru,DIRECT"
+  # Весь проксируемый трафик — через группу Прокси. Что уходит напрямую,
+  # решается не здесь, а кодом воркера (git и STT Яндекса не берут proxy env).
+  - "MATCH,Прокси"

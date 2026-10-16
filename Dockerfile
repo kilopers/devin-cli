@@ -28,6 +28,18 @@ RUN curl -fsSL "https://static.devin.ai/cli/${DEVIN_CLI_VERSION}/setup.sh" -o /t
     && XDG_DATA_HOME=/opt/devin-install bash /tmp/devin-install.sh \
     && rm -f /tmp/devin-install.sh
 
+# mihomo (Clash Meta) — локальный HTTP/SOCKS5-прокси внутри контейнера.
+# Слушает 127.0.0.1:7890; watcher запускает его, только если смонтирован
+# /mihomo/config.yaml (см. mihomo.example.yaml). Нужен, когда devin API /
+# telegram доступны только через VLESS-ноды (geoblock). Трафик дальше уходит
+# на ноды из конфига; git по-прежнему идёт напрямую (env срезается).
+# compatible-сборка — работает на любом amd64 без требований к микроархитектуре.
+ARG MIHOMO_VERSION=v1.19.32
+RUN curl -fsSL "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-amd64-compatible-${MIHOMO_VERSION}.gz" \
+        | gunzip > /usr/local/bin/mihomo \
+    && chmod +x /usr/local/bin/mihomo \
+    && mihomo -v
+
 # Toolchain for user projects: Node.js 22 LTS (npm/Vite) + PHP 8.5 + Composer.
 # Dev servers the agent starts stay inside the container — it reaches them on
 # localhost directly, no host port mapping needed.

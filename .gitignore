@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 .env
 devin-data/
+mihomo/
 tasks/
 .devin/config.local.json
