@@ -340,9 +340,28 @@ async function send() {
   btn.disabled = false;
 }
 
-// voice dictation: AudioContext → PCM16 WAV → /api/stt → append to textarea
+// voice dictation: AudioContext → PCM16 WAV @16kHz → /api/stt → textarea.
+// Yandex accepts only 8000/16000/48000 — ask ctx for 16k, else resample.
+const STT_RATE = 16000;
 let rec = null;
 const micBtn = document.getElementById("micBtn");
+
+function resample(chunks, srcRate, dstRate) {
+  const srcLen = chunks.reduce((a, c) => a + c.length, 0);
+  const src = new Float32Array(srcLen);
+  let off = 0;
+  for (const c of chunks) { src.set(c, off); off += c.length; }
+  if (srcRate === dstRate || !srcLen) return [src];
+  const dstLen = Math.round(srcLen * dstRate / srcRate);
+  const dst = new Float32Array(dstLen);
+  const ratio = srcRate / dstRate;
+  for (let i = 0; i < dstLen; i++) {
+    const p = i * ratio, i0 = Math.floor(p),
+          i1 = Math.min(i0 + 1, srcLen - 1), f = p - i0;
+    dst[i] = src[i0] + (src[i1] - src[i0]) * f;
+  }
+  return [dst];
+}
 
 function encodeWav(chunks, rate) {
   const len = chunks.reduce((a, c) => a + c.length, 0);
@@ -370,7 +389,8 @@ micBtn.onclick = async () => {
     clearTimeout(r.timer);
     r.proc.disconnect(); r.src.disconnect(); r.gain.disconnect();
     r.stream.getTracks().forEach(t => t.stop());
-    const wav = encodeWav(r.chunks, r.ctx.sampleRate);
+    const wav = encodeWav(resample(r.chunks, r.ctx.sampleRate, STT_RATE),
+                          STT_RATE);
     r.ctx.close();
     micBtn.classList.remove("rec");
     ic.textContent = "hourglass_empty"; ic.classList.add("spinning");
@@ -394,7 +414,8 @@ micBtn.onclick = async () => {
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)(
+      {sampleRate: STT_RATE});   // Safari может проигнорировать — ниже ресемпл
     const src = ctx.createMediaStreamSource(stream);
     const proc = ctx.createScriptProcessor(4096, 1, 1);
     const gain = ctx.createGain();       // в ноль — чтобы не было эха

@@ -13,6 +13,7 @@ output into outbox/, then moves the task file to done/.
 Tasks run sequentially, oldest first.
 """
 
+import array
 import base64
 import html
 import json
@@ -841,15 +842,34 @@ def _wav_rate(wav: bytes) -> int:
     return 16000
 
 
+def _pcm_resample(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
+    """Linear-resample mono PCM16 LE — Yandex accepts only 8/16/48 kHz."""
+    if src_rate == dst_rate:
+        return pcm
+    src = array.array("h")
+    src.frombytes(pcm[:len(pcm) // 2 * 2])
+    n = len(src)
+    dst = array.array("h", bytes(max(1, round(n * dst_rate / src_rate)) * 2))
+    ratio = src_rate / dst_rate
+    for i in range(len(dst)):
+        p = i * ratio
+        i0 = int(p)
+        i1 = min(i0 + 1, n - 1)
+        dst[i] = int(src[i0] + (src[i1] - src[i0]) * (p - i0))
+    return dst.tobytes()
+
+
 def web_transcribe(wav: bytes) -> str:
     """Browser mic → WAV → STT. Yandex gets raw LPCM + the real sample
     rate; gemini/openai take the WAV file as-is."""
     if STT_PROVIDER == "yandex":
         if not STT_API_KEY:
             raise RuntimeError("STT не настроен: нет STT_API_KEY (yandex)")
-        return yandex_transcribe_sync(
-            wav[44:] if wav[:4] == b"RIFF" else wav,
-            "audio/L16", _wav_rate(wav))
+        rate = _wav_rate(wav)
+        pcm = wav[44:] if wav[:4] == b"RIFF" else wav
+        if rate not in (8000, 16000, 48000):   # safety net for odd clients
+            pcm, rate = _pcm_resample(pcm, rate, 16000), 16000
+        return yandex_transcribe_sync(pcm, "audio/L16", rate)
     if STT_PROVIDER == "gemini" and not GEMINI_API_KEY:
         raise RuntimeError("STT не настроен: нет GEMINI_API_KEY")
     if STT_PROVIDER not in ("gemini", "yandex") and not STT_API_KEY:
