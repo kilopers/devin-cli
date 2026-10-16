@@ -184,6 +184,9 @@ HTTP-слой — Flask + waitress; страницы — Jinja2-шаблоны (
 `render_template`; путь переопределяется `TEMPLATES_DIR`), страница входа —
 обычная HTML-форма в стиле Material (чистый CSS, без JS и CDN — открывается
 и на телефоне), POST на `/login`.
+Иконка приложения — официальный логотип Devin, скачан с devin.ai:
+`static/favicon.svg` (+ `favicon.ico` и `icon.png` для `apple-touch-icon`),
+показан в шапке, мобильном меню и на странице входа.
 Авторизация по сессии (один админ):
 
 - `/` и все `/api/*` требуют логина (`/login` — форма, сессия в cookie

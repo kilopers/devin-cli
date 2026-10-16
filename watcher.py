@@ -2083,6 +2083,13 @@ def _legacy_status_page() -> str:
 </body></html>"""
 
 
+@app.get("/favicon.ico")
+def _favicon():
+    # browsers still probe /favicon.ico directly — without this they'd get
+    # the status-page HTML from the catch-all below
+    return app.send_static_file("favicon.ico")
+
+
 @app.get("/status")
 @app.get("/<path:_any>")   # unknown GET → status page (public, as before)
 def _status_page(_any: str = ""):
