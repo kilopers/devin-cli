@@ -500,6 +500,9 @@ def run_task(task: dict) -> None:
                DEVIN_EXPORT_FILE=str(export_path))
     chat_id = task.get("chat_id")
     out_path = progress_dir / f"{stem}.out"
+    # HEAD до задачи — после неё покажем diff изменений в веб-ленте
+    rc, _out = _git(workdir, "rev-parse", "HEAD")
+    before_sha = _out.strip() if rc == 0 else ""
     global _task_proc
     try:
         # stdout+stderr go to a file the progress thread tails — devin -p
@@ -530,6 +533,9 @@ def run_task(task: dict) -> None:
     finally:
         _task_proc = None
 
+    diff_txt = _git_diff_since(workdir, before_sha)
+    if diff_txt:
+        body += f"\n\n### Что изменилось в репо\n\n```diff\n{diff_txt}\n```\n"
     db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
             " finished=%s WHERE stem=%s", (body, status, time.time(), stem))
     STATE.update(current_task=None, last_task=name,
@@ -1247,6 +1253,26 @@ def _git(workdir, *args) -> tuple:
     res = subprocess.run(["git", "-C", str(workdir), *args],
                          capture_output=True, text=True, timeout=120, env=env)
     return res.returncode, (res.stdout + res.stderr).strip()
+
+
+def _git_diff_since(workdir, before: str, max_lines: int = 250) -> str:
+    """Diff рабочего дерева против HEAD'а до задачи + список новых
+    untracked-файлов (их контента в diff нет). Пусто = нечего показывать."""
+    if not before:
+        return ""
+    rc, diff = _git(workdir, "diff", "--no-color", before)
+    if rc != 0:
+        return ""
+    _, st = _git(workdir, "status", "--porcelain")
+    untracked = [l[3:] for l in st.splitlines() if l.startswith("??")]
+    lines = diff.splitlines()
+    if len(lines) > max_lines:
+        lines = lines[:max_lines] + \
+            [f"… ещё {len(diff.splitlines()) - max_lines} строк diff'а"]
+    out = "\n".join(lines)
+    if untracked:
+        out += "\nновые файлы: " + ", ".join(untracked[:20])
+    return out.strip()
 
 
 def offer_commit(task: dict, chat_id, workdir) -> None:
