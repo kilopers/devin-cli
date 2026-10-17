@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import {
   AppBar, Box, Card, CardContent, Chip, CircularProgress, IconButton,
-  Radio, Toolbar, Typography,
+  Radio, TextField, Toolbar, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
@@ -13,6 +13,7 @@ import { apiJson, post } from "./api.js";
 export default function ModelsPage({ accent, onClose, toast }) {
   const [data, setData] = useState(null);   // null = грузим
   const [current, setCurrent] = useState("");
+  const [q, setQ] = useState("");           // фильтр по моделям
 
   useEffect(() => {
     setData(null);
@@ -24,12 +25,15 @@ export default function ModelsPage({ accent, onClose, toast }) {
   const pick = id => post("/api/model", { model: id })
     .then(d => { if (d.ok) { setCurrent(id); toast?.("Модель: " + id); } });
 
-  const models = data?.models || [];
+  const ql = q.trim().toLowerCase();
+  const models = (data?.models || []).filter(m =>
+    !ql || m.id.toLowerCase().includes(ql) ||
+    (m.description || "").toLowerCase().includes(ql) ||
+    (m.info?.label || "").toLowerCase().includes(ql));
   return (
-    <Box sx={{ display: "flex", flexDirection: "column",
-               flex: "1 1 auto", minHeight: 0, width: "100%",
-               height: "calc(100dvh - 60px)", overflow: "hidden" }}>
-      <AppBar position="static" color="primary" sx={{ bgcolor: accent }}>
+    <Box sx={{ width: "100%" }}>
+      <AppBar position="sticky" color="primary"
+              sx={{ bgcolor: accent, top: 0, zIndex: 5 }}>
         <Toolbar variant="dense">
           <SmartToyIcon sx={{ mr: 1 }} />
           <Typography variant="h6" sx={{ flex: 1, fontSize: 16 }}>
@@ -44,9 +48,13 @@ export default function ModelsPage({ accent, onClose, toast }) {
           </IconButton>
         </Toolbar>
       </AppBar>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1.5,
-                 maxWidth: 900, mx: "auto", width: "100%",
-                 WebkitOverflowScrolling: "touch" }}>
+      <Box sx={{ p: 1.5, pb: "150px", maxWidth: 900,
+                 mx: "auto", width: "100%" }}>
+        {data && (
+          <TextField size="small" fullWidth value={q}
+                     onChange={e => setQ(e.target.value)}
+                     placeholder={`поиск — ${data.models.length} моделей`}
+                     sx={{ mb: 1, bgcolor: "#fff" }} />)}
         {!data && (
           <Box sx={{ display: "flex", gap: 1, alignItems: "center",
                      justifyContent: "center", pt: 4 }}>
@@ -57,7 +65,8 @@ export default function ModelsPage({ accent, onClose, toast }) {
         {data?.error &&
           <Typography color="error">{data.error}</Typography>}
         {data && !data.error && !models.length &&
-          <Typography color="text.secondary">моделей нет</Typography>}
+          <Typography color="text.secondary">
+            {q ? "по фильтру ничего" : "моделей нет"}</Typography>}
         {models.map(m => (
           <Card key={m.id} variant="outlined"
                 onClick={() => pick(m.id)}
@@ -75,6 +84,27 @@ export default function ModelsPage({ accent, onClose, toast }) {
               {m.description &&
                 <Typography variant="body2" color="text.secondary">
                   {m.description}</Typography>}
+              {(m.info?.cost_summary || m.info?.cost_tier ||
+                m.info?.max_context_tokens) && (
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5,
+                           mt: 0.5 }}>
+                  {m.info.cost_summary &&
+                    <Chip size="small" color="success" variant="outlined"
+                          label={m.info.cost_summary} />}
+                  {m.info.cost_tier &&
+                    <Chip size="small" variant="outlined"
+                          label={"тариф: " + m.info.cost_tier} />}
+                  {m.info.max_context_tokens &&
+                    <Chip size="small" variant="outlined"
+                          label={"контекст: " +
+                            Math.round(m.info.max_context_tokens / 1000) +
+                            "K"} />}
+                  {m.info.max_output_tokens &&
+                    <Chip size="small" variant="outlined"
+                          label={"вывод: " +
+                            Math.round(m.info.max_output_tokens / 1000) +
+                            "K"} />}
+                </Box>)}
               {m.info && Object.keys(m.info).length > 0 &&
                 <Box component="pre" sx={{
                   mt: 0.5, mb: 0, p: 0.8, fontSize: 11, lineHeight: 1.4,

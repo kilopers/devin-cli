@@ -1265,11 +1265,12 @@ def _models_from_json(data) -> list:
 
     def walk(x, desc=""):
         if isinstance(x, dict):
-            d = x.get("description") or x.get("display_name") or desc
+            d = x.get("description") or x.get("display_name") \
+                or x.get("label") or desc
             kids = next((x[k] for k in ("models", "variants", "items",
                                         "children")
                          if isinstance(x.get(k), list)), None)
-            mid = next((x[k] for k in ("id", "slug", "model")
+            mid = next((x[k] for k in ("model_uid", "id", "slug", "model")
                         if isinstance(x.get(k), str)), None)
             if mid is None and kids is None:
                 v = x.get("name")
