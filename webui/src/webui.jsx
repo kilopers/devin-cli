@@ -132,11 +132,16 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
               <Box component="span" sx={{ border: "1px solid #cfd8dc",
                 borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
                 color: "#78909c" }}>{t.model}</Box>}
-            {t.mode === "ask" ? " " : null}
-            {t.mode === "ask" &&
-              <Box component="span" sx={{ border: "1px solid #cfd8dc",
-                borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
-                color: "#78909c" }}>💬 вопрос</Box>}
+            {" "}
+            <Box component="span" sx={{ border: "1px solid #cfd8dc",
+              borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
+              color: "#78909c" }}>
+              {t.mode === "ask" ? "💬 вопрос" : "🛠 код"}</Box>
+            {" "}
+            <Box component="span" sx={{ border: "1px solid #cfd8dc",
+              borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
+              color: t.ac === "1" ? "#2e7d32" : "#78909c" }}>
+              {t.ac === "1" ? "⚡ автокоммит" : "✋ коммит вручную"}</Box>
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
             {t.status === "running" && onStop && (
