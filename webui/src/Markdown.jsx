@@ -27,6 +27,9 @@ export default function Markdown({ text }) {
   const html = useMemo(
     () => DOMPurify.sanitize(marked.parse(text, { breaks: true, gfm: true })),
     [text]);
+  // repaint after EVERY render: the feed re-renders on each poll and React
+  // can reset dangerouslySetInnerHTML back to the raw html — colors wiped.
+  // paintDiff is idempotent; hljs skips already-highlighted nodes.
   useEffect(() => {
     ref.current?.querySelectorAll("pre code").forEach(c => {
       if ((c.className || "").includes("language-diff")) {
@@ -35,7 +38,7 @@ export default function Markdown({ text }) {
       }
       try { hljs.highlightElement(c); } catch (e) { /* keep raw block */ }
     });
-  }, [html]);
+  });
   return <div ref={ref} className="md"
               dangerouslySetInnerHTML={{ __html: html }} />;
 }
