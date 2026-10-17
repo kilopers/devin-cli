@@ -27,7 +27,8 @@ export default function ModelsPage({ accent, onClose, toast }) {
   const models = data?.models || [];
   return (
     <Box sx={{ display: "flex", flexDirection: "column",
-               flex: "1 1 auto", minHeight: 0 }}>
+               flex: "1 1 auto", minHeight: 0, width: "100%",
+               height: "calc(100dvh - 60px)", overflow: "hidden" }}>
       <AppBar position="static" color="primary" sx={{ bgcolor: accent }}>
         <Toolbar variant="dense">
           <SmartToyIcon sx={{ mr: 1 }} />
@@ -43,8 +44,9 @@ export default function ModelsPage({ accent, onClose, toast }) {
           </IconButton>
         </Toolbar>
       </AppBar>
-      <Box sx={{ flex: 1, overflow: "auto", p: 1.5, maxWidth: 900,
-                 mx: "auto", width: "100%" }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", p: 1.5,
+                 maxWidth: 900, mx: "auto", width: "100%",
+                 WebkitOverflowScrolling: "touch" }}>
         {!data && (
           <Box sx={{ display: "flex", gap: 1, alignItems: "center",
                      justifyContent: "center", pt: 4 }}>
@@ -82,7 +84,9 @@ export default function ModelsPage({ accent, onClose, toast }) {
                     .filter(([k]) => !["id", "name", "description",
                                        "display_name"].includes(k))
                     .map(([k, v]) => `${k}: ${
-                      typeof v === "object" ? JSON.stringify(v) : v}`)
+                      typeof v === "object" && v !== null
+                        ? JSON.stringify(v, null, 2)
+                        : v}`)
                     .join("\n") || "доп. полей нет"}
                 </Box>}
             </CardContent>

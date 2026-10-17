@@ -169,15 +169,15 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
             : <Typography variant="body2" color="text.secondary">
                 {t.status === "queued" ? "в очереди — вывод ещё пуст"
                                       : "вывод пока пуст"}</Typography>}
-          {t.commit_offered ? (
-            <Box sx={{ mt: 1.5, display: "flex", gap: 1 }}>
-              <Button size="small" variant="contained" color="success"
-                      onClick={() => onCommit(t.stem, "commit")}>
-                ✅ закоммитить и запушить</Button>
-              <Button size="small" onClick={() => onCommit(t.stem, "skip")}>
-                ⏭ пропустить</Button>
-            </Box>) : null}
         </Collapse>
+        {t.commit_offered ? (
+          <Box sx={{ mt: 1.5, display: "flex", gap: 1 }}>
+            <Button size="small" variant="contained" color="success"
+                    onClick={() => onCommit(t.stem, "commit")}>
+              ✅ закоммитить и запушить</Button>
+            <Button size="small" onClick={() => onCommit(t.stem, "skip")}>
+              ⏭ пропустить</Button>
+          </Box>) : null}
         <Box onClick={() => setOpen(o => !o)}
              sx={{ display: "flex", alignItems: "center", gap: 0.5,
                    justifyContent: "center", cursor: "pointer", mt: 0.5,

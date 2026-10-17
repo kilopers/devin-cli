@@ -1276,10 +1276,11 @@ def _models_from_json(data) -> list:
                 if isinstance(v, str):
                     mid = v  # leaf dict — name is the model id
             if mid and kids is None:
-                # всё, что devin отдал по модели — на страницу моделей
+                # всё, что devin отдал по модели — цены, токены, лимиты;
+                # из info режем только вложенные дети-моделей
                 info = {k: v for k, v in x.items()
-                        if not isinstance(v, (dict, list))
-                        or k in ("aliases",)}
+                        if k not in ("models", "variants", "items",
+                                     "children")}
                 add(mid, d, info)
             fam = mid or (x.get("name") if isinstance(x.get("name"), str)
                           else "")
