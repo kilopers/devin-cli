@@ -8,7 +8,7 @@ import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
   Alert, AppBar, Box, Button, Card, CardContent, Chip, CssBaseline,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-  GlobalStyles, IconButton, List, ListItemButton, ListItemText,
+  GlobalStyles, IconButton,
   ListSubheader, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
   TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
@@ -426,21 +426,11 @@ export default function App() {
                  px: 2, py: 1.5, fontWeight: 600 }}>
         <img src="/static/favicon.svg" alt="" style={{ height: 22 }} />
         WebDev
+        <Typography component="span" variant="caption"
+                    sx={{ opacity: .55, fontSize: 11 }}>
+          (v{status.version || "…"})
+        </Typography>
       </Box>
-      <List subheader={<ListSubheader>Проекты</ListSubheader>} dense>
-        {projects.map(p => (
-          <ListItemButton key={p} selected={p === project}
-                          onClick={() => selectProject(p)}>
-            <ListItemText primary={p} />
-          </ListItemButton>))}
-        <ListItemButton onClick={() => { setDrawerOpen(false);
-                                         setAddOpen(true); }}>
-          <ListItemText primary="➕ Добавить проект…"
-                        primaryTypographyProps={{ color: "#1565c0",
-                                                 fontSize: 14 }} />
-        </ListItemButton>
-      </List>
-      <Divider />
       <ListSubheader>Файлы</ListSubheader>
       <Box sx={{ maxHeight: "40vh", overflow: "auto", px: 1 }}>
         <FileTree project={project} onError={setToast}
@@ -480,7 +470,8 @@ export default function App() {
                                            alignItems: "center", gap: 0.8 }}>
               WebDev
               <Typography component="span" variant="caption"
-                          sx={{ opacity: .55, fontSize: 11 }}>
+                          sx={{ opacity: .55, fontSize: 11,
+                       display: { xs: "none", sm: "inline" } }}>
                 (v{status.version || "…"})
               </Typography>
               <ConnBadge conn={conn} showVer={false} />
