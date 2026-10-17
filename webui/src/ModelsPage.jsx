@@ -10,6 +10,7 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import MoneyOffIcon from "@mui/icons-material/MoneyOff";
 import { apiJson, post } from "./api.js";
 
 const ModelCard = ({ m, current, onPick }) => (
@@ -42,9 +43,12 @@ const ModelCard = ({ m, current, onPick }) => (
           {m.info.cost_summary &&
             <Chip size="small" color="success" variant="outlined"
                   label={m.info.cost_summary} />}
-          {m.info.cost_tier &&
-            <Chip size="small" variant="outlined"
-                  label={"тариф: " + m.info.cost_tier} />}
+          {m.info.cost_tier && (m.info.cost_tier === "Free"
+            ? <Chip size="small" color="success"
+                    icon={<MoneyOffIcon sx={{ fontSize: 14 }} />}
+                    label="бесплатно" />
+            : <Chip size="small" variant="outlined"
+                    label={"тариф: " + m.info.cost_tier} />)}
           {m.info.max_context_tokens &&
             <Chip size="small" variant="outlined"
                   label={"контекст: " +
@@ -158,6 +162,11 @@ export default function ModelsPage({ accent, onClose, toast }) {
                 transform: famOpen(f) ? "rotate(180deg)" : "none" }} />
               <Typography sx={{ fontWeight: 600, fontSize: 14 }}>
                 {f}</Typography>
+              {byFam.get(f).some(m => m.info?.cost_tier === "Free") &&
+                <Chip size="small" color="success"
+                      icon={<MoneyOffIcon sx={{ fontSize: 13 }} />}
+                      label="FREE"
+                      sx={{ ml: 1, height: 20, fontSize: 11 }} />}
               <Chip size="small" label={byFam.get(f).length}
                     sx={{ ml: "auto", height: 20, fontSize: 11 }} />
             </ListItemButton>
