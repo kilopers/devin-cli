@@ -20,6 +20,7 @@ import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
 import Changes from "./Changes.jsx";
+import FileEditor from "./FileEditor.jsx";
 import Composer from "./Composer.jsx";
 
 const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
@@ -163,6 +164,7 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
+  const [editPath, setEditPath] = useState(null);   // file open in editor
   const modelFocus = useRef(false), modeFocus = useRef(false);
   const firstLoad = useRef(true);
 
@@ -319,7 +321,8 @@ export default function App() {
       <Divider />
       <ListSubheader>Файлы</ListSubheader>
       <Box sx={{ maxHeight: "40vh", overflow: "auto", px: 1 }}>
-        <FileTree project={project} onError={setToast} />
+        <FileTree project={project} onError={setToast}
+                  onOpenFile={setEditPath} />
       </Box>
       <Divider />
       <Changes project={project} toast={setToast} />
@@ -430,7 +433,8 @@ export default function App() {
               </IconButton>
             </Box>
             <FileTree key={project + ":" + treeVer}
-                      project={project} onError={setToast} />
+                      project={project} onError={setToast}
+                      onOpenFile={setEditPath} />
             <Divider />
             <Changes project={project} toast={setToast} />
           </Paper>
@@ -439,6 +443,9 @@ export default function App() {
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} />
       </Box>
+
+      <FileEditor project={project} path={editPath}
+                  onClose={() => setEditPath(null)} toast={setToast} />
 
       <Dialog open={profileOpen} onClose={() => setProfileOpen(false)}
               maxWidth="xs" fullWidth>

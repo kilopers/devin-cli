@@ -60,7 +60,12 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   untracked → `git diff --no-index /dev/null`). В ленте ```diff-фенсы
   красятся своим `paintDiff` (hljs-тема не имеет цветов для diff) —
   эффект в `Markdown.jsx` без deps, т.к. опрос ленты перерендеривает и
-  React сбрасывает innerHTML на сырой (цвета «пропадали через секунду»). Роуты под
+  React сбрасывает innerHTML на сырой (цвета «пропадали через секунду»).
+  Клик по файлу в дереве → fullscreen-редактор на CodeMirror 6
+  (`FileEditor.jsx`; `GET /api/file` читает текст ≤1 МБ, `POST /api/file`
+  пишет атомарно через tmp+replace; `..`/бинарники отсекаются).
+  Бандл — ESM со `splitting`: языковые пакеты CodeMirror ленивыми чанками
+  `static/app/chunks/*`, шаблоны грузят `<script type="module">`. Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
   auth off). Telegram webhook (`POST /` и `POST /<any>` — корень тоже, иначе 405) и GET /status — публичные.

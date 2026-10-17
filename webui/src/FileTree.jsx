@@ -18,7 +18,7 @@ const Label = ({ icon, name }) => (
   </Box>
 );
 
-export default function FileTree({ project, onError }) {
+export default function FileTree({ project, onError, onOpenFile }) {
   // path -> entries[] | "loading" | "error" | undefined (not fetched yet)
   const [dirs, setDirs] = useState({});
 
@@ -43,10 +43,21 @@ export default function FileTree({ project, onError }) {
     if (expanded && dirs[itemId] === undefined) load(itemId);
   };
 
-  const node = (p, name, isDir) => (
-    <Label name={name} icon={isDir
-      ? <FolderIcon sx={{ fontSize: 17, color: "#5f6368" }} />
-      : <InsertDriveFileIcon sx={{ fontSize: 15, color: "#9aa0a6", ml: "2px" }} />} />
+  const node = (p, name, isDir) => isDir ? (
+    <Label name={name}
+           icon={<FolderIcon sx={{ fontSize: 17, color: "#5f6368" }} />} />
+  ) : (
+    <Box onClick={ev => { ev.stopPropagation(); onOpenFile?.(p); }}
+         title="открыть в редакторе"
+         sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0,
+               cursor: "pointer",
+               "&:hover": { textDecoration: "underline" } }}>
+      <InsertDriveFileIcon sx={{ fontSize: 15, color: "#9aa0a6",
+                                 ml: "2px" }} />
+      <Typography variant="body2" noWrap sx={{ color: "#3c4043" }}>
+        {name}
+      </Typography>
+    </Box>
   );
 
   const renderLevel = (path, entries) => {

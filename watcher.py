@@ -2090,6 +2090,71 @@ def _api_diff_file():
     return jsonify({"ok": True, "path": rel, "diff": ""})
 
 
+def _file_target(proj: str, rel: str):
+    """Resolve a project-relative file path, rejecting ../ traversal."""
+    try:
+        base = _proj_root(proj).resolve()
+        target = (base / rel).resolve()
+    except OSError:
+        return None
+    if not rel or not target.is_relative_to(base):
+        return None
+    return target
+
+
+@app.get("/api/file")
+@login_required
+def _api_file_get():
+    """Read one project file for the web code editor (CodeMirror modal).
+    Text files only, ≤1 МБ — binaries and large files are refused."""
+    proj = (request.args.get("project") or "").strip()
+    rel = (request.args.get("path") or "").strip().strip("/")
+    target = _file_target(proj, rel)
+    if target is None:
+        return jsonify({"ok": False, "error": "bad path"}), 400
+    if not target.is_file():
+        return jsonify({"ok": False, "error": "not a file"}), 404
+    try:
+        if target.stat().st_size > 1_000_000:
+            return jsonify({"ok": False,
+                            "error": "файл больше 1 МБ"}), 413
+        data = target.read_bytes()
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+    if b"\x00" in data[:8192]:
+        return jsonify({"ok": False, "error": "бинарный файл"}), 415
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return jsonify({"ok": False,
+                        "error": "не UTF-8 текст"}), 415
+    return jsonify({"ok": True, "path": rel, "content": text})
+
+
+@app.post("/api/file")
+@login_required
+def _api_file_save():
+    """Save text back into a project file from the web editor."""
+    body = request.get_json(silent=True) or {}
+    proj = (body.get("project") or "").strip()
+    rel = (body.get("path") or "").strip().strip("/")
+    content = body.get("content")
+    if not isinstance(content, str) or len(content) > 2_000_000:
+        return jsonify({"ok": False, "error": "bad content"}), 400
+    target = _file_target(proj, rel)
+    if target is None:
+        return jsonify({"ok": False, "error": "bad path"}), 400
+    if target.exists() and not target.is_file():
+        return jsonify({"ok": False, "error": "not a file"}), 400
+    try:
+        tmp = target.with_name(target.name + ".~edit")
+        tmp.write_text(content, encoding="utf-8")
+        tmp.replace(target)          # atomic — no half-written files
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+    return jsonify({"ok": True, "path": rel})
+
+
 @app.post("/api/stt")
 @login_required
 def _api_stt():
