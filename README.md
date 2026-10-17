@@ -182,11 +182,13 @@ nginx режет путь; работает всегда).
 
 ## Веб-интерфейс
 
-На `http://server/` (тот же порт, что и webhook) — веб-морда на Materialize.
+На `http://server/` (тот же порт, что и webhook) — веб-морда на
+**React + Material UI** (`webui/src/*.jsx`, сборка esbuild →
+`static/app/*.js`; стадия `webui-build` в Dockerfile гоняет `npm ci` +
+`npm run build`, локально — `cd webui && npm ci && npm run build`).
 HTTP-слой — Flask + waitress; страницы — Jinja2-шаблоны (`templates/`,
-`render_template`; путь переопределяется `TEMPLATES_DIR`), страница входа —
-обычная HTML-форма в стиле Material (чистый CSS, без JS и CDN — открывается
-и на телефоне), POST на `/login`.
+`render_template`; путь переопределяется `TEMPLATES_DIR`), логин — тоже
+MUI-форма, POST на `/login`.
 Иконка приложения — официальный логотип Devin, скачан с devin.ai:
 `static/favicon.svg` (+ `favicon.ico` и `icon.png` для `apple-touch-icon`),
 показан в шапке, мобильном меню и на странице входа.

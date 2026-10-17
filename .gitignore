@@ -5,3 +5,5 @@ devin-data/
 mihomo/
 tasks/
 .devin/config.local.json
+webui/node_modules/
+static/app/

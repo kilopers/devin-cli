@@ -1,3 +1,11 @@
+# --- web UI build: React + MUI bundled by esbuild → /app/static/app ---
+FROM node:22-bookworm-slim AS webui-build
+WORKDIR /repo
+COPY webui/package.json webui/package-lock.json webui/
+RUN cd webui && npm ci --no-audit --no-fund
+COPY webui/ webui/
+RUN cd webui && npm run build    # writes /repo/static/app/{webui,login}.js
+
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -75,6 +83,7 @@ COPY entrypoint.sh /usr/local/bin/devin-task
 COPY watcher.py /app/watcher.py
 COPY templates/ /app/templates/
 COPY static/ /app/static/
+COPY --from=webui-build /repo/static/app/ /app/static/app/
 COPY bot.py /app/bot.py
 RUN chmod +x /usr/local/bin/devin-task /app/watcher.py /app/bot.py
 

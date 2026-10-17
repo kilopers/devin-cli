@@ -29,13 +29,15 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   задач, веб-интерфейс (`/` → `templates/webui.html` + JSON `/api/*`) и
   статус-страница (`/status`). HTTP-слой — Flask + waitress (`start_web`);
   страницы рендерятся через Jinja2 `render_template` из `TEMPLATES_DIR`
-  (default `/app/templates`); `/login` — обычная HTML-форма в стиле
-  Material (чистый CSS, без JS и внешних CDN — React/MUI/Babel по CDN давали
-  белый экран: UMD у MUI v6 нет, на мобильном CDN может резаться), ошибка
-  входа пробрасывается шаблону переменной `error`. Мобильная адаптация
-  webui: ≤992px список проектов + селекты модели/режима + статус уезжают
-  в левый sidenav (гамбургер в шапке; те же DOM-ноды переносит matchMedia,
-  обработчики сохраняются), композер внизу переносится на две строки.
+  (default `/app/templates`). Стек веба — **React + MUI** (не vanilla JS,
+  не Materialize): исходники `webui/src/*.jsx`, сборка `npm run build`
+  (esbuild) → `static/app/*.js` (в .gitignore; Dockerfile-стадия
+  `webui-build` собирает в образе, `npm ci` требует package-lock.json).
+  `/login` — MUI-форма (login.jsx), ошибка — переменная `error` шаблона.
+  Версии: MUI 9.4, x-tree-view 9.14 (с ним пин `@mui/x-internals` той же
+  версии — у них exports расходятся между минорками), React 19.
+  Мобильная адаптация — брейкпоинты MUI `sx`/`useMediaQuery` (Drawer
+  temporary на <md), matchMedia-хаков больше нет.
   Иконка приложения — официальный логотип Devin, скачан с devin.ai
   (`static/favicon.svg|favicon.ico|icon.png|apple-icon.png`, отдаётся штатным
   `/static/*`; `/favicon.ico` — отдельный роут, иначе браузеры ловили
