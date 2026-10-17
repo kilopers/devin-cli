@@ -16,7 +16,9 @@ import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
 import KeyIcon from "@mui/icons-material/VpnKey";
 import LockIcon from "@mui/icons-material/Lock";
+import SettingsIcon from "@mui/icons-material/Settings";
 import RepoKeys from "./RepoKeys.jsx";
+import Settings from "./Settings.jsx";
 import Workspaces, { Dot as WsDot } from "./Workspaces.jsx";
 import ModelsPage from "./ModelsPage.jsx";
 import WorkspacesIcon from "@mui/icons-material/Layers";
@@ -278,6 +280,7 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
   const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
+  const [setOpen, setSetOpen] = useState(false);   // «Настройки»
   const [usersOpen, setUsersOpen] = useState(false); // «Пользователи» (админ)
   const [wsOpen, setWsOpen] = useState(false);   // «Рабочее пространство»
   const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
@@ -621,6 +624,11 @@ export default function App() {
                 Ключи репозиториев
               </MenuItem>
               <MenuItem onClick={() => { setProfMenu(null);
+                                         setSetOpen(true); }}>
+                <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
+                Настройки
+              </MenuItem>
+              <MenuItem onClick={() => { setProfMenu(null);
                                          setProfileOpen(true); }}>
                 <LockIcon fontSize="small" sx={{ mr: 1 }} />
                 Смена пароля
@@ -697,6 +705,7 @@ export default function App() {
 
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
+      <Settings open={setOpen} onClose={() => setSetOpen(false)} />
       <RepoKeys open={keysOpen}
                 onClose={() => { setKeysOpen(false);
                                  if (!multiMode) setAddOpen(true); }} />

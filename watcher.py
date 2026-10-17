@@ -570,6 +570,8 @@ def run_task(task: dict) -> None:
 
     started_ts = time.time()
     tproj = task.get("project")
+    # владелец проекта = чьи креды/настройки идут в задачу
+    task_user = _project_owner(tproj) if tproj else WEB_ADMIN_USER
     if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
         workdir = PROJECTS_ROOT / tproj
     else:
@@ -586,7 +588,13 @@ def run_task(task: dict) -> None:
                DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE="true" if continue_mode() else "false",
                REPLY_MODE=task.get("reply_mode") or reply_mode(),
-               DEVIN_EXPORT_FILE=str(export_path))
+               DEVIN_EXPORT_FILE=str(export_path),
+               WINDSURF_API_KEY=uset("devin.api_key", task_user,
+                                     "WINDSURF_API_KEY"),
+               GIT_USER_NAME=uset("git.name", task_user, "GIT_USER_NAME",
+                                  "devin-bot"),
+               GIT_USER_EMAIL=uset("git.email", task_user,
+                                   "GIT_USER_EMAIL", ""))
     chat_id = task.get("chat_id")
     out_path = progress_dir / f"{stem}.out"
     global _task_proc
@@ -710,15 +718,18 @@ def tg_download(file_id: str) -> bytes:
     return data
 
 
-def gemini_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+def gemini_transcribe(audio: bytes, mime: str = "audio/ogg",
+                      user: str | None = None) -> str:
+    gm = uset("gemini.model", user, "GEMINI_MODEL", "gemini-2.5-flash")
+    gk = uset("gemini.api_key", user, "GEMINI_API_KEY")
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+           f"{gm}:generateContent?key={gk}")
     payload = {"contents": [{"parts": [
         {"inline_data": {"mime_type": mime, "data": base64.b64encode(audio).decode()}},
         {"text": "Transcribe this voice message. Reply with only the "
                  "transcription, in its original language."},
     ]}]}
-    log(f"gemini -> transcribing {len(audio)} bytes with {GEMINI_MODEL}")
+    log(f"gemini -> transcribing {len(audio)} bytes with {gm}")
     started = time.time()
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
@@ -729,27 +740,31 @@ def gemini_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
         raise RuntimeError(f"gemini HTTP {e.code}: {e.read().decode()[:500]}")
 
 
-def openai_transcribe(audio: bytes, mime: str = "audio/ogg") -> str:
+def openai_transcribe(audio: bytes, mime: str = "audio/ogg", user: str | None = None) -> str:
     """OpenAI-compatible /audio/transcriptions (OpenAI, Groq, …)."""
     boundary = "----devincli" + str(int(time.time() * 1000))
     ext = {"audio/ogg": "oga", "audio/mpeg": "mp3", "audio/mp4": "m4a",
            "audio/wav": "wav"}.get(mime, "ogg")
     parts = [
         f"--{boundary}\r\nContent-Disposition: form-data; "
-        f'name="model"\r\n\r\n{STT_MODEL}\r\n'.encode(),
+        f'name="model"\r\n\r\n{uset("stt.model", user, "STT_MODEL", "whisper-1")}\r\n'.encode(),
         f"--{boundary}\r\nContent-Disposition: form-data; "
         f'name="file"; filename="voice.{ext}"\r\n'
         f"Content-Type: {mime}\r\n\r\n".encode() + audio + b"\r\n",
         f"--{boundary}--\r\n".encode(),
     ]
-    log(f"stt -> transcribing {len(audio)} bytes via {STT_BASE_URL} ({STT_MODEL})")
+    sb = uset("stt.base_url", user, "STT_BASE_URL",
+              "https://api.openai.com/v1")
+    sk = uset("stt.api_key", user, "STT_API_KEY")
+    sm = uset("stt.model", user, "STT_MODEL", "whisper-1")
+    log(f"stt -> transcribing {len(audio)} bytes via {sb} ({sm})")
     started = time.time()
     req = urllib.request.Request(
-        f"{STT_BASE_URL}/audio/transcriptions",
+        f"{sb}/audio/transcriptions",
         data=b"".join(parts),
         headers={
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Authorization": f"Bearer {STT_API_KEY}",
+            "Authorization": f"Bearer {sk}",
         })
     try:
         with TG_OPENER.open(req, timeout=120) as r:
@@ -765,11 +780,12 @@ YANDEX_STT_HOST = os.environ.get("YANDEX_STT_URL",
                                  "https://stt.api.cloud.yandex.net")
 
 
-def _yandex_request(path: str, body: dict | None = None) -> str:
-    headers = {"Authorization": f"Api-Key {STT_API_KEY}",
+def _yandex_request(path: str, body: dict | None = None, user: str | None = None) -> str:
+    headers = {"Authorization": "Api-Key " + uset("stt.api_key", user,
+                                                  "STT_API_KEY"),
                "Content-Type": "application/json"}
-    if YANDEX_FOLDER_ID:
-        headers["x-folder-id"] = YANDEX_FOLDER_ID
+    if (fid := uset("yandex.folder_id", user, "YANDEX_FOLDER_ID")):
+        headers["x-folder-id"] = fid
     req = urllib.request.Request(
         YANDEX_STT_HOST + path,
         data=json.dumps(body).encode() if body is not None else None,
@@ -824,22 +840,23 @@ def _collect_recognition_text(raw: str) -> str:
     return " ".join(refined or finals).strip()
 
 
-def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg",
+def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg", user: str | None = None,
                            rate: int = 48000) -> str:
     """SpeechKit v1 sync recognition — fast path for short clips (≤~30s).
     mime audio/wav / raw PCM -> format=lpcm (browser mic path)."""
     started = time.time()
     fmt = "lpcm" if mime in ("audio/wav", "audio/x-wav", "audio/L16",
                              "application/octet-stream") else "oggopus"
-    qs = f"?lang={YANDEX_LANG}&format={fmt}&sampleRateHertz={rate}"
-    if YANDEX_FOLDER_ID:
-        qs += f"&folderId={YANDEX_FOLDER_ID}"
+    qs = "?lang=" + uset("yandex.lang", user, "YANDEX_LANG", "ru-RU") \
+        + f"&format={fmt}&sampleRateHertz={rate}"
+    if (fid := uset("yandex.folder_id", user, "YANDEX_FOLDER_ID")):
+        qs += f"&folderId={fid}"
     req = urllib.request.Request(
         YANDEX_STT_HOST + "/speech/v1/stt:recognize" + qs,
         data=audio,
         headers={"Authorization": f"Api-Key {STT_API_KEY}"},
         method="POST")
-    log(f"stt -> yandex v1 sync, {len(audio)} bytes, lang={YANDEX_LANG}")
+    log(f"stt -> yandex v1 sync, {len(audio)} bytes")
     try:
         with DIRECT_OPENER.open(req, timeout=60) as r:
             res = json.loads(r.read())
@@ -871,10 +888,10 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
                                   "TEXT_NORMALIZATION_ENABLED",
                                   "literatureText": True},
             "languageRestriction": {"restrictionType": "WHITELIST",
-                                    "languageCode": [YANDEX_LANG]},
+                                    "languageCode": [uset("yandex.lang", user, "YANDEX_LANG", "ru-RU")]},
         },
     }
-    log(f"stt -> yandex speechkit v3 async, {len(audio)} bytes, lang={YANDEX_LANG}")
+    log(f"stt -> yandex speechkit v3 async, {len(audio)} bytes")
     op = json.loads(_yandex_request("/stt/v3/recognizeFileAsync", body))
     op_id = op.get("id") or op.get("operationId")
     if not op_id:
@@ -904,19 +921,20 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
     raise RuntimeError("yandex stt: recognition did not finish in 10 min")
 
 
-def _stt_chain() -> list[str]:
-    """STT providers to try, in order — STT_PROVIDER may be a comma-separated
-    fallback chain ('gemini,openai', 'yandex,openai', …): when the first
-    provider is down/denied, the next one still transcribes. Empty value
-    keeps the legacy openai-compatible default."""
-    return [p.strip() for p in STT_PROVIDER.split(",") if p.strip()] \
-        or ["openai"]
+def _stt_chain(user: str | None = None) -> list[str]:
+    """STT providers to try, in order — stt.provider (env STT_PROVIDER)
+    может быть цепочкой 'gemini,openai': при падении первого следующий
+    всё равно транскрибирует. Пусто → openai-совместимый дефолт."""
+    p = uset("stt.provider", user, "STT_PROVIDER") or "openai"
+    return [x.strip() for x in p.split(",") if x.strip()] or ["openai"]
 
 
-def _stt_ready(p: str) -> bool:
-    """Provider p has credentials configured — openai-compatible and yandex
-    share STT_API_KEY, gemini has its own."""
-    return bool(GEMINI_API_KEY) if p == "gemini" else bool(STT_API_KEY)
+def _stt_ready(p: str, user: str | None = None) -> bool:
+    """У провайдера есть ключ: openai/yandex делят stt.api_key, у gemini
+    свой gemini.api_key — всё из настроек юзера с env-фолбэком."""
+    if p == "gemini":
+        return bool(uset("gemini.api_key", user, "GEMINI_API_KEY"))
+    return bool(uset("stt.api_key", user, "STT_API_KEY"))
 
 
 def _stt_run(chain: list[str], try_fn, on_status=None) -> str:
@@ -939,21 +957,22 @@ def _stt_run(chain: list[str], try_fn, on_status=None) -> str:
 
 
 def _stt_dispatch(p: str, audio: bytes, mime: str, on_status=None,
-                  duration=None, rate: int = 48000) -> str:
+                  duration=None, rate: int = 48000, user=None) -> str:
     if p == "yandex":
         if duration is not None and duration < 28:
-            return yandex_transcribe_sync(audio, mime, rate)
-        return yandex_transcribe(audio, mime, on_status)
+            return yandex_transcribe_sync(audio, mime, rate, user)
+        return yandex_transcribe(audio, mime, on_status, user)
     if p == "gemini":
-        return gemini_transcribe(audio, mime)
-    return openai_transcribe(audio, mime)
+        return gemini_transcribe(audio, mime, user)
+    return openai_transcribe(audio, mime, user)
 
 
 def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None,
-               duration=None) -> str:
+               duration=None, user=None) -> str:
     return _stt_run(
-        _stt_chain(),
-        lambda p: _stt_dispatch(p, audio, mime, on_status, duration),
+        _stt_chain(user),
+        lambda p: _stt_dispatch(p, audio, mime, on_status, duration,
+                                user=user),
         on_status)
 
 
@@ -996,8 +1015,9 @@ def web_transcribe(wav: bytes) -> str:
         STATE["stt"] = msg
         log(f"web stt: {msg}")
 
-    chain = _stt_chain()
-    if not any(_stt_ready(p) for p in chain):
+    u = _current_user()
+    chain = _stt_chain(u)
+    if not any(_stt_ready(p, u) for p in chain):
         raise RuntimeError("STT не настроен: нет ключей провайдеров "
                            "(GEMINI_API_KEY / STT_API_KEY)")
     rate = _wav_rate(wav)
@@ -1200,7 +1220,11 @@ def send_session_menu(chat_id, msg_id=None) -> None:
 
 def reply_mode(scope: str = "telegram") -> str:
     """'ask' = answer questions about the repo, no edits; 'code' = do tasks.
-    Scoped like model/project: web and telegram keep separate choices."""
+    Web-скоуп — настройка юзера (us:<uid>.reply_mode); telegram — админ."""
+    if scope == "web":
+        m = us_get(_current_user(), "reply_mode")
+        if m in ("ask", "code"):
+            return m
     if scope:
         m = kv_get(f"reply_mode_{scope}")
         if m in ("ask", "code"):
@@ -1212,7 +1236,10 @@ def reply_mode(scope: str = "telegram") -> str:
 
 
 def set_reply_mode(mode: str, scope: str = "telegram") -> None:
-    kv_set(f"reply_mode_{scope}", mode)
+    if scope == "web":
+        us_set(_current_user(), "reply_mode", mode)
+    else:
+        kv_set(f"reply_mode_{scope}", mode)
     log(f"reply mode -> {mode} (scope {scope})")
 
 
@@ -1235,6 +1262,10 @@ def send_mode_menu(chat_id, msg_id=None) -> None:
 def current_model(scope: str = "telegram") -> str:
     """Default model for a scope ('web'|'telegram'): scoped kv wins,
     then the legacy global override, then DEVIN_MODEL env."""
+    if scope == "web":
+        m = us_get(_current_user(), "model")
+        if m:
+            return m
     if scope:
         m = kv_get(f"model_{scope}")
         if m:
@@ -1243,7 +1274,10 @@ def current_model(scope: str = "telegram") -> str:
 
 
 def set_model(name: str, scope: str = "telegram") -> None:
-    kv_set(f"model_{scope}", name.strip())
+    if scope == "web":
+        us_set(_current_user(), "model", name.strip())
+    else:
+        kv_set(f"model_{scope}", name.strip())
     log(f"model switched to {name} (scope {scope})")
 
 
@@ -1713,8 +1747,8 @@ def handle_update(upd: dict) -> None:
     try:
         if voice := msg.get("voice"):
             log(f"voice from @{sender} chat={chat_id}, {voice.get('duration', '?')}s")
-            chain = _stt_chain()
-            if not any(_stt_ready(p) for p in chain):
+            chain = _stt_chain(WEB_ADMIN_USER)
+            if not any(_stt_ready(p, WEB_ADMIN_USER) for p in chain):
                 tg_send(chat_id, "voice received, but no STT provider "
                                  "keys are set")
                 return
@@ -2032,6 +2066,115 @@ def _owns_project(name: str) -> bool:
         name in _granted_projects(u)
 
 
+# --- per-user settings & secrets (kv.us:<uid> = JSON) -------------------
+
+_SECRET_KEYS = {"stt.api_key", "gemini.api_key", "devin.api_key",
+                "telegram.bot_token", "stt.base_url", "gitlab.base_url"}
+
+
+def _fernet():
+    """Fernet шифрование секретов в kv; ключ — kv.secret_key (сидится один
+    раз). cryptography идёт в образе."""
+    from cryptography.fernet import Fernet
+    k = kv_get("secret_key")
+    if not k:
+        k = Fernet.generate_key().decode()
+        kv_set("secret_key", k)
+    return Fernet(k.encode())
+
+
+def _us_raw(u: str) -> dict:
+    try:
+        return json.loads(kv_get(f"us:{u}", "{}"))
+    except Exception:
+        return {}
+
+
+def us_get(u: str, key: str, default: str = "") -> str:
+    """Декриптованное значение настройки юзера."""
+    v = _us_raw(u).get(key, "")
+    if isinstance(v, str) and v.startswith("enc:v1:"):
+        try:
+            return _fernet().decrypt(v[7:].encode()).decode()
+        except Exception:
+            return ""
+    return v if isinstance(v, str) else default
+
+
+def us_set(u: str, key: str, val: str) -> None:
+    """Секретные ключи хранятся зашифрованными (enc:v1:…), остальное —
+    plain. Пустое значение удаляет ключ."""
+    d = _us_raw(u)
+    if val == "":
+        d.pop(key, None)
+    else:
+        d[key] = ("enc:v1:" + _fernet().encrypt(val.encode()).decode()
+                  if key in _SECRET_KEYS else val)
+    kv_set(f"us:{u}", json.dumps(d, ensure_ascii=False))
+
+
+def us_all(u: str, mask: bool = True) -> dict:
+    """Все настройки юзера; mask=True — секреты отдаются как …хвост."""
+    out = {}
+    for k, v in _us_raw(u).items():
+        if isinstance(v, str) and v.startswith("enc:v1:"):
+            p = us_get(u, k)
+            out[k] = ("…" + p[-4:]) if (mask and len(p) > 4) else                      ("set" if p else "")
+        else:
+            out[k] = v
+    return out
+
+
+def uset(key: str, user: str | None = None,
+         env: str | None = None, default: str = "") -> str:
+    """Настройка: значение юзера → env → дефолт."""
+    u = user or _current_user()
+    return us_get(u, key) or os.environ.get(
+        env or key.upper().replace(".", "_"), default)
+
+
+def migrate_env_secrets() -> None:
+    """Разово: env-креды сливаются в настройки админа (зашифрованные).
+    Остальные юзеры получают пустые и видят env-фолбэк."""
+    if kv_get("secrets_migrated"):
+        return
+    kv_set("secrets_migrated", "1")
+    try:
+        env_map = {
+            "stt.provider": "STT_PROVIDER", "stt.api_key": "STT_API_KEY",
+            "stt.base_url": "STT_BASE_URL", "stt.model": "STT_MODEL",
+            "gemini.api_key": "GEMINI_API_KEY",
+            "gemini.model": "GEMINI_MODEL",
+            "yandex.folder_id": "YANDEX_FOLDER_ID",
+            "yandex.lang": "YANDEX_LANG",
+            "devin.api_key": "WINDSURF_API_KEY",
+            "telegram.bot_token": "TELEGRAM_BOT_TOKEN",
+            "gitlab.base_url": "GITLAB_BASE_URL",
+            "git.name": "GIT_USER_NAME", "git.email": "GIT_USER_EMAIL",
+        }
+        a = WEB_ADMIN_USER
+        for k, e in env_map.items():
+            v = os.environ.get(e)
+            if v and not us_get(a, k):
+                us_set(a, k, v)
+        # git-токены env → git_creds админа
+        gh, gl = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITLAB_TOKEN")
+        d = json.loads(kv_get(f"git_creds:{a}") or "{}") or {}
+        if gh and "github.com" not in d:
+            d["github.com"] = gh
+        if gl:
+            h = urllib.parse.urlparse(
+                os.environ.get("GITLAB_BASE_URL", "https://gitlab.com")
+            ).hostname or "gitlab.com"
+            d.setdefault(h, gl)
+        if gh or gl:
+            kv_set(f"git_creds:{a}", json.dumps(d))
+        log(f"env secrets migrated to user settings ({a})")
+    except Exception as e:
+        kv_set("secrets_migrated", "")
+        log(f"env->user secrets migration failed (retry): {e}")
+
+
 # --- рабочие пространства (per-user) ------------------------------------
 
 def _ensure_default_ws(user: str) -> int:
@@ -2310,6 +2453,79 @@ def _api_ws_del():
     db_exec("DELETE FROM workspaces WHERE id=%s", (wid,))
     if _active_ws(u) == wid:
         kv_set(f"ws:{u}", str(dw))
+    return jsonify({"ok": True})
+
+
+# --- настройки юзера (API-ключи и пр.) ----------------------------------
+
+SETTING_FIELDS = [
+    # (key, label, секрет?, подсказка, env-фолбэк)
+    ("devin.api_key", "Devin API ключ", True,
+     "ключ аккаунта Devin — им задачи кладутся в CLI", "WINDSURF_API_KEY"),
+    ("stt.provider", "STT провайдер(ы)", False,
+     "gemini / openai / yandex, через запятую — fallback-цепочка",
+     "STT_PROVIDER"),
+    ("stt.api_key", "STT API ключ", True,
+     "openai-совместимый и yandex делят один ключ", "STT_API_KEY"),
+    ("stt.base_url", "STT base URL", True,
+     "напр. https://api.groq.com/openai/v1 или api.openai.com",
+     "STT_BASE_URL"),
+    ("stt.model", "STT модель", False,
+     "whisper-1 / whisper-large-v3-turbo", "STT_MODEL"),
+    ("gemini.api_key", "Gemini API ключ", True, "AIza…", "GEMINI_API_KEY"),
+    ("gemini.model", "Gemini модель", False, "gemini-2.5-flash",
+     "GEMINI_MODEL"),
+    ("yandex.folder_id", "Yandex folder id", False, "b1g…",
+     "YANDEX_FOLDER_ID"),
+    ("yandex.lang", "Yandex язык", False, "ru-RU", "YANDEX_LANG"),
+    ("telegram.bot_token", "Telegram bot token", True,
+     "свой бот для задач — иначе общий (env)", "TELEGRAM_BOT_TOKEN"),
+    ("gitlab.base_url", "GitLab base URL", True, "self-hosted домен",
+     "GITLAB_BASE_URL"),
+    ("git.name", "Git user.name", False, "подпись коммитов",
+     "GIT_USER_NAME"),
+    ("git.email", "Git user.email", False, "email коммитов",
+     "GIT_USER_EMAIL"),
+]
+
+
+def _env_masked(env_name: str) -> str:
+    """env-значение поля — маской, чтобы UI показывал фолбэк."""
+    v = os.environ.get(env_name, "")
+    return ("…" + v[-4:]) if len(v) > 4 else v
+
+
+@app.get("/api/settings")
+@login_required
+def _api_settings_get():
+    """Настройки текущего юзера; секреты уходят маской …хвост.
+    `env` — env-фолбэк каждого поля (маской), `effective` — итоговое
+    значение, которое реально уйдёт в работу."""
+    u = _current_user()
+    mine = us_all(u)
+    fields, eff = [], {}
+    for k, l, s, h, e in SETTING_FIELDS:
+        ev = _env_masked(e)
+        fields.append({"key": k, "label": l, "secret": s, "hint": h,
+                       "env": ev, "set": k in mine})
+        eff[k] = mine.get(k) or ev
+    return jsonify({"ok": True, "settings": mine, "effective": eff,
+                    "fields": fields})
+
+
+@app.post("/api/settings")
+@login_required
+def _api_settings_set():
+    """Сохранить настройки: непустые значения пишутся (секреты
+    шифруются), пустые пропускаются. Удаление — отдельным списком
+    clear: [key…]."""
+    body = _req_json()
+    u = _current_user()
+    for k in body.get("clear") or []:
+        us_set(u, k, "")
+    for k, l, s, h in SETTING_FIELDS:
+        if k in body and isinstance(body[k], str) and body[k] != "":
+            us_set(u, k, body[k])
     return jsonify({"ok": True})
 
 
@@ -2596,7 +2812,7 @@ def _build_status(root: Path) -> dict:
     token = token or _cred_get(host)
     if host == "github.com":
         return _gha_status(path, token)
-    gl_host = urllib.parse.urlparse(GITLAB_BASE_URL).hostname or ""
+    gl_host = urllib.parse.urlparse(uset("gitlab.base_url", _current_user(), "GITLAB_BASE_URL", "https://gitlab.com")).hostname or ""
     if "gitlab" in host or host == gl_host:
         return _gitlab_status(host, path, token)
     return {"ok": True, "status": "none", "remote": host}
@@ -3149,6 +3365,7 @@ def main() -> int:
 
     init_db()
     migrate_files_to_db()
+    migrate_env_secrets()
     _migrate_workspaces()
     cleanup_legacy_files()
     ensure_repo()
