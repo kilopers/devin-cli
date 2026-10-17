@@ -8,7 +8,6 @@ import {
   ListItemText, ListItemSecondaryAction, Alert, Radio, Box, Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
-import CasinoIcon from "@mui/icons-material/Casino";
 import EditIcon from "@mui/icons-material/Edit";
 import AddIcon from "@mui/icons-material/Add";
 import { apiJson as get, post } from "./api.js";
@@ -16,20 +15,6 @@ import { apiJson as get, post } from "./api.js";
 const COLORS = ["#1565c0", "#2e7d32", "#6a1b9a", "#ef6c00", "#c62828",
                 "#00838f", "#455a64", "#ad1457"];
 
-// случайный «фирменный» цвет: равномерный hue, приглушённые тона,
-// чтобы шапка не выжигала глаза
-const randColor = () => {
-  const h = Math.floor(Math.random() * 360);
-  const s = 55 + Math.floor(Math.random() * 20);   // 55-75%
-  const l = 32 + Math.floor(Math.random() * 14);   // 32-46%
-  const f = (n) => {
-    const k = (n + h / 30) % 12;
-    const a = s / 100 * Math.min(l / 100, 1 - l / 100);
-    const v = l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-    return Math.round(v * 255).toString(16).padStart(2, "0");
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
-};
 
 export const Dot = ({ color, size = 12 }) => (
   <Box component="span" sx={{
@@ -118,12 +103,6 @@ export default function Workspaces({ open, onClose, onChanged }) {
                          bgcolor: c, cursor: "pointer", flexShrink: 0,
                          outline: color === c ? "2px solid #000" : "none" }} />
             ))}
-            <Tooltip title="случайный цвет">
-              <IconButton size="small" onClick={() => setColor(randColor())}
-                          sx={{ ml: "auto" }}>
-                <CasinoIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
           </Box>
           <Button variant="contained" startIcon={<AddIcon />} fullWidth
                   onClick={create} disabled={!name.trim()}>
@@ -153,13 +132,6 @@ export default function Workspaces({ open, onClose, onChanged }) {
                          outline: edit?.color === c
                            ? "2px solid #000" : "none" }} />
             ))}
-            <Tooltip title="случайный цвет">
-              <IconButton size="small"
-                onClick={() => setEdit({ ...edit, color: randColor() })}
-                sx={{ ml: "auto" }}>
-                <CasinoIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
           </Box>
         </Stack>
       </DialogContent>
