@@ -160,7 +160,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
       borderRadius: 0 }}>
       <Box sx={{ px: 1, pt: 0.8 }}>
         <TextField
-          multiline minRows={1} maxRows={4} fullWidth size="small"
+          multiline minRows={1} maxRows={50} fullWidth size="small"
+          sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
+                                          overflowY: "auto" } }}
           placeholder={`Задача для «${project || "…"}»`}
           value={text}
           onChange={e => setText(e.target.value)}
@@ -212,7 +214,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
         maxWidth: 1280, mx: "auto", p: 1.5, alignItems: "flex-end" }}>
         <Grid size={{ xs: 12, sm: "grow" }}>
           <TextField
-            multiline minRows={1} maxRows={6} fullWidth size="small"
+            multiline minRows={1} maxRows={50} fullWidth size="small"
+            sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
+                                            overflowY: "auto" } }}
             placeholder={`Задача для Devin по проекту «${project || "…"}» — ` +
                          "Ctrl+Enter чтобы отправить"}
             value={text}

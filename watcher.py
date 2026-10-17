@@ -2205,6 +2205,7 @@ def _build_status(root: Path) -> dict:
     if not parsed:
         return {"ok": True, "status": "none"}
     host, path, token = parsed
+    token = token or _cred_get(host)
     if host == "github.com":
         return _gha_status(path, token)
     gl_host = urllib.parse.urlparse(GITLAB_BASE_URL).hostname or ""
@@ -2440,11 +2441,12 @@ def _api_project_add():
         return jsonify({"ok": False, "error":
                         "не понимаю ссылку — нужен https://… или git@…"}), 400
     host, path, url_token = parsed
-    tk = token or url_token or ""
-    if not tk:
+    is_ssh = url.startswith(("git@", "ssh://"))
+    tk = token or url_token or _cred_get(host)
+    if not tk and not is_ssh:
         return jsonify({"ok": False, "error":
-                        "нужен токен — GitHub: ghp_…/github_pat_…, "
-                        "GitLab: glpat-…"}), 400
+                        f"для {host} нет сохранённого ключа — добавь его в "
+                        "профиле → «Ключи репозиториев»"}), 400
     clone_url = url
     if url.startswith(("https://", "http://")) and not url_token:
         scheme = "https" if url.startswith("https://") else "http"
@@ -2468,6 +2470,102 @@ def _api_project_add():
                         out[-4000:] or "clone failed"}), 500
     log(f"web added project {folder} <- {host}/{path}")
     return jsonify({"ok": True, "folder": folder, "output": out[-4000:]})
+
+
+# --- repo credential store (kv.git_creds = {"host": "token"}) -----------
+
+def _creds() -> dict:
+    try:
+        return json.loads(kv_get("git_creds", "{}"))
+    except Exception:
+        return {}
+
+
+def _creds_save(d: dict) -> None:
+    kv_set("git_creds", json.dumps(d, ensure_ascii=False))
+
+
+def _cred_get(host: str) -> str:
+    """Saved token for a git host (github.com → GitHub, otherwise GitLab
+    incl. self-hosted) — used when the add-project form has no token."""
+    return _creds().get((host or "").lower(), "")
+
+
+def _cred_propagate(host: str, token: str) -> int:
+    """Rewrite the token in every cloned project's origin remote that
+    points at <host> — rotating a key must not break existing clones."""
+    user = "x-access-token" if host == "github.com" else "oauth2"
+    env = {k: v for k, v in os.environ.items()
+           if k.lower() not in ("http_proxy", "https_proxy", "no_proxy")}
+    n = 0
+    for d in (PROJECTS_ROOT.iterdir() if PROJECTS_ROOT else []):
+        if not d.is_dir() or not (d / ".git").exists():
+            continue
+        try:
+            r = subprocess.run(["git", "-C", str(d), "remote",
+                                "get-url", "origin"],
+                               capture_output=True, text=True,
+                               timeout=10, env=env)
+            cur = r.stdout.strip()
+            pr = _parse_remote(cur)
+            if (r.returncode == 0 and pr and
+                    pr[0] == host and
+                    cur.startswith(("https://", "http://"))):
+                new = f"https://{user}:{token}@{host}/{pr[1]}.git"
+                subprocess.run(["git", "-C", str(d), "remote",
+                                "set-url", "origin", new],
+                               capture_output=True, text=True,
+                               timeout=10, env=env)
+                n += 1
+        except Exception:
+            continue
+    return n
+
+
+@app.get("/api/creds")
+@login_required
+def _api_creds_list():
+    """Repository keys for the profile modal — token masked, only the
+    last 4 chars shown."""
+    out = []
+    for host, tk in sorted(_creds().items()):
+        out.append({"host": host,
+                    "kind": "github" if host == "github.com" else "gitlab",
+                    "mask": f"…{tk[-4:]}" if len(tk) > 4 else "…"})
+    return jsonify({"ok": True, "creds": out})
+
+
+@app.post("/api/creds")
+@login_required
+def _api_creds_set():
+    body = _req_json()
+    kind = (body.get("type") or "").strip()
+    host = "github.com" if kind == "github" else \
+        (body.get("host") or "").strip().lower().removeprefix("https://") \
+        .split("/")[0]
+    token = (body.get("token") or "").strip()
+    if not host or "/" in host:
+        return jsonify({"ok": False, "error": "укажи домен хоста"}), 400
+    if not token:
+        return jsonify({"ok": False, "error": "ключ пустой"}), 400
+    d = _creds()
+    old = d.get(host)
+    d[host] = token
+    _creds_save(d)
+    n = _cred_propagate(host, token) if old and old != token else 0
+    log(f"web saved cred for {host}" + (f", updated {n} remotes" if n else ""))
+    return jsonify({"ok": True, "host": host, "updated": n})
+
+
+@app.post("/api/creds/delete")
+@login_required
+def _api_creds_del():
+    host = (body := _req_json()).get("host", "")
+    d = _creds()
+    if host in d:
+        del d[host]
+        _creds_save(d)
+    return jsonify({"ok": True})
 
 
 @app.post("/api/tasks")

@@ -2,19 +2,59 @@
 // this dialog: folder name + repo URL (https or git@) + token, then
 // POST /api/project/add clones it and the clone output shows in the
 // dark <pre> right inside the modal.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
   TextField, Typography,
 } from "@mui/material";
 import { post } from "./api.js";
 
+// provider guess + effective clone URL — mirrors backend logic:
+// host "github.com" → GitHub (x-access-token), anything else → GitLab
+// (oauth2). ssh git@ remotes clone via the ssh key — token unused.
+function detect(url) {
+  const m = url.trim().match(
+    /^(?:https?|ssh):\/\/(?:[^@/\s]+@)?([^/:]+)(?::\d+)?\/(.+?)(?:\.git)?\/?$/) ||
+    url.trim().match(/^[^@\s]+@([^:\s]+):(.+?)(?:\.git)?\/?$/);
+  if (!m) return { kind: "unknown" };
+  const [, host, path] = m;
+  const ssh = url.trim().startsWith("git@") ||
+              url.trim().startsWith("ssh://");
+  if (ssh) return { kind: "ssh", host, path };
+  const gh = host.toLowerCase() === "github.com";
+  return { kind: gh ? "github" : "gitlab", host, path };
+}
+
+function previewUrl(url, token) {
+  const d = detect(url);
+  if (d.kind === "ssh") return url.trim() + "  (ssh-ключ, токен не нужен)";
+  if (d.kind === "unknown") return "";
+  const user = d.kind === "github" ? "x-access-token" : "oauth2";
+  return `https://${user}:${token ? "***" : "<token>"}@${d.host}/` +
+         `${d.path}.git`;
+}
+
 export default function AddProject({ open, onClose, onAdded }) {
   const [folder, setFolder] = useState("");
+  const folderDirty = useRef(false);        // autofill until user edits
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);   // {ok, output|error}
+
+  const kind = detect(url);
+  const sshNote = kind.kind === "ssh";
+  const tokenHint = "пусто — возьмём ключ из профиля → «Ключи " +
+    "репозиториев» (" + (kind.kind === "gitlab"
+      ? "glpat-…/gldt-…" : "ghp_…/github_pat_…") + ")";
+
+  const urlChanged = v => {
+    setUrl(v);
+    if (!folderDirty.current) {
+      const d = detect(v);
+      if (d.path) setFolder(d.path.split("/").pop());
+    }
+  };
 
   const submit = async () => {
     setBusy(true); setResult(null);
@@ -32,25 +72,46 @@ export default function AddProject({ open, onClose, onAdded }) {
 
   const close = () => {
     setResult(null); setFolder(""); setUrl(""); setToken("");
+    folderDirty.current = false;
     onClose();
   };
 
   return (
     <Dialog open={open} onClose={busy ? undefined : close}
             maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ fontSize: 16 }}>Добавить проект</DialogTitle>
+      <DialogTitle sx={{ fontSize: 16 }}>
+        Добавить проект
+        {kind.kind !== "unknown" && (
+          <Typography component="span" variant="caption"
+                      sx={{ ml: 1, color: "text.secondary" }}>
+            ({kind.kind === "ssh" ? "SSH" :
+              kind.kind === "github" ? "GitHub" : "GitLab"})
+          </Typography>
+        )}
+      </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column",
                            gap: 2, pt: "8px !important" }}>
+        <TextField label="Ссылка на репозиторий" size="small" value={url}
+                   onChange={e => urlChanged(e.target.value)}
+                   placeholder="https://github.com/org/repo.git или git@gitlab.com:org/repo.git" />
         <TextField label="Папка проекта" size="small" value={folder}
-                   onChange={e => setFolder(e.target.value)}
+                   onChange={e => { folderDirty.current = true;
+                                    setFolder(e.target.value); }}
                    placeholder="my-repo"
                    helperText="Имя папки внутри projects/ — a-z, 0-9, точка, _ -" />
-        <TextField label="Ссылка на репозиторий" size="small" value={url}
-                   onChange={e => setUrl(e.target.value)}
-                   placeholder="https://github.com/org/repo.git или git@gitlab.com:org/repo.git" />
-        <TextField label="Токен" size="small" type="password" value={token}
-                   onChange={e => setToken(e.target.value)}
-                   helperText="GitHub: ghp_… или github_pat_… (repo) · GitLab: glpat-… (read+write repository). Вставляется в https-ссылку при клоне." />
+        {!sshNote && (
+          <TextField label="Токен (необязательно)" size="small" type="password"
+                     value={token}
+                     onChange={e => setToken(e.target.value)}
+                     helperText={tokenHint} />
+        )}
+        {url.trim() && kind.kind !== "unknown" && (
+          <Typography variant="caption" sx={{
+            fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11,
+            color: "text.secondary", wordBreak: "break-all" }}>
+            {previewUrl(url, token)}
+          </Typography>
+        )}
         {busy && (
           <Typography variant="caption" color="text.secondary">
             клонирую…
@@ -76,8 +137,7 @@ export default function AddProject({ open, onClose, onAdded }) {
       <DialogActions>
         <Button onClick={close} disabled={busy}>Закрыть</Button>
         <Button variant="contained" onClick={submit}
-                disabled={busy || !folder.trim() || !url.trim() ||
-                          !token.trim()}>
+                disabled={busy || !folder.trim() || !url.trim()}>
           Клонировать
         </Button>
       </DialogActions>

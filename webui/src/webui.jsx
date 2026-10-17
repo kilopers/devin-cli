@@ -9,11 +9,14 @@ import {
   Alert, AppBar, Box, Button, Card, CardContent, Chip, CssBaseline,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider,
   GlobalStyles, IconButton,
-  ListSubheader, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
+  ListSubheader, Menu, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
   TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
+import KeyIcon from "@mui/icons-material/VpnKey";
+import LockIcon from "@mui/icons-material/Lock";
+import RepoKeys from "./RepoKeys.jsx";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { api, apiJson, post } from "./api.js";
@@ -219,6 +222,8 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profMenu, setProfMenu] = useState(null);  // anchor профиля
+  const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
@@ -509,15 +514,28 @@ export default function App() {
               <ModeSelect mode={mode} onChange={setModeApi} />
             </Box>
             <Tooltip title="профиль">
-              <IconButton color="inherit" onClick={() => setProfileOpen(true)}>
+              <IconButton color="inherit"
+                          onClick={e => setProfMenu(e.currentTarget)}>
                 <PersonIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip title="выйти">
-              <IconButton color="inherit" onClick={logout}>
-                <LogoutIcon />
-              </IconButton>
-            </Tooltip>
+            <Menu anchorEl={profMenu} open={!!profMenu}
+                  onClose={() => setProfMenu(null)}>
+              <MenuItem onClick={() => { setProfMenu(null);
+                                         setKeysOpen(true); }}>
+                <KeyIcon fontSize="small" sx={{ mr: 1 }} />
+                Ключи репозиториев
+              </MenuItem>
+              <MenuItem onClick={() => { setProfMenu(null);
+                                         setProfileOpen(true); }}>
+                <LockIcon fontSize="small" sx={{ mr: 1 }} />
+                Смена пароля
+              </MenuItem>
+              <MenuItem onClick={logout}>
+                <LogoutIcon fontSize="small" sx={{ mr: 1 }} />
+                Выход
+              </MenuItem>
+            </Menu>
           </Toolbar>
         </AppBar>
         {/* spacer — AppBar is position:fixed, header stays pinned on top */}
@@ -579,6 +597,7 @@ export default function App() {
 
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
+      <RepoKeys open={keysOpen} onClose={() => setKeysOpen(false)} />
       <AddProject open={addOpen} onClose={() => setAddOpen(false)}
                   onAdded={f => { refreshProjects()
                     .then(() => selectProject(f)); }} />

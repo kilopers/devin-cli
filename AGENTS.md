@@ -71,7 +71,7 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   проект…» в селекте и drawer → `AddProject.jsx` (папка+URL+токен →
   `POST /api/project/add` клонирует в `PROJECTS_ROOT/<folder>`,
   https-URL получает `x-access-token:`/`oauth2:`-инжект, вывод clone
-  показывается тёмным `<pre>` в модалке, токен маскируется `***`).
+  показывается тёмным `<pre>` в модалке, токен маскируется `***`; токен необязателен — при пустом берётся ключ из `kv.git_creds` по домену хоста, иначе ошибка «для <host> нет ключа»). Меню профиля (иконка человечка → MUI Menu): «Ключи репозиториев» (`RepoKeys.jsx` — список ключей из `kv.git_creds` {host: token}, маска `…хвост`; вложенная модалка «Новый ключ» — GitHub: только ключ, GitLab: домен+ключ), «Смена пароля», «Выход». `GET/POST /api/creds`, `POST /api/creds/delete`; при смене существующего ключа `_cred_propagate` переписывает origin-remote всех проектов этого хоста (`remote set-url`, тот же x-access-token/oauth2-инжект). `/api/build` тоже фолбечит на `_cred_get(host)` после токена из remote. Текстария композера растёт до 80vh (sx maxHeight на InputBase).
   Вкладок-проектов нет,
   в мобильном drawer список проектов продублирован. Смена проекта: расширение дерева применяется
   только после загрузки верхнего уровня (иначе expandedItems с
