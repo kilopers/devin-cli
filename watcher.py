@@ -2554,6 +2554,8 @@ def _api_project_settings_set():
     for k, ok in (("model", None),
                   ("reply_mode", ("", "ask", "code")),
                   ("auto_commit", ("", "0", "1"))):
+        if k not in body:
+            continue  # частичное обновление — не трогаем пропущенные ключи
         v = (body.get(k) or "").strip()
         if ok is None or v in ok:
             pj_set(p, k, v)
