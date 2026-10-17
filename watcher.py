@@ -2580,7 +2580,7 @@ def _api_settings_set():
     u = _current_user()
     for k in body.get("clear") or []:
         us_set(u, k, "")
-    for k, l, s, h in SETTING_FIELDS:
+    for k, l, s, h, e in SETTING_FIELDS:
         if k in body and isinstance(body[k], str) and body[k] != "":
             us_set(u, k, body[k])
     return jsonify({"ok": True})
