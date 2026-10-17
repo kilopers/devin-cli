@@ -8,7 +8,7 @@ import {
   Alert, AppBar, Box, Button, Card, CardContent, Chip, CssBaseline,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer,
   GlobalStyles, IconButton, List, ListItemButton, ListItemText,
-  ListSubheader, MenuItem, Paper, Select, Snackbar, Tab, Tabs, TextField,
+  ListSubheader, MenuItem, Paper, Select, Snackbar, TextField,
   Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -139,6 +139,20 @@ function TaskCard({ t, onCommit, onStop, onCancel }) {
           </Box>) : null}
       </CardContent>
     </Card>
+  );
+}
+
+// Project picker in the header — replaces the old tabs row; selection
+// persists server-side via POST /api/project (kv.project_web).
+function ProjectSelect({ projects, current, onChange }) {
+  return (
+    <Select size="small" value={current || ""} displayEmpty
+            onChange={e => onChange(e.target.value)}
+            sx={{ color: "#fff", height: 32, fontSize: 13, maxWidth: 200,
+                  bgcolor: "rgba(255,255,255,.15)",
+                  "& .MuiSelect-icon": { color: "rgba(255,255,255,.8)" } }}>
+      {projects.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+    </Select>
   );
 }
 
@@ -395,13 +409,18 @@ export default function App() {
             </IconButton>
             <img src="/static/favicon.svg" alt=""
                  style={{ height: 24, filter: "invert(1)" }} />
-            <Typography variant="h6" sx={{ fontSize: 19, mr: "auto" }}>
+            <Typography variant="h6" sx={{ fontSize: 19, flexShrink: 0 }}>
               Devin Worker
               <Typography component="span" variant="caption"
                           sx={{ opacity: .55, ml: 0.8, fontSize: 11 }}>
                 (v{status.version || "…"})
               </Typography>
             </Typography>
+            {multiMode && (
+              <ProjectSelect projects={projects} current={project}
+                             onChange={selectProject} />
+            )}
+            <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
               sx={{ display: { xs: "none", md: "block" }, opacity: .9,
                     fontSize: 13 }}>
@@ -439,14 +458,6 @@ export default function App() {
               </IconButton>
             </Tooltip>
           </Toolbar>
-          <Tabs value={project || false} variant="scrollable" scrollButtons="auto"
-                onChange={(_e, v) => selectProject(v)}
-                sx={{ display: { xs: "none", md: "flex" }, bgcolor: "#fff",
-                      minHeight: 42,
-                      "& .MuiTab-root": { textTransform: "none", minHeight: 42,
-                        fontWeight: 500 } }}>
-            {projects.map(p => <Tab key={p} value={p} label={p} />)}
-          </Tabs>
         </AppBar>
 
         <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)}
@@ -472,8 +483,8 @@ export default function App() {
           <Paper elevation={1} sx={{
             width: 290, flexShrink: 0, m: "16px 12px 150px 4px",
             display: { xs: "none", md: "flex" }, flexDirection: "column",
-            alignSelf: "flex-start", position: "sticky", top: 112,
-            maxHeight: "calc(100vh - 132px)", borderRadius: 2,
+            alignSelf: "flex-start", position: "sticky", top: 72,
+            maxHeight: "calc(100vh - 92px)", borderRadius: 2,
             overflow: "hidden" }}>
             <Box sx={{ px: 1.5, py: 1, fontWeight: 500, fontSize: 13,
                        borderBottom: "1px solid #eee", display: "flex",

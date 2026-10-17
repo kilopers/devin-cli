@@ -52,9 +52,12 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   status-page из catch-all). Установка на рабочий стол телефона — PWA:
   `static/manifest.webmanifest` + `sw.js` с роута `/sw.js` (нужен заголовок
   `Service-Worker-Allowed: /` — скоуп шире `/static/`); SW кэширует только
-  `/static/*`, `/api/*` и POST'ы идут в сеть. Справа в вебе — дерево файлов
-  проекта (`GET /api/files` отдаёт один уровень, ленивое раскрытие аяксом;
-  на мобильном панель `#treePanel` переносится в sidenav тем же matchMedia).
+  `/static/*`, `/api/*` и POST'ы идут в сеть. Проект выбирается селектом в
+  шапке (`ProjectSelect`, после названия+версии; `POST /api/project` →
+  `kv.project_web`, сохраняется между логинами); вкладок-проектов нет,
+  в мобильном drawer список проектов продублирован. Справа в вебе —
+  дерево файлов проекта (`GET /api/files` отдаёт один уровень, ленивое
+  раскрытие аяксом; на мобильном — в drawer под «Файлы»).
   Блок «Изменения» — сворачиваемый список git-status файлов (`/api/diff`),
   клик → fullscreen-диалог с diff (`/api/diff/file`, hljs `diff`-подсветка;
   untracked → `git diff --no-index /dev/null`). В ленте ```diff-фенсы
