@@ -12,7 +12,6 @@ import {
   ListSubheader, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
   TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
 import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
@@ -474,11 +473,6 @@ export default function App() {
       <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <AppBar position="fixed" color="primary">
           <Toolbar variant="dense" sx={{ gap: 1 }}>
-            <IconButton color="inherit" edge="start" title="проекты и настройки"
-                        sx={{ display: { md: "none" } }}
-                        onClick={() => setDrawerOpen(true)}>
-              <MenuIcon />
-            </IconButton>
             <img src="/static/favicon.svg" alt=""
                  style={{ height: 24, filter: "invert(1)" }} />
             <Typography variant="h6" sx={{ fontSize: 19, flexShrink: 0,

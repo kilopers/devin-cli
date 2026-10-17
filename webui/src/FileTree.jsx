@@ -60,8 +60,9 @@ export default function FileTree({ project, onError, onOpenFile }) {
     setDirs({}); load("");
     setExpanded([]);
     try {
-      pendingExp.current =
-        JSON.parse(lsGet(LS_EXP(project), "[]")) || [];
+      pendingExp.current = (
+        JSON.parse(lsGet(LS_EXP(project), "[]")) || [])
+        .filter(id => !id.includes("/~"));      // never keep stub ids
     } catch (e) { pendingExp.current = []; }
     pendingExp.current.forEach(p => { if (p) load(p); });
   }, [project]);
@@ -89,9 +90,21 @@ export default function FileTree({ project, onError, onOpenFile }) {
   }, [dirs, project]);
 
   const onExpandedChange = (_e, ids) => {
-    setExpanded(ids);
-    lsSet(LS_EXP(project), JSON.stringify(ids));
+    // stub ids ("…/~loading") must never enter state/storage — MUI X
+    // throws error #195 on expandedItems it can't find in the tree
+    const clean = ids.filter(id => !id.includes("/~"));
+    setExpanded(clean);
+    lsSet(LS_EXP(project), JSON.stringify(clean));
   };
+
+  // controlled prop only ever sees ids of mounted, loaded dirs
+  const visible = expanded.filter(id => {
+    const i = id.lastIndexOf("/");
+    const parent = i === -1 ? "" : id.slice(0, i);
+    const es = dirs[parent];
+    return Array.isArray(es) &&
+           es.some(e => e.type === "dir" && e.name === id.slice(i + 1));
+  });
 
   const onExpand = (_e, itemId, isExpanded) => {
     if (isExpanded && dirs[itemId] === undefined) load(itemId);
@@ -123,11 +136,14 @@ export default function FileTree({ project, onError, onOpenFile }) {
 
   const renderLevel = (path, entries) => {
     if (entries === undefined || entries === "loading")
-      return <TreeItem itemId={path + "/~loading"} label="загрузка…" />;
+      return <TreeItem itemId={path + "/~loading"} label="загрузка…"
+                       disabled />;
     if (entries === "error")
-      return <TreeItem itemId={path + "/~error"} label="ошибка загрузки" />;
+      return <TreeItem itemId={path + "/~error"} label="ошибка загрузки"
+                       disabled />;
     if (!entries.length)
-      return <TreeItem itemId={path + "/~empty"} label="пусто" />;
+      return <TreeItem itemId={path + "/~empty"} label="пусто"
+                       disabled />;
     return entries.map(e => {
       const p = path ? path + "/" + e.name : e.name;
       return e.type === "dir"
@@ -142,7 +158,7 @@ export default function FileTree({ project, onError, onOpenFile }) {
     <Box ref={boxRef} onScroll={onScroll}
          sx={{ overflow: "auto", flex: "1 1 auto", minHeight: 0,
                px: 1, py: 0.5, fontSize: 13 }}>
-      <SimpleTreeView expandedItems={expanded}
+      <SimpleTreeView expandedItems={visible}
                       onExpandedItemsChange={onExpandedChange}
                       onItemExpansionToggle={onExpand}
                       sx={{ "& .MuiTreeItem-content": { py: 0.2 } }}>
