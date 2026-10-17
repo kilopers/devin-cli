@@ -2115,11 +2115,24 @@ def _parse_remote(url: str):
     return m.group(1).lower(), m.group(2).strip("/"), None
 
 
+def _gha_run(r: dict) -> dict:
+    if r.get("status") != "completed":
+        st = "running"
+    else:
+        st = {"success": "success", "failure": "failed",
+              "timed_out": "failed", "startup_failure": "failed",
+              "cancelled": "canceled"}.get(r.get("conclusion"), "unknown")
+    return {"status": st, "name": r.get("name") or "",
+            "ref": r.get("head_branch") or "",
+            "num": r.get("run_number"),
+            "url": r.get("html_url"), "when": r.get("created_at") or ""}
+
+
 def _gha_status(repo: str, token: str | None = None) -> dict:
     tk = token or GITHUB_TOKEN
     headers = {"Authorization": f"Bearer {tk}"} if tk else {}
     data, err = _http_json(
-        f"https://api.github.com/repos/{repo}/actions/runs?per_page=1",
+        f"https://api.github.com/repos/{repo}/actions/runs?per_page=6",
         headers)
     if err:
         if err.startswith("HTTP 404"):
@@ -2127,20 +2140,15 @@ def _gha_status(repo: str, token: str | None = None) -> dict:
                 ("токен из remote не подошёл" if tk
                  else "задай GITHUB_TOKEN в .env")
         return {"ok": False, "error": f"GitHub: {err}"}
-    runs = (data or {}).get("workflow_runs") or []
-    if not runs:
-        return {"ok": True, "provider": "github", "status": "none"}
-    r = runs[0]
-    if r.get("status") != "completed":
-        status = "running"
-    else:
-        status = {"success": "success", "failure": "failed",
-                  "timed_out": "failed", "startup_failure": "failed",
-                  "cancelled": "canceled"}.get(r.get("conclusion"),
-                                               "unknown")
-    return {"ok": True, "provider": "github", "status": status,
-            "url": r.get("html_url"), "ref": r.get("head_branch"),
-            "name": r.get("name")}
+    raw = (data or {}).get("workflow_runs") or []
+    if not raw:
+        return {"ok": True, "provider": "github", "status": "none",
+                "runs": []}
+    runs = [_gha_run(r) for r in raw]
+    top = runs[0]
+    return {"ok": True, "provider": "github", "status": top["status"],
+            "url": top["url"], "ref": top["ref"], "name": top["name"],
+            "runs": runs}
 
 
 def _gitlab_status(host: str, path: str, token: str | None = None) -> dict:
@@ -2157,18 +2165,28 @@ def _gitlab_status(host: str, path: str, token: str | None = None) -> dict:
                  else "задай GITLAB_TOKEN в .env")
         return {"ok": False, "error": f"GitLab: {err}"}
     if not data:
-        return {"ok": True, "provider": "gitlab", "status": "none"}
-    p = data[0]
-    raw = p.get("status", "")
-    status = {"success": "success", "failed": "failed",
+        return {"ok": True, "provider": "gitlab", "status": "none",
+                "runs": []}
+
+    def _gl_run(p):
+        raw = p.get("status", "")
+        st = {"success": "success", "failed": "failed",
               "canceled": "canceled", "skipped": "canceled"}.get(raw)
-    if status is None:
-        status = "running" if raw in (
-            "running", "pending", "preparing", "created",
-            "waiting_for_resource", "scheduled", "manual") else "unknown"
-    return {"ok": True, "provider": "gitlab", "status": status,
-            "url": p.get("web_url"), "ref": p.get("ref"),
-            "name": f"pipeline #{p.get('id', '')}"}
+        if st is None:
+            st = "running" if raw in (
+                "running", "pending", "preparing", "created",
+                "waiting_for_resource", "scheduled", "manual") \
+                else "unknown"
+        return {"status": st, "name": f"pipeline #{p.get('id', '')}",
+                "ref": p.get("ref") or "", "num": p.get("id"),
+                "url": p.get("web_url"),
+                "when": p.get("updated_at") or p.get("created_at") or ""}
+
+    runs = [_gl_run(p) for p in data[:6]]
+    top = runs[0]
+    return {"ok": True, "provider": "gitlab", "status": top["status"],
+            "url": top["url"], "ref": top["ref"], "name": top["name"],
+            "runs": runs}
 
 
 def _build_status(root: Path) -> dict:

@@ -86,6 +86,8 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   Иконка сборки в заголовке «Изменения» — `GET /api/build`: парсит remote
   origin (`github.com` → Actions runs, `gitlab*` → pipelines API),
   статусы success/failed/running/canceled, клик → урл пайплайна.
+  Под «Изменениями» своя секция «Сборки» (`BuildsPanel`) — последние
+  6 прогонов из поля `runs` (иконка+имя+#N+ref+время, клик → урл прогона).
   Иконка — в кружке `IconButton` (видно что кликабельна); при ошибке API
   клик открывает **Popover** с подробным текстом (`_http_json` отдаёт
   `HTTP {code} {reason}: {body[:300]}`), при успехе — ссылку на прогон.

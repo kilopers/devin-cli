@@ -91,6 +91,64 @@ function BuildIcon({ build }) {
                                 sx={{ color: ui.color }} />);
 }
 
+const fmtWhen = iso => {
+  const t = iso && new Date(iso);
+  return t && !isNaN(t)
+    ? t.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit",
+                                  hour: "2-digit", minute: "2-digit" })
+    : "";
+};
+
+// «Сборки» — collapsible list of the last ~6 CI runs (build.runs).
+function BuildsPanel({ build }) {
+  const [open, setOpen] = useState(true);
+  const runs = build?.runs;
+  if (!runs || !runs.length) return null;
+  return (
+    <>
+      <ListItemButton dense onClick={() => setOpen(o => !o)}
+                      sx={{ px: 1.5, py: 0.5 }}>
+        {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
+               : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+        <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
+          Сборки
+        </Typography>
+        <Chip size="small" label={runs.length}
+              sx={{ ml: 1, height: 18, fontSize: 11 }} />
+      </ListItemButton>
+      <Collapse in={open}>
+        <Box sx={{ maxHeight: "30vh", overflow: "auto" }}>
+          {runs.map((r, i) => {
+            const ui = BUILD_UI[r.status] || BUILD_UI.unknown;
+            return (
+              <ListItemButton key={r.url || i} dense
+                onClick={() => r.url && window.open(r.url, "_blank")}
+                sx={{ px: 1.5, py: 0.4, gap: 0.7 }}>
+                {ui.Icon
+                  ? <ui.Icon sx={{ fontSize: 15, color: ui.color,
+                                   flexShrink: 0 }} />
+                  : <CircularProgress size={11} thickness={6}
+                                      sx={{ color: ui.color,
+                                            flexShrink: 0 }} />}
+                <Typography variant="body2" noWrap sx={{
+                  flex: 1, fontSize: 12.5,
+                  fontFamily: "ui-monospace, Menlo, monospace" }}>
+                  {r.name}{r.num ? ` #${r.num}` : ""}
+                  {r.ref ? ` · ${r.ref}` : ""}
+                </Typography>
+                <Typography variant="caption" color="text.secondary"
+                            sx={{ fontSize: 10.5, flexShrink: 0 }}>
+                  {fmtWhen(r.when)}
+                </Typography>
+              </ListItemButton>
+            );
+          })}
+        </Box>
+      </Collapse>
+    </>
+  );
+}
+
 function DiffView({ text }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -207,6 +265,8 @@ export default function Changes({ project, toast }) {
           ))}
         </Box>
       </Collapse>
+
+      <BuildsPanel build={build} />
 
       <Dialog fullScreen open={!!diff} onClose={() => setDiff(null)}>
         <AppBar position="sticky" color="primary">
