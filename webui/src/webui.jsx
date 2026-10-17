@@ -697,7 +697,15 @@ export default function App() {
                   toast={setToast} onSent={loadTasks} accent={wsColor}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
                   onOpenModels={() => setView("models")}
-                  mode={mode} />
+                  mode={mode}
+                  onMode={m => post("/api/project/settings",
+                      { project, reply_mode: m }).then(d => {
+                    setToast(d.ok
+                      ? (m === "ask" ? "Режим: ответ на вопрос"
+                                     : "Режим: код")
+                      : "Ошибка: " + (d.error || "?"));
+                    if (d.ok) setMode(m);
+                  }).catch(() => setToast("Сеть: не сохранил режим"))} />
       </Box>
 
       <FileEditor project={project} path={editPath}

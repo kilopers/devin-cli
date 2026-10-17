@@ -16,6 +16,8 @@ import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
+import CodeIcon from "@mui/icons-material/Code";
+import QuestionAnswerIcon from "@mui/icons-material/QuestionAnswer";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, post } from "./api.js";
 
@@ -60,7 +62,7 @@ function encodeWav(chunks, rate) {
 }
 
 export default function Composer({ project, sttStatus, toast, onSent,
-                                   conn, onOpenDrawer, accent, onOpenModels, mode }) {
+                                   conn, onOpenDrawer, accent, onOpenModels, mode, onMode }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -154,11 +156,24 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
 
+  const modeBtn = (
+    <IconButton size="small" disabled={!project} onClick={() =>
+                    onMode && onMode(mode === "ask" ? "code" : "ask")}
+                title={mode === "ask" ? "Режим: вопрос — нажми для кода"
+                                      : "Режим: код — нажми для вопроса"}
+                sx={{ flexShrink: 0, mb: "2px" }}>
+      {mode === "ask" ? <QuestionAnswerIcon fontSize="small" />
+                      : <CodeIcon fontSize="small" />}
+    </IconButton>
+  );
+
   if (mobile) return (
     <Paper elevation={6} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
-      <Box sx={{ px: 1, pt: 0.8, pb: "5px" }}>
+      <Box sx={{ px: 1, pt: 0.8, pb: "5px",
+                 display: "flex", alignItems: "flex-end", gap: 0.5 }}>
+        {modeBtn}
         <TextField
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
@@ -243,6 +258,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         <Grid size={{ xs: 12, sm: "auto" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,
                      justifyContent: "flex-end", flexWrap: "nowrap" }}>
+            {modeBtn}
             <IconButton onClick={micClick} size="small"
                         color={recording ? "error" : "default"}
                         title="надиктовать голосом"
