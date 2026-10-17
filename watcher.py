@@ -244,6 +244,11 @@ def init_db() -> None:
         name VARCHAR(190) PRIMARY KEY,
         owner VARCHAR(64) NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    db_exec("""CREATE TABLE IF NOT EXISTS project_acl (
+        name VARCHAR(190) NOT NULL,
+        user VARCHAR(64) NOT NULL,
+        PRIMARY KEY (name, user)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     for col, ddl in (("model", "model VARCHAR(80) NULL"),
                      ("reply_mode", "reply_mode VARCHAR(8) NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
@@ -353,6 +358,26 @@ def migrate_files_to_db() -> None:
     except Exception as e:
         kv_set("files_migrated", "")
         log(f"file->mysql migration failed (will retry): {e}")
+
+
+def cleanup_legacy_files() -> None:
+    """Удаляет старые файловые хвосты, если миграция в MySQL прошла:
+    done/*.txt, outbox/*.txt и мелкие state-файлы (их содержимое уже в
+    kv/tasks). inbox/ и .progress/ не трогаем — они живые."""
+    if not kv_get("files_migrated") or not TASKS_DIR.is_dir():
+        return
+    n = 0
+    for d in (TASKS_DIR / "done", TASKS_DIR / "outbox"):
+        for f in d.glob("*.txt") if d.is_dir() else []:
+            f.unlink(); n += 1
+    for f in ("model.txt", "project.txt", "reply-mode.txt",
+              "session-mode.txt", "task-projects.json", "tg-chats.json",
+              "tg-commits.json", "tg-pending.json", "devin-models.json"):
+        p = TASKS_DIR / f
+        if p.exists():
+            p.unlink(); n += 1
+    if n:
+        log(f"legacy task files cleaned: {n}")
 
 
 def _tool_line(tc: dict) -> str:
@@ -1840,9 +1865,8 @@ def api_tasks(project: str | None = None, limit: int = 5,
     running = Path(STATE["current_task"]).stem \
         if STATE["current_task"] else None
     sql, params = "SELECT * FROM tasks", []
-    # tasks without a recorded project show up under every tab
     if project:
-        sql += " WHERE project=%s OR project IS NULL"
+        sql += " WHERE project=%s"
         params.append(project)
     rows = db_query(sql + " ORDER BY created", params)
     items = []
@@ -1945,19 +1969,30 @@ def _project_owner(name: str) -> str:
     return WEB_ADMIN_USER
 
 
+def _granted_projects(user: str) -> set:
+    """Проекты, к которым юзеру выдан доступ (project_acl) — видит и
+    работает в них, но владельцем не становится."""
+    r = db_query("SELECT name FROM project_acl WHERE user=%s", (user,))
+    return {x["name"] for x in r}
+
+
 def _user_projects(user: str) -> list:
-    """Проекты, видимые пользователю: админ — все, юзер — свои."""
+    """Проекты, видимые пользователю: админ — все, юзер — свои + выданные."""
     allp = list_projects()
     if _is_admin(user):
         return allp
-    return [p for p in allp if _project_owner(p) == user]
+    granted = _granted_projects(user)
+    return [p for p in allp
+            if _project_owner(p) == user or p in granted]
 
 
 def _owns_project(name: str) -> bool:
     # «workspace» и прочие несуществующие папки — не проекты, доступны всем
     if not PROJECTS_ROOT or not (PROJECTS_ROOT / name).is_dir():
         return True
-    return _is_admin() or _project_owner(name) == _current_user()
+    u = _current_user()
+    return _is_admin(u) or _project_owner(name) == u or \
+        name in _granted_projects(u)
 
 
 def login_required(fn):
@@ -2081,8 +2116,41 @@ def _api_users_del():
     # проекты ушедшего юзера переходят админу — иначе «осиротеют»
     db_exec("UPDATE project_owner SET owner=%s WHERE owner=%s",
             (WEB_ADMIN_USER, u))
+    db_exec("DELETE FROM project_acl WHERE user=%s", (u,))
     log(f"web user deleted: {u}")
     return jsonify({"ok": True})
+
+
+@app.get("/api/users/perms")
+@login_required
+def _api_users_perms_get():
+    """Выданные юзеру проекты — для модалки прав (клик по юзеру)."""
+    if not _admin_only():
+        return jsonify({"ok": False, "error": "только для админа"}), 403
+    u = (request.args.get("user") or "").strip()
+    return jsonify({"ok": True, "user": u,
+                    "granted": sorted(_granted_projects(u))})
+
+
+@app.post("/api/users/perms")
+@login_required
+def _api_users_perms_set():
+    """Заменить список выданных проектов юзера целиком."""
+    if not _admin_only():
+        return jsonify({"ok": False, "error": "только для админа"}), 403
+    body = _req_json()
+    u = (body.get("user") or "").strip()
+    if u == WEB_ADMIN_USER:
+        return jsonify({"ok": False,
+                        "error": "админу права не нужны"}), 400
+    projs = [p for p in (body.get("projects") or [])
+             if p in list_projects()]
+    db_exec("DELETE FROM project_acl WHERE user=%s", (u,))
+    for p in projs:
+        db_exec("INSERT INTO project_acl(name, user) VALUES(%s,%s)",
+                (p, u))
+    log(f"web perms for {u}: {projs}")
+    return jsonify({"ok": True, "granted": projs})
 
 
 @app.get("/api/status")
@@ -2888,6 +2956,7 @@ def main() -> int:
 
     init_db()
     migrate_files_to_db()
+    cleanup_legacy_files()
     ensure_repo()
     start_mihomo()
     start_bot()

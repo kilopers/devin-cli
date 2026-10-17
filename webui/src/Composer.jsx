@@ -179,7 +179,13 @@ export default function Composer({ project, sttStatus, toast, onSent,
           </Typography>
         )}
       </Box>
-      <BottomNavigation showLabels sx={{ height: 52 }}>
+      <BottomNavigation showLabels sx={{
+        height: 52, bgcolor: "primary.main",
+        "& .MuiBottomNavigationAction-root": {
+          color: "rgba(255,255,255,.72)" },
+        "& .MuiBottomNavigationAction-root.Mui-selected": {
+          color: "#fff" },
+      }}>
         <BottomNavigationAction label="Меню" icon={<MenuIcon />}
                                 onClick={onOpenDrawer}
                                 sx={{ minWidth: 0 }} />
@@ -188,7 +194,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
           icon={recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
           onClick={micClick}
           sx={{ minWidth: 0,
-                color: recording ? "error.main" : "text.secondary",
+                color: recording ? "error.light" : "#fff",
                 ...(recording && {
                   animation: "pulse 1s infinite",
                   "@keyframes pulse": { "50%": { opacity: 0.35 } } }) }} />
@@ -196,12 +202,12 @@ export default function Composer({ project, sttStatus, toast, onSent,
           <BottomNavigationAction label="Ещё раз"
             icon={<RefreshIcon />}
             onClick={() => sendAudio(lastAudio)}
-            sx={{ minWidth: 0, color: "warning.main" }} />
+            sx={{ minWidth: 0, color: "warning.light" }} />
         )}
         <BottomNavigationAction label="В работу" icon={<SendIcon />}
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
-                color: text.trim() ? "primary.main" : "text.disabled" }} />
+                color: text.trim() ? "#fff" : "rgba(255,255,255,.4)" }} />
       </BottomNavigation>
     </Paper>
   );
