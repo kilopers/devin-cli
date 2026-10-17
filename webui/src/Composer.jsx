@@ -161,7 +161,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                     onMode && onMode(mode === "ask" ? "code" : "ask")}
                 title={mode === "ask" ? "Режим: вопрос — нажми для кода"
                                       : "Режим: код — нажми для вопроса"}
-                sx={{ flexShrink: 0, mb: "2px" }}>
+                sx={{ flexShrink: 0, alignSelf: "center" }}>
       {mode === "ask" ? <QuestionAnswerIcon fontSize="small" />
                       : <CodeIcon fontSize="small" />}
     </IconButton>
