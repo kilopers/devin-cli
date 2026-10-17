@@ -51,17 +51,27 @@ export default function FileTree({ project, onError, onOpenFile }) {
     }
   }, [onError]);
 
-  // fresh project → drop caches, restore saved expansion + scroll
+  // fresh project → drop caches; saved expansion applies only AFTER the
+  // top level renders — feeding expandedItems ids whose TreeItems aren't
+  // mounted yet can crash the tree view (white page on project switch)
+  const pendingExp = useRef(null);
   useEffect(() => {
     projRef.current = project;
     setDirs({}); load("");
-    let saved = [];
-    try { saved = JSON.parse(lsGet(LS_EXP(project), "[]")) || []; }
-    catch (e) { saved = []; }
-    setExpanded(saved);
-    // lazy-load every saved dir so deep expansions render again
-    saved.forEach(p => { if (p) load(p); });
+    setExpanded([]);
+    try {
+      pendingExp.current =
+        JSON.parse(lsGet(LS_EXP(project), "[]")) || [];
+    } catch (e) { pendingExp.current = []; }
+    pendingExp.current.forEach(p => { if (p) load(p); });
   }, [project]);
+
+  useEffect(() => {
+    if (pendingExp.current !== null && Array.isArray(dirs[""])) {
+      setExpanded(pendingExp.current);
+      pendingExp.current = null;
+    }
+  }, [dirs]);
 
   // restore scrollTop once the top level has rendered — twice: right
   // away, then after saved deep dirs finish loading (content grows)

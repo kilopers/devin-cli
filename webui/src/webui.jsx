@@ -26,6 +26,25 @@ import AddProject from "./AddProject.jsx";
 import Composer from "./Composer.jsx";
 import { ConnBadge, useConnStatus } from "./ConnDot.jsx";
 
+// Render crashes used to blank the whole page (white screen) — a
+// boundary turns them into a readable error instead.
+class ErrBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    return this.state.err
+      ? <Box sx={{ p: 4 }}>
+          <Typography color="error" variant="body2"
+                      sx={{ fontFamily: "ui-monospace, monospace",
+                            whiteSpace: "pre-wrap" }}>
+            Ошибка интерфейса — обнови страницу (Ctrl+F5).{"\n"}
+            {String(this.state.err)}
+          </Typography>
+        </Box>
+      : this.props.children;
+  }
+}
+
 const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const STATUS_RU = { queued: "в очереди", running: "выполняется", done: "готово" };
@@ -271,9 +290,17 @@ export default function App() {
     setLoadingOlder(false);
   }, [hasMore, loadingOlder, oldestStem]);
 
+  const baseVer = useRef(null);   // version the page was loaded with
   const loadStatus = useCallback(async () => {
     try {
       const d = await apiJson("/api/status");
+      // server got a newer build → hard-reload the whole page
+      if (d.version) {
+        if (baseVer.current === null) baseVer.current = d.version;
+        else if (d.version !== baseVer.current) {
+          location.reload(); return;
+        }
+      }
       setStatus(d);
       if (d.mode && !modeFocus.current) setMode(d.mode);
     } catch (e) {}
@@ -443,6 +470,7 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <GlobalStyles styles={mdStyles} />
+      <ErrBoundary>
       <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <AppBar position="fixed" color="primary">
           <Toolbar variant="dense" sx={{ gap: 1 }}>
@@ -618,6 +646,7 @@ export default function App() {
       <Snackbar open={!!toast || !!toastNode} autoHideDuration={6000}
                 onClose={() => { setToast(null); setToastNode(null); }}
                 message={toastNode || toast} />
+      </ErrBoundary>
     </ThemeProvider>
   );
 }
