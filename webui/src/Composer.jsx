@@ -9,10 +9,13 @@ import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import MicIcon from "@mui/icons-material/Mic";
+import MenuIcon from "@mui/icons-material/Menu";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, post } from "./api.js";
+import { ConnBadge } from "./ConnDot.jsx";
 
 const STT_RATE = 16000;
 const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
@@ -54,7 +57,10 @@ function encodeWav(chunks, rate) {
   return buf;
 }
 
-export default function Composer({ project, sttStatus, toast, onSent }) {
+export default function Composer({ project, sttStatus, toast, onSent,
+                                   conn, onOpenDrawer }) {
+  // <md = phone layout: single bottom-nav bar
+  const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [recInfo, setRecInfo] = useState("");  // timer/status line near the mic
@@ -145,6 +151,60 @@ export default function Composer({ project, sttStatus, toast, onSent }) {
   };
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
+
+  // ── mobile bottom navigation: [☰] [textarea] [🎙] [➤] [conn dot] ──
+  if (mobile) return (
+    <Paper elevation={6} sx={{
+      position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
+      borderRadius: 0 }}>
+      <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.3,
+                 px: 0.6, py: 0.7 }}>
+        <IconButton size="small" onClick={onOpenDrawer} title="меню">
+          <MenuIcon />
+        </IconButton>
+        <TextField
+          multiline minRows={1} maxRows={4} fullWidth size="small"
+          placeholder={`Задача для «${project || "…"}»`}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault(); send();
+            }
+          }}
+          sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        <IconButton onClick={micClick} size="small"
+                    color={recording ? "error" : "default"}
+                    title="надиктовать голосом"
+                    sx={recording
+                      ? { animation: "pulse 1s infinite",
+                          "@keyframes pulse":
+                            { "50%": { opacity: 0.35 } } }
+                      : {}}>
+          {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+        </IconButton>
+        {lastAudio && !recognizing && (
+          <IconButton size="small" color="warning"
+                      title="отправить запись ещё раз"
+                      onClick={() => sendAudio(lastAudio)}>
+            <RefreshIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        )}
+        <IconButton color="primary" onClick={send}
+                    disabled={busy || !text.trim()} title="отправить в работу">
+          <SendIcon />
+        </IconButton>
+        <ConnBadge conn={conn} showVer={false} />
+      </Box>
+      {shownStat && (
+        <Typography variant="caption" color="text.secondary"
+                    sx={{ display: "block", px: 1.5, pb: 0.5,
+                          fontSize: 11 }}>
+          {shownStat}
+        </Typography>
+      )}
+    </Paper>
+  );
 
   return (
     <Paper elevation={4} sx={{

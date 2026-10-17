@@ -2232,9 +2232,14 @@ def _api_stream():
     under channel_timeout and detect dead peers on write.)"""
     def gen():
         yield "retry: 2000\n\n"
+        yield f"event: version\ndata: {json.dumps({'v': APP_VERSION})}\n\n"
         while True:
             yield ": ping\n\n"
             time.sleep(15)
+            # piggyback the build version — the client reloads itself when
+            # this no longer matches the version it was loaded with
+            yield f"event: version\n" \
+                  f"data: {json.dumps({'v': APP_VERSION})}\n\n"
     return Response(gen(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache",
                              "X-Accel-Buffering": "no"})

@@ -23,7 +23,7 @@ import FileTree from "./FileTree.jsx";
 import Changes from "./Changes.jsx";
 import FileEditor from "./FileEditor.jsx";
 import Composer from "./Composer.jsx";
-import ConnDot from "./ConnDot.jsx";
+import ConnDot, { useConnStatus } from "./ConnDot.jsx";
 
 const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -210,6 +210,8 @@ export default function App() {
     if (el && el.scrollTop !== drawerScroll.current)
       el.scrollTop = drawerScroll.current;
   });
+  // one SSE connection — shared by the desktop dot & the mobile bar
+  const conn = useConnStatus(status.version);
   const modelFocus = useRef(false), modeFocus = useRef(false);
   const firstLoad = useRef(true);
 
@@ -525,12 +527,13 @@ export default function App() {
         </Box>
 
         <Composer project={project} sttStatus={status.stt_status}
-                  toast={setToast} onSent={loadTasks} />
+                  toast={setToast} onSent={loadTasks}
+                  conn={conn} onOpenDrawer={() => setDrawerOpen(true)} />
       </Box>
 
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
-      <ConnDot />
+      <ConnDot conn={conn} />
 
       <Dialog open={!!confirm} onClose={() => setConfirm(null)}
               maxWidth="xs" fullWidth>

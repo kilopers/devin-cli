@@ -51,6 +51,10 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   всегда прижата к верху. Drawer — `SwipeableDrawer` (свайп от левого
   края открывает меню; на iOS swipe-to-open выключен — конфликт с жестом
   «назад» Safari); скролл меню переживает ререндеры (ref+useLayoutEffect).
+  На <md композер — bottom-nav строка: [☰ меню] [textarea] [🎙] [➤ send]
+  [ConnBadge справа]; send активен только при непустом тексте. SSE одна —
+  `useConnStatus(version)` хук шарит `conn` между `ConnDot` (плавающий,
+  только ≥md) и мобильной панелью.
   Иконка приложения — официальный логотип Devin, скачан с devin.ai
   (`static/favicon.svg|favicon.ico|icon.png|apple-icon.png`, отдаётся штатным
   `/static/*`; `/favicon.ico` — отдельный роут, иначе браузеры ловили
@@ -82,6 +86,9 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   Индикатор связи — SSE `GET /api/stream` (EventSource, keepalive `: ping`
   15 с, `retry: 2000`): `ConnDot.jsx` в правом нижнем углу — зелёная точка
   онлайн, спиннер при автореконнекте, красная + «нет подключения» офлайн.
+  Тот же стрим шлёт `event: version` с `APP_VERSION` — ConnDot сверяет с
+  версией страницы (baseline из `/api/status`) и делает `location.reload()`,
+  если сервер обновился; рядом с точкой показывается `v<версия>`.
   WebSocket не используем — waitress чистый WSGI. Кнопка «⛔ Стоп» — в шапке
   при `status.current_task` и на карточке running-задачи рядом с чипом
   «выполняется», «✖ удалить» на карточке queued-задачи → общий диалог
