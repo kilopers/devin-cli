@@ -158,7 +158,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
     <Paper elevation={6} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
-      <Box sx={{ px: 1, pt: 0.8 }}>
+      <Box sx={{ px: 1, pt: 0.8, pb: 0.5 }}>
         <TextField
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",

@@ -80,14 +80,19 @@ export default function Users({ open, onClose, me }) {
             </ListItem>
           ))}
         </List>
-        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-          <TextField label="Логин" size="small" value={login}
+        <Typography variant="subtitle2" sx={{ mt: 2 }}>
+          Новый пользователь
+        </Typography>
+        <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+          <TextField label="Логин" size="small" fullWidth value={login}
                      onChange={e => setLogin(e.target.value)}
                      autoComplete="off" />
-          <TextField label="Пароль" size="small" type="password" value={pw}
-                     onChange={e => setPw(e.target.value)} />
+          <TextField label="Пароль" size="small" type="password" fullWidth
+                     value={pw}
+                     onChange={e => setPw(e.target.value)}
+                     helperText="минимум 6 символов" />
           <Button variant="contained" startIcon={<AddIcon />}
-                  onClick={create}
+                  onClick={create} fullWidth
                   disabled={busy || !login.trim() || pw.length < 6}>
             Создать
           </Button>
