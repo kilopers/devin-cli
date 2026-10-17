@@ -70,11 +70,21 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   Индикатор связи — SSE `GET /api/stream` (EventSource, keepalive `: ping`
   15 с, `retry: 2000`): `ConnDot.jsx` в правом нижнем углу — зелёная точка
   онлайн, спиннер при автореконнекте, красная + «нет подключения» офлайн.
-  WebSocket не используем — waitress чистый WSGI. Кнопка «⛔ Стоп» в шапке
-  при `status.current_task` → диалог-подтверждение → `POST /api/stop`
+  WebSocket не используем — waitress чистый WSGI. Кнопка «⛔ Стоп» — в шапке
+  при `status.current_task` и на карточке running-задачи рядом с чипом
+  «выполняется», «✖ удалить» на карточке queued-задачи → общий диалог
+  (`confirm = {kind, name, stem}`) → `POST /api/stop` или
+  `POST /api/task/cancel` (удаляет строку `tasks`, только status='queued';
+  running → 409). `/api/tasks` обрезает старый «### Что изменилось в репо»
+  из сохранённых output — история задач тоже чистая.
   (тот же `kill_task`, что и телеграм `/stop`). В композере: при ошибке
   STT запись сохраняется в `lastAudio` и рядом с микрофоном появляется
-  «ещё раз» — повторная отправка того же WAV, аудио не теряется. Роуты под
+  «ещё раз» — повторная отправка того же WAV, аудио не теряется.
+  Иконка сборки в заголовке «Изменения» — `GET /api/build`: парсит remote
+  origin (`github.com` → Actions runs, `gitlab*` → pipelines API),
+  статусы success/failed/running/canceled, клик → урл пайплайна.
+  Кэш 60 с (`_BUILD_CACHE`); запросы через `TG_OPENER`. Токены —
+  `GITHUB_TOKEN`/`GITLAB_TOKEN`/`GITLAB_BASE_URL` (env). Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
   auth off). Telegram webhook (`POST /` и `POST /<any>` — корень тоже, иначе 405) и GET /status — публичные.

@@ -80,7 +80,7 @@ function StatusChip({ t }) {
       : undefined} />;
 }
 
-function TaskCard({ t, onCommit }) {
+function TaskCard({ t, onCommit, onStop, onCancel }) {
   return (
     <Card sx={{ mb: 1.5 }}>
       <CardContent sx={{ p: "14px 18px", "&:last-child": { pb: "14px" } }}>
@@ -102,7 +102,25 @@ function TaskCard({ t, onCommit }) {
                 borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
                 color: "#78909c" }}>💬 вопрос</Box>}
           </Typography>
-          <StatusChip t={t} />
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
+            {t.status === "running" && onStop && (
+              <Button size="small" variant="outlined" color="error"
+                      onClick={() => onStop(t)}
+                      sx={{ fontSize: 11, px: 1, py: 0, height: 24,
+                            whiteSpace: "nowrap" }}>
+                ⛔ стоп
+              </Button>
+            )}
+            {t.status === "queued" && onCancel && (
+              <Button size="small" variant="outlined" color="error"
+                      onClick={() => onCancel(t)}
+                      sx={{ fontSize: 11, px: 1, py: 0, height: 24,
+                            whiteSpace: "nowrap" }}>
+                ✖ удалить
+              </Button>
+            )}
+            <StatusChip t={t} />
+          </Box>
         </Box>
         <Typography variant="body2" sx={{ whiteSpace: "pre-wrap",
           fontWeight: 500, my: 1 }}>{t.prompt}</Typography>
@@ -166,7 +184,8 @@ export default function App() {
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
   const [editPath, setEditPath] = useState(null);   // file open in editor
-  const [stopConfirm, setStopConfirm] = useState(false);
+  // shared confirm dialog: {kind:"stop"|"cancel", name, stem} | null
+  const [confirm, setConfirm] = useState(null);
   const modelFocus = useRef(false), modeFocus = useRef(false);
   const firstLoad = useRef(true);
 
@@ -288,12 +307,19 @@ export default function App() {
     loadModels(); loadStatus();
   }).catch(() => {});
 
-  const stopTask = async () => {
-    setStopConfirm(false);
+  const confirmAct = async () => {
+    const c = confirm;
+    setConfirm(null);
     try {
-      const d = await post("/api/stop", {});
-      setToast(d.ok ? "⛔ Остановлено: " + d.stopped
-                    : "Ошибка: " + (d.error || "?"));
+      const d = c.kind === "stop"
+        ? await post("/api/stop", {})
+        : await post("/api/task/cancel", { stem: c.stem });
+      if (d.ok) {
+        setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
+                                   : "Удалено из очереди: " + c.name);
+        if (c.kind === "cancel")
+          setFeed(m => { const n = new Map(m); n.delete(c.stem); return n; });
+      } else setToast("Ошибка: " + (d.error || "?"));
       loadStatus();
     } catch (e) { setToast("Сеть: " + e); }
   };
@@ -383,7 +409,8 @@ export default function App() {
             </Typography>
             {status.current_task && (
               <Button size="small" variant="outlined" color="inherit"
-                      onClick={() => setStopConfirm(true)}
+                      onClick={() => setConfirm({ kind: "stop",
+                        name: status.current_task })}
                       sx={{ borderColor: "rgba(255,255,255,.55)",
                             color: "#ffcdd2", fontSize: 11, px: 1,
                             whiteSpace: "nowrap" }}>
@@ -434,7 +461,11 @@ export default function App() {
               <Typography align="center" color="text.secondary" sx={{ py: 1 }}>
                 загружаю ранние…</Typography>}
             {items.length
-              ? items.map(t => <TaskCard key={t.stem} t={t} onCommit={commitAct} />)
+              ? items.map(t => <TaskCard key={t.stem} t={t}
+                    onCommit={commitAct}
+                    onStop={t2 => setConfirm({ kind: "stop", name: t2.name })}
+                    onCancel={t2 => setConfirm({ kind: "cancel",
+                                    name: t2.name, stem: t2.stem })} />)
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
           </Box>
@@ -469,22 +500,26 @@ export default function App() {
                   onClose={() => setEditPath(null)} toast={setToast} />
       <ConnDot />
 
-      <Dialog open={stopConfirm} onClose={() => setStopConfirm(false)}
+      <Dialog open={!!confirm} onClose={() => setConfirm(null)}
               maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontSize: 16 }}>
-          Остановить задачу?
+          {confirm?.kind === "stop" ? "Остановить задачу?"
+                                   : "Удалить задачу из очереди?"}
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            «{status.current_task}» будет принудительно убита — воркер
-            возьмёт следующую из очереди. Незакоммиченные изменения в репо
-            останутся.
+            {confirm?.kind === "stop"
+              ? `«${confirm.name}» будет принудительно убита — воркер ` +
+                "возьмёт следующую из очереди. Незакоммиченные изменения " +
+                "в репо останутся."
+              : `«${confirm?.name}» будет удалена из очереди и не ` +
+                "выполнится. Действие необратимо."}
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setStopConfirm(false)}>Отмена</Button>
-          <Button color="error" variant="contained" onClick={stopTask}>
-            Остановить
+          <Button onClick={() => setConfirm(null)}>Отмена</Button>
+          <Button color="error" variant="contained" onClick={confirmAct}>
+            {confirm?.kind === "stop" ? "Остановить" : "Удалить"}
           </Button>
         </DialogActions>
       </Dialog>

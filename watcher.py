@@ -76,6 +76,12 @@ STT_BASE_URL = os.environ.get("STT_BASE_URL", "https://api.openai.com/v1")
 STT_MODEL = os.environ.get("STT_MODEL", "whisper-1")
 YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
+# CI build status for the «Изменения» panel: PATs for private repos —
+# GitHub needs actions:read, GitLab needs read_api. Empty = public only.
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITLAB_TOKEN = os.environ.get("GITLAB_TOKEN", "")
+GITLAB_BASE_URL = os.environ.get("GITLAB_BASE_URL",
+                                 "https://gitlab.com").rstrip("/")
 # Web UI pages are Jinja2 templates rendered by Flask (render_template):
 # templates/login.html — MUI login form, templates/webui.html — main page.
 TEMPLATES_DIR = Path(os.environ.get("TEMPLATES_DIR", "/app/templates"))
@@ -1829,6 +1835,11 @@ def api_tasks(project: str | None = None, limit: int = 5,
             out = _tail(TASKS_DIR / ".progress" / f"{stem}.out")
         elif st == "done":
             out = r["output"] or ""
+            # история задач ещё содержит старый diff-блок в output —
+            # обрезаем при отдаче, раздел «Изменения» покрывает это
+            cut = out.find("### Что изменилось в репо")
+            if cut != -1:
+                out = out[:cut].rstrip()
         items.append({
             "name": _task_name(stem),
             "stem": stem,
@@ -2064,6 +2075,114 @@ def _api_diff_file():
     return jsonify({"ok": True, "path": rel, "diff": ""})
 
 
+_BUILD_CACHE: dict = {}    # proj -> (timestamp, result) — CI APIs rate-limit
+_BUILD_TTL = 60
+
+
+def _http_json(url: str, headers: dict | None = None, timeout: int = 20):
+    """GET JSON via TG_OPENER (proxy-aware — GitHub/GitLab may need it)."""
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json", "User-Agent": "devin-worker",
+        **(headers or {})})
+    try:
+        with TG_OPENER.open(req, timeout=timeout) as r:
+            return json.load(r), None
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP {e.code}"
+    except Exception as e:
+        return None, str(e)[:120]
+
+
+def _parse_remote(url: str):
+    """git remote URL -> (host, 'group/repo'); https + scp-style ssh."""
+    url = url.strip()
+    m = re.match(r"^(?:https?|ssh)://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+?)"
+                 r"(?:\.git)?/?$", url) or \
+        re.match(r"^[^@\s]+@([^:\s]+):(.+?)(?:\.git)?/?$", url)
+    if not m:
+        return None
+    return m.group(1).lower(), m.group(2).strip("/")
+
+
+def _gha_status(repo: str) -> dict:
+    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"} \
+        if GITHUB_TOKEN else {}
+    data, err = _http_json(
+        f"https://api.github.com/repos/{repo}/actions/runs?per_page=1",
+        headers)
+    if err:
+        return {"ok": False, "error": f"GitHub: {err}"}
+    runs = (data or {}).get("workflow_runs") or []
+    if not runs:
+        return {"ok": True, "provider": "github", "status": "none"}
+    r = runs[0]
+    if r.get("status") != "completed":
+        status = "running"
+    else:
+        status = {"success": "success", "failure": "failed",
+                  "timed_out": "failed", "startup_failure": "failed",
+                  "cancelled": "canceled"}.get(r.get("conclusion"),
+                                               "unknown")
+    return {"ok": True, "provider": "github", "status": status,
+            "url": r.get("html_url"), "ref": r.get("head_branch"),
+            "name": r.get("name")}
+
+
+def _gitlab_status(host: str, path: str) -> dict:
+    headers = {"PRIVATE-TOKEN": GITLAB_TOKEN} if GITLAB_TOKEN else {}
+    enc = urllib.parse.quote(path, safe="")
+    data, err = _http_json(
+        f"https://{host}/api/v4/projects/{enc}/pipelines?per_page=1",
+        headers)
+    if err:
+        return {"ok": False, "error": f"GitLab: {err}"}
+    if not data:
+        return {"ok": True, "provider": "gitlab", "status": "none"}
+    p = data[0]
+    raw = p.get("status", "")
+    status = {"success": "success", "failed": "failed",
+              "canceled": "canceled", "skipped": "canceled"}.get(raw)
+    if status is None:
+        status = "running" if raw in (
+            "running", "pending", "preparing", "created",
+            "waiting_for_resource", "scheduled", "manual") else "unknown"
+    return {"ok": True, "provider": "gitlab", "status": status,
+            "url": p.get("web_url"), "ref": p.get("ref"),
+            "name": f"pipeline #{p.get('id', '')}"}
+
+
+def _build_status(root: Path) -> dict:
+    """Last CI run of the project's origin — GitHub Actions or GitLab."""
+    if not (root / ".git").exists():
+        return {"ok": True, "status": "none"}
+    rc, url = _git(root, "remote", "get-url", "origin")
+    parsed = _parse_remote(url) if rc == 0 else None
+    if not parsed:
+        return {"ok": True, "status": "none"}
+    host, path = parsed
+    if host == "github.com":
+        return _gha_status(path)
+    gl_host = urllib.parse.urlparse(GITLAB_BASE_URL).hostname or ""
+    if "gitlab" in host or host == gl_host:
+        return _gitlab_status(host, path)
+    return {"ok": True, "status": "none", "remote": host}
+
+
+@app.get("/api/build")
+@login_required
+def _api_build():
+    """CI status icon for the «Изменения» panel. Cached 60 s — the GHA
+    rate limit is 60 req/h without a token, and pipeline state is slow."""
+    proj = (request.args.get("project") or "").strip()
+    hit = _BUILD_CACHE.get(proj)
+    if hit and time.time() - hit[0] < _BUILD_TTL:
+        return jsonify(hit[1])
+    res = _build_status(_proj_root(proj))
+    if res.get("ok"):
+        _BUILD_CACHE[proj] = (time.time(), res)
+    return jsonify(res)
+
+
 @app.get("/api/stream")
 @login_required
 def _api_stream():
@@ -2227,6 +2346,23 @@ def _api_stop():
         log(f"web stop killed {name}")
         return jsonify({"ok": True, "stopped": name})
     return jsonify({"ok": False, "error": "нет активной задачи"})
+
+
+@app.post("/api/task/cancel")
+@login_required
+def _api_task_cancel():
+    """Drop a still-queued task — web «удалить» on the card. Running
+    tasks go through /api/stop (kill_task) instead."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["status"] != "queued":
+        return jsonify({"ok": False,
+                        "error": "задача уже не в очереди"}), 409
+    db_exec("DELETE FROM tasks WHERE stem=%s", (stem,))
+    log(f"web cancel removed queued {stem}")
+    return jsonify({"ok": True, "stem": stem})
 
 
 @app.post("/api/tasks")

@@ -10,11 +10,54 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import ErrorIcon from "@mui/icons-material/Error";
+import CancelIcon from "@mui/icons-material/Cancel";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import CircularProgress from "@mui/material/CircularProgress";
+import Tooltip from "@mui/material/Tooltip";
 import hljs from "highlight.js/lib/common";
 import { apiJson } from "./api.js";
 
 const STATUS_COLOR = { M: "#e6a23c", A: "#2e7d32", D: "#c62828",
                        R: "#1565c0", "??": "#2e7d32" };
+
+// Last CI run icon (GitHub Actions / GitLab pipeline via GET /api/build).
+const BUILD_UI = {
+  success:  { Icon: CheckCircleIcon, color: "#2e7d32", label: "успех" },
+  failed:   { Icon: ErrorIcon,       color: "#c62828", label: "упала" },
+  running:  { Icon: null,            color: "#e6a23c", label: "идёт" },
+  canceled: { Icon: CancelIcon,      color: "#9aa0a6", label: "отменена" },
+  unknown:  { Icon: WarningAmberIcon, color: "#9aa0a6",
+              label: "статус неизвестен" },
+};
+
+function BuildIcon({ build }) {
+  if (!build) return null;
+  if (build.error)
+    return (
+      <Tooltip title={"CI: " + build.error}>
+        <WarningAmberIcon sx={{ fontSize: 16, color: "#e6a23c" }} />
+      </Tooltip>
+    );
+  const ui = BUILD_UI[build.status];
+  if (!ui) return null;                       // "none" — remote без CI
+  const tip = `${build.provider === "gitlab" ? "GitLab" : "GitHub"} ` +
+              `сборка: ${ui.label}` +
+              (build.ref ? ` (${build.ref})` : "");
+  return (
+    <Tooltip title={tip}>
+      <Box component="span" sx={{ display: "flex", alignItems: "center",
+                                  cursor: build.url ? "pointer" : "default" }}
+           onClick={e => { e.stopPropagation();
+                           if (build.url) window.open(build.url, "_blank"); }}>
+        {ui.Icon ? <ui.Icon sx={{ fontSize: 15, color: ui.color }} />
+                 : <CircularProgress size={12} thickness={6}
+                                     sx={{ color: ui.color }} />}
+      </Box>
+    </Tooltip>
+  );
+}
 
 function DiffView({ text }) {
   const ref = useRef(null);
@@ -45,11 +88,12 @@ export default function Changes({ project, toast }) {
   const [entries, setEntries] = useState([]);
   const [err, setErr] = useState(null);
   const [diff, setDiff] = useState(null);  // {path, diff?, error?}
+  const [build, setBuild] = useState(null);
   const projRef = useRef(project);
   projRef.current = project;
 
   useEffect(() => {
-    setEntries([]); setErr(null);
+    setEntries([]); setErr(null); setBuild(null);
     const load = async () => {
       try {
         const d = await apiJson("/api/diff?project=" +
@@ -61,9 +105,17 @@ export default function Changes({ project, toast }) {
         setErr("API недоступен");
       }
     };
-    load();
+    const loadBuild = async () => {
+      try {
+        const d = await apiJson("/api/build?project=" +
+          encodeURIComponent(projRef.current || ""));
+        setBuild(d);
+      } catch (e) { /* icon just stays as it was */ }
+    };
+    load(); loadBuild();
     const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    const tb = setInterval(loadBuild, 30000);  // server caches 60 s anyway
+    return () => { clearInterval(t); clearInterval(tb); };
   }, [project]);
 
   const openFile = async path => {
@@ -89,6 +141,9 @@ export default function Changes({ project, toast }) {
         </Typography>
         <Chip size="small" label={entries.length}
               sx={{ ml: 1, height: 18, fontSize: 11 }} />
+        <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>
+          <BuildIcon build={build} />
+        </Box>
       </ListItemButton>
       <Collapse in={open}>
         <Box sx={{ maxHeight: "35vh", overflow: "auto" }}>

@@ -50,6 +50,12 @@ services:
       STT_MODEL: ${STT_MODEL:-whisper-1}
       YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID:-}
       YANDEX_LANG: ${YANDEX_LANG:-ru-RU}
+      # CI build status in the «Изменения» panel (GitHub Actions / GitLab).
+      # Tokens only needed for private repos: GHA — actions:read,
+      # GitLab — read_api. GITLAB_BASE_URL for self-hosted instances.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+      GITLAB_BASE_URL: ${GITLAB_BASE_URL:-https://gitlab.com}
       # Веб-авторизация: один админ; хеш пароля сидится в kv из
       # WEB_ADMIN_PASSWORD при первом запуске, дальше меняется в профиле.
       # Пустой пароль + пустой kv = вход без авторизации (только для dev).
