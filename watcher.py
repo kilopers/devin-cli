@@ -589,6 +589,8 @@ def run_task(task: dict) -> None:
                DEVIN_CONTINUE="true" if continue_mode() else "false",
                REPLY_MODE=task.get("reply_mode") or reply_mode(),
                DEVIN_EXPORT_FILE=str(export_path),
+               GIT_AUTO_COMMIT=("true" if pj_get(tproj, "auto_commit")
+                                        == "1" else "false"),
                WINDSURF_API_KEY=uset("devin.api_key", task_user,
                                      "WINDSURF_API_KEY"),
                GIT_USER_NAME=uset("git.name", task_user, "GIT_USER_NAME",
@@ -1056,8 +1058,10 @@ def enqueue_task(text: str, chat_id: int | None = None,
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
     scope = source if source in ("web", "telegram") else ""
     proj = project or (current_project(scope)[0] if multi_mode() else None)
-    model = current_model(scope)
-    rmode = reply_mode(scope)
+    model = pj_get(proj, "model") if proj else ""
+    model = model or current_model(scope)
+    rmode = pj_get(proj, "reply_mode") if proj else ""
+    rmode = rmode or reply_mode(scope)
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
                  rmode)
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
@@ -2175,6 +2179,31 @@ def migrate_env_secrets() -> None:
         log(f"env->user secrets migration failed (retry): {e}")
 
 
+# --- настройки проекта (kv.pj:<name> = JSON) -----------------------------
+# model / reply_mode / auto_commit — задаются в шестерёнке селекта
+# проектов; пустое = наследовать (модель — юзера, режим — юзера,
+# auto_commit — по умолчанию ВЫКЛ).
+
+def pj_get(name: str, key: str, default: str = "") -> str:
+    try:
+        v = json.loads(kv_get(f"pj:{name}", "{}")).get(key, "")
+        return v if isinstance(v, str) else default
+    except Exception:
+        return default
+
+
+def pj_set(name: str, key: str, val: str) -> None:
+    try:
+        d = json.loads(kv_get(f"pj:{name}", "{}"))
+    except Exception:
+        d = {}
+    if val == "":
+        d.pop(key, None)
+    else:
+        d[key] = val
+    kv_set(f"pj:{name}", json.dumps(d, ensure_ascii=False))
+
+
 # --- рабочие пространства (per-user) ------------------------------------
 
 def _ensure_default_ws(user: str) -> int:
@@ -2493,6 +2522,34 @@ def _env_masked(env_name: str) -> str:
     """env-значение поля — маской, чтобы UI показывал фолбэк."""
     v = os.environ.get(env_name, "")
     return ("…" + v[-4:]) if len(v) > 4 else v
+
+
+@app.get("/api/project/settings")
+@login_required
+def _api_project_settings_get():
+    p = (request.args.get("project") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    return jsonify({"ok": True,
+                    "model": pj_get(p, "model"),
+                    "reply_mode": pj_get(p, "reply_mode"),
+                    "auto_commit": pj_get(p, "auto_commit")})
+
+
+@app.post("/api/project/settings")
+@login_required
+def _api_project_settings_set():
+    body = _req_json()
+    p = (body.get("project") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    for k, ok in (("model", None),
+                  ("reply_mode", ("", "ask", "code")),
+                  ("auto_commit", ("", "0", "1"))):
+        v = (body.get(k) or "").strip()
+        if ok is None or v in ok:
+            pj_set(p, k, v)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/settings")

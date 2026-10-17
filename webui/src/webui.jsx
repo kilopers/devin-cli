@@ -20,6 +20,8 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import RepoKeys from "./RepoKeys.jsx";
 import Settings from "./Settings.jsx";
 import Workspaces, { Dot as WsDot } from "./Workspaces.jsx";
+import ProjectSettings from "./ProjectSettings.jsx";
+import TuneIcon from "@mui/icons-material/Tune";
 import ModelsPage from "./ModelsPage.jsx";
 import WorkspacesIcon from "@mui/icons-material/Layers";
 import Users from "./Users.jsx";
@@ -198,7 +200,7 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
 // Project picker in the header — replaces the old tabs row; selection
 // persists server-side via POST /api/project (kv.project_web).
 function ProjectSelect({ projects, current, onChange, onAdd,
-                         wsmap, wsList, onWs }) {
+                         wsmap, wsList, onWs, onSettings }) {
   const [wsMenu, setWsMenu] = useState(null); // {anchor, project}
   const wsColor = p => {
     const w = (wsList || []).find(w => w.id === (wsmap || {})[p]);
@@ -223,6 +225,11 @@ function ProjectSelect({ projects, current, onChange, onAdd,
                             setWsMenu({ a: e.currentTarget, p }); }}
             sx={{ p: 0.2, ml: 1 }}>
             <WorkspacesIcon sx={{ fontSize: 15 }} />
+          </IconButton>
+          <IconButton size="small" title="настройки проекта"
+            onClick={e => { e.stopPropagation(); onSettings?.(p); }}
+            sx={{ p: 0.2 }}>
+            <TuneIcon sx={{ fontSize: 15 }} />
           </IconButton>
         </MenuItem>))}
       <MenuItem value="__add__" sx={{ color: "#1565c0", fontSize: 13 }}>
@@ -286,6 +293,7 @@ export default function App() {
   const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
   const [wsmap, setWsmap] = useState({});        // project -> ws id
   const [view, setView] = useState("feed");      // feed | models
+  const [pSetOpen, setPSetOpen] = useState(null); // настройки проекта
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
@@ -529,13 +537,6 @@ export default function App() {
         <Typography variant="caption" color="text.secondary">
           {statusText}
         </Typography>
-        <ModelSelect models={models.models} current={models.current}
-                     onChange={setModel}
-                     sx={{ color: "#212121", bgcolor: "#fff", maxWidth: "none",
-                          border: "1px solid #dadce0" }} />
-        <ModeSelect mode={mode} onChange={setModeApi}
-                    sx={{ color: "#212121", bgcolor: "#fff",
-                         border: "1px solid #dadce0" }} />
       </Box>
     </Box>
   );
@@ -570,7 +571,8 @@ export default function App() {
                              onWs={(p, id) =>
                                post("/api/project/ws",
                                     { project: p, ws: id })
-                                 .then(() => refreshProjects())} />
+                                 .then(() => refreshProjects())}
+                             onSettings={p => setPSetOpen(p)} />
             )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
@@ -588,17 +590,6 @@ export default function App() {
                 ⛔ Стоп
               </Button>
             )}
-            <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 1 }}
-                 onFocus={() => modelFocus.current = true}
-                 onBlur={() => modelFocus.current = false}>
-              <ModelSelect models={models.models} current={models.current}
-                           onChange={setModel} />
-            </Box>
-            <Box sx={{ display: { xs: "none", sm: "flex" } }}
-                 onFocus={() => modeFocus.current = true}
-                 onBlur={() => modeFocus.current = false}>
-              <ModeSelect mode={mode} onChange={setModeApi} />
-            </Box>
             <Tooltip title="профиль">
               <IconButton color="inherit"
                           onClick={e => setProfMenu(e.currentTarget)}>
@@ -709,6 +700,9 @@ export default function App() {
       <RepoKeys open={keysOpen}
                 onClose={() => { setKeysOpen(false);
                                  if (!multiMode) setAddOpen(true); }} />
+      <ProjectSettings project={pSetOpen}
+                       onClose={() => setPSetOpen(null)}
+                       toast={setToast} />
       <Workspaces open={wsOpen} onClose={() => setWsOpen(false)}
                   onChanged={() => { loadWs(); refreshProjects(); }} />
       <Users open={usersOpen} onClose={() => setUsersOpen(false)}
