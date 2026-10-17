@@ -842,8 +842,8 @@ def _collect_recognition_text(raw: str) -> str:
     return " ".join(refined or finals).strip()
 
 
-def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg", user: str | None = None,
-                           rate: int = 48000) -> str:
+def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg",
+                           rate: int = 48000, user=None) -> str:
     """SpeechKit v1 sync recognition — fast path for short clips (≤~30s).
     mime audio/wav / raw PCM -> format=lpcm (browser mic path)."""
     started = time.time()
