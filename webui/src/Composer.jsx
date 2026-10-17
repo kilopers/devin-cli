@@ -15,6 +15,18 @@ import MenuIcon from "@mui/icons-material/Menu";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import AppBar from "@mui/material/AppBar";
+import Toolbar from "@mui/material/Toolbar";
+import CloseIcon from "@mui/icons-material/Close";
+import List from "@mui/material/List";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemText from "@mui/material/ListItemText";
+import Radio from "@mui/material/Radio";
+import { apiJson } from "./api.js";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, post } from "./api.js";
 
@@ -153,7 +165,56 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
 
-  // ── mobile: textarea + MUI BottomNavigation [меню | мик | в работу] ──
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [models, setModels] = useState(null); // null = ещё не грузили
+  const [modelCur, setModelCur] = useState("");
+
+  const openModels = () => {
+    setModelsOpen(true);
+    apiJson("/api/models").then(d => {
+      setModels(d.models || []); setModelCur(d.current || "");
+    }).catch(e => setModels([]));
+  };
+  const pickModel = id => {
+    post("/api/model", { model: id })
+      .then(d => { if (d.ok) setModelCur(id); });
+  };
+
+  const modelsSheet = (
+    <Dialog open={modelsOpen} onClose={() => setModelsOpen(false)}
+            fullScreen>
+      <AppBar position="static" color="primary" sx={{ bgcolor: accent }}>
+        <Toolbar variant="dense">
+          <SmartToyIcon sx={{ mr: 1 }} />
+          <Typography variant="h6" sx={{ flex: 1, fontSize: 16 }}>
+            Модели Devin
+          </Typography>
+          <IconButton color="inherit" onClick={() => setModelsOpen(false)}>
+            <CloseIcon />
+          </IconButton>
+        </Toolbar>
+      </AppBar>
+      <DialogContent sx={{ p: 0 }}>
+        {models === null &&
+          <Typography sx={{ p: 2 }} color="text.secondary">
+            загрузка…</Typography>}
+        {models && !models.length &&
+          <Typography sx={{ p: 2 }} color="text.secondary">
+            список моделей пуст</Typography>}
+        <List dense>
+          {(models || []).map(m => (
+            <ListItemButton key={m.id} onClick={() => pickModel(m.id)}>
+              <Radio size="small" checked={m.id === modelCur}
+                     sx={{ p: 0.5 }} />
+              <ListItemText primary={m.id}
+                            secondary={m.description || ""} />
+            </ListItemButton>
+          ))}
+        </List>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (mobile) return (
     <Paper elevation={6} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
@@ -208,7 +269,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
                 color: text.trim() ? "#fff" : "rgba(255,255,255,.4)" }} />
+        <BottomNavigationAction label="Модели" icon={<SmartToyIcon />}
+          onClick={openModels}
+          sx={{ minWidth: 0, color: "#fff" }} />
       </BottomNavigation>
+      {modelsSheet}
     </Paper>
   );
 
