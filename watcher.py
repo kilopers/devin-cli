@@ -1255,15 +1255,16 @@ def _models_from_json(data) -> list:
     name itself isn't a runnable model id, so it's never offered."""
     out = []
 
-    def add(mid, desc="", info=None):
+    def add(mid, desc="", info=None, fam=""):
         if isinstance(mid, str) \
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", mid) \
                 and all(m["id"] != mid for m in out):
             out.append({"id": mid,
                         "description": desc if isinstance(desc, str) else "",
+                        "family": fam,
                         "info": info or {}})
 
-    def walk(x, desc=""):
+    def walk(x, desc="", fam=""):
         if isinstance(x, dict):
             d = x.get("description") or x.get("display_name") \
                 or x.get("label") or desc
@@ -1282,25 +1283,27 @@ def _models_from_json(data) -> list:
                 info = {k: v for k, v in x.items()
                         if k not in ("models", "variants", "items",
                                      "children")}
-                add(mid, d, info)
-            fam = mid or (x.get("name") if isinstance(x.get("name"), str)
-                          else "")
+                add(mid, d, info, fam)
+            # имя группы — family_label/label семейства, не runnable id
+            fam = (x.get("family_label") or x.get("label") or
+                   x.get("name") if kids else None) or fam or \
+                  (x.get("name") if isinstance(x.get("name"), str) else "")
             for v in kids or []:
-                walk(v, d)
+                walk(v, d, fam)
             for a in x.get("aliases") or []:
                 if isinstance(a, str):
-                    add(a, f"алиас {fam}".strip())
+                    add(a, f"алиас {fam}".strip(), fam=fam)
                 else:
-                    walk(a, d)
+                    walk(a, d, fam)
             if mid is None and kids is None:
                 for v in x.values():
                     if isinstance(v, (dict, list)):
-                        walk(v, d)
+                        walk(v, d, fam)
         elif isinstance(x, list):
             for v in x:
-                walk(v, desc)
+                walk(v, desc, fam)
         elif isinstance(x, str):
-            add(x, desc)
+            add(x, desc, fam=fam)
 
     walk(data)
     return out
