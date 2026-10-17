@@ -2098,23 +2098,34 @@ def _http_json(url: str, headers: dict | None = None, timeout: int = 20):
 
 
 def _parse_remote(url: str):
-    """git remote URL -> (host, 'group/repo'); https + scp-style ssh."""
+    """git remote URL -> (host, 'group/repo', token|None). The token is
+    the password part of https user:pass@ remotes (e.g. cloned with
+    x-access-token:ghp_…@github.com — reuse it for the CI API)."""
     url = url.strip()
-    m = re.match(r"^(?:https?|ssh)://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+?)"
-                 r"(?:\.git)?/?$", url) or \
-        re.match(r"^[^@\s]+@([^:\s]+):(.+?)(?:\.git)?/?$", url)
+    m = re.match(r"^(?:https?|ssh)://(?:([^@/\s]+)@)?([^/:]+)(?::\d+)?/"
+                 r"(.+?)(?:\.git)?/?$", url)
+    if m:
+        userinfo, host, path = m.groups()
+        token = userinfo.split(":", 1)[1] \
+            if userinfo and ":" in userinfo else None
+        return host.lower(), path.strip("/"), token
+    m = re.match(r"^[^@\s]+@([^:\s]+):(.+?)(?:\.git)?/?$", url)
     if not m:
         return None
-    return m.group(1).lower(), m.group(2).strip("/")
+    return m.group(1).lower(), m.group(2).strip("/"), None
 
 
-def _gha_status(repo: str) -> dict:
-    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"} \
-        if GITHUB_TOKEN else {}
+def _gha_status(repo: str, token: str | None = None) -> dict:
+    tk = token or GITHUB_TOKEN
+    headers = {"Authorization": f"Bearer {tk}"} if tk else {}
     data, err = _http_json(
         f"https://api.github.com/repos/{repo}/actions/runs?per_page=1",
         headers)
     if err:
+        if err.startswith("HTTP 404"):
+            err += " — репо не найден или приватный; " + \
+                ("токен из remote не подошёл" if tk
+                 else "задай GITHUB_TOKEN в .env")
         return {"ok": False, "error": f"GitHub: {err}"}
     runs = (data or {}).get("workflow_runs") or []
     if not runs:
@@ -2132,13 +2143,18 @@ def _gha_status(repo: str) -> dict:
             "name": r.get("name")}
 
 
-def _gitlab_status(host: str, path: str) -> dict:
-    headers = {"PRIVATE-TOKEN": GITLAB_TOKEN} if GITLAB_TOKEN else {}
+def _gitlab_status(host: str, path: str, token: str | None = None) -> dict:
+    tk = token or GITLAB_TOKEN
+    headers = {"PRIVATE-TOKEN": tk} if tk else {}
     enc = urllib.parse.quote(path, safe="")
     data, err = _http_json(
         f"https://{host}/api/v4/projects/{enc}/pipelines?per_page=1",
         headers)
     if err:
+        if err.startswith("HTTP 404"):
+            err += " — проект не найден или приватный; " + \
+                ("токен из remote не подошёл" if tk
+                 else "задай GITLAB_TOKEN в .env")
         return {"ok": False, "error": f"GitLab: {err}"}
     if not data:
         return {"ok": True, "provider": "gitlab", "status": "none"}
@@ -2163,12 +2179,12 @@ def _build_status(root: Path) -> dict:
     parsed = _parse_remote(url) if rc == 0 else None
     if not parsed:
         return {"ok": True, "status": "none"}
-    host, path = parsed
+    host, path, token = parsed
     if host == "github.com":
-        return _gha_status(path)
+        return _gha_status(path, token)
     gl_host = urllib.parse.urlparse(GITLAB_BASE_URL).hostname or ""
     if "gitlab" in host or host == gl_host:
-        return _gitlab_status(host, path)
+        return _gitlab_status(host, path, token)
     return {"ok": True, "status": "none", "remote": host}
 
 

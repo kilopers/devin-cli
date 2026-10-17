@@ -86,6 +86,9 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   Иконка — в кружке `IconButton` (видно что кликабельна); при ошибке API
   клик открывает **Popover** с подробным текстом (`_http_json` отдаёт
   `HTTP {code} {reason}: {body[:300]}`), при успехе — ссылку на прогон.
+  Токен берётся и из remote URL (`x-access-token:ghp_…@github.com`,
+  `oauth2:glpat-…@gitlab.com` — парсится из userinfo), иначе env;
+  404 → подсказка «приватный/не найден → задай *_TOKEN».
   Кэш 60 с (`_BUILD_CACHE`); запросы через `TG_OPENER`. Токены —
   `GITHUB_TOKEN`/`GITLAB_TOKEN`/`GITLAB_BASE_URL` (env). Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,

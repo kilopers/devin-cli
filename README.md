@@ -275,9 +275,10 @@ Chrome предложит «Установить приложение», на iP
   `gitlab*` → GitLab pipelines. Зелёная ✓ / красная ✗ / спиннер / серая —
   иконка в кружке, клик открывает пайплайн; при ошибке обращения к CI
   (⚠) клик показывает popover с подробным текстом ошибки
-  (HTTP-код + тело ответа API). Для приватных репо — `GITHUB_TOKEN`
-  (actions:read) и/или `GITLAB_TOKEN` (read_api), self-hosted GitLab —
-  `GITLAB_BASE_URL`.
+  (HTTP-код + тело ответа API). Токен сначала ищется в самом remote URL
+  (`user:token@host/…` — т.е. репо, склонированные с PAT, работают сразу),
+  иначе — env `GITHUB_TOKEN` (actions:read) / `GITLAB_TOKEN` (read_api),
+  self-hosted GitLab — `GITLAB_BASE_URL`.
 - После завершённой задачи, если репозиторий грязный или есть незапушенные
   коммиты, в карточке появляются кнопки «✅ закоммитить и запушить» /
   «⏭ пропустить» — тот же флаг `tasks.commit_offered`, что и у
