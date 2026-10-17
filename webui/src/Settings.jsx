@@ -49,15 +49,10 @@ export default function Settings({ open, onClose }) {
           {(fields || []).map(f => (
             <TextField key={f.key} size="small" fullWidth
               label={f.label}
-              type={f.secret ? "password" : "text"}
+              type="text"
               autoComplete="off"
-              value={edit[f.key] ?? (f.secret ? ""
-                     : (vals[f.key] || f.env || ""))}
+              value={edit[f.key] ?? (vals[f.key] || f.env || "")}
               onChange={e => setEdit({ ...edit, [f.key]: e.target.value })}
-              placeholder={f.secret
-                ? (vals[f.key] ? "установлен " + vals[f.key]
-                   : (f.env ? "env: " + f.env : "не задано"))
-                : ""}
               helperText={f.hint +
                 (vals[f.key] ? "" : f.env ? " (из env)" : "")}
               InputProps={vals[f.key] ? { endAdornment:

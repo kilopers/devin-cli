@@ -894,7 +894,7 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
         },
     }
     log(f"stt -> yandex speechkit v3 async, {len(audio)} bytes")
-    op = json.loads(_yandex_request("/stt/v3/recognizeFileAsync", body))
+    op = json.loads(_yandex_request("/stt/v3/recognizeFileAsync", body, user=user))
     op_id = op.get("id") or op.get("operationId")
     if not op_id:
         raise RuntimeError(f"yandex stt: no operation id in {op}")
@@ -907,7 +907,8 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
         time.sleep(10)
         try:
             raw = _yandex_request(
-                f"/stt/v3/getRecognition?operationId={op_id}")
+                f"/stt/v3/getRecognition?operationId={op_id}",
+                user=user)
         except Exception as e:
             log(f"stt poll {attempt}: {e}")
             raw = ""
@@ -1030,14 +1031,15 @@ def web_transcribe(wav: bytes) -> str:
 
     def _try(p: str) -> str:
         if p != "yandex":
-            return _stt_dispatch(p, wav, "audio/wav")
+            return _stt_dispatch(p, wav, "audio/wav", user=u)
         try:
             if duration < 28:
-                return yandex_transcribe_sync(pcm, "audio/L16", rate)
+                return yandex_transcribe_sync(pcm, "audio/L16", rate,
+                                              user=u)
             _status(f"Запись {duration:.0f}с — длинная, ушла в асинхронное "
                     "распознавание Яндекса")
             return yandex_transcribe(_wav_wrap(pcm, rate), "audio/wav",
-                                     on_status=_status)
+                                     on_status=_status, user=u)
         finally:
             STATE["stt"] = None
 
@@ -2021,8 +2023,11 @@ def _user_hash(user: str) -> str:
 
 
 def _current_user() -> str:
-    """uid из сессии; без auth (пустой пароль) — условный админ."""
-    return session.get("uid") or WEB_ADMIN_USER
+    """uid из сессии; вне request-ctx (телеграм, фон) — админ."""
+    try:
+        return session.get("uid") or WEB_ADMIN_USER
+    except RuntimeError:
+        return WEB_ADMIN_USER
 
 
 def _is_admin(user: str | None = None) -> bool:
@@ -2559,10 +2564,14 @@ def _api_settings_get():
     `env` — env-фолбэк каждого поля (маской), `effective` — итоговое
     значение, которое реально уйдёт в работу."""
     u = _current_user()
-    mine = us_all(u)
+    # поля показывают реальные значения (запрос от юзера) — поэтому
+    # отдаём расшифрованные; env тоже в открытом виде
+    mine = {}
+    for k, v in _us_raw(u).items():
+        mine[k] = us_get(u, k) if isinstance(v, str) and             v.startswith("enc:v1:") else v
     fields, eff = [], {}
     for k, l, s, h, e in SETTING_FIELDS:
-        ev = _env_masked(e)
+        ev = os.environ.get(e, "")
         fields.append({"key": k, "label": l, "secret": s, "hint": h,
                        "env": ev, "set": k in mine})
         eff[k] = mine.get(k) or ev
