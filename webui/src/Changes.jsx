@@ -43,18 +43,23 @@ function DiffView({ text }) {
 export default function Changes({ project, toast }) {
   const [open, setOpen] = useState(true);
   const [entries, setEntries] = useState([]);
+  const [err, setErr] = useState(null);
   const [diff, setDiff] = useState(null);  // {path, diff?, error?}
   const projRef = useRef(project);
   projRef.current = project;
 
   useEffect(() => {
-    setEntries([]);
+    setEntries([]); setErr(null);
     const load = async () => {
       try {
         const d = await apiJson("/api/diff?project=" +
           encodeURIComponent(projRef.current || ""));
-        if (d.ok) setEntries(d.entries);
-      } catch (e) {}
+        if (d.ok) { setEntries(d.entries); setErr(null); }
+        else setErr(d.error || "ошибка");
+      } catch (e) {
+        // e.g. old backend without /api/diff (404 → HTML, not JSON)
+        setErr("API недоступен");
+      }
     };
     load();
     const t = setInterval(load, 5000);
@@ -87,7 +92,12 @@ export default function Changes({ project, toast }) {
       </ListItemButton>
       <Collapse in={open}>
         <Box sx={{ maxHeight: "35vh", overflow: "auto" }}>
-          {entries.length === 0 ? (
+          {err ? (
+            <Typography variant="caption" color="error"
+                        sx={{ px: 2, py: 0.5, display: "block" }}>
+              {err}
+            </Typography>
+          ) : entries.length === 0 ? (
             <Typography variant="caption" color="text.secondary"
                         sx={{ px: 2, py: 0.5, display: "block" }}>
               чисто — изменений нет
