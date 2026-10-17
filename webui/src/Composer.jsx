@@ -60,7 +60,7 @@ function encodeWav(chunks, rate) {
 }
 
 export default function Composer({ project, sttStatus, toast, onSent,
-                                   conn, onOpenDrawer, accent, onOpenModels }) {
+                                   conn, onOpenDrawer, accent, onOpenModels, mode }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -163,7 +163,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                           overflowY: "auto" } }}
-          placeholder={`Задача для «${project || "…"}»`}
+          placeholder={mode === "ask" ? `Вопрос по «${project || "…"}»`
+                            : `Задача для «${project || "…"}»`}
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => {
@@ -226,8 +227,10 @@ export default function Composer({ project, sttStatus, toast, onSent,
             multiline minRows={1} maxRows={50} fullWidth size="small"
             sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                             overflowY: "auto" } }}
-            placeholder={`Задача для Devin по проекту «${project || "…"}» — ` +
-                         "Ctrl+Enter чтобы отправить"}
+            placeholder={(mode === "ask"
+             ? `Вопрос по «${project || "…"}»`
+             : `Задача для Devin по проекту «${project || "…"}»`) +
+                         " — Ctrl+Enter чтобы отправить"}
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyDown={e => {

@@ -1893,7 +1893,8 @@ def api_status() -> dict:
         "tasks_done": STATE["tasks_done"],
         "model": current_model("web"),
         "project": project_label(),
-        "mode": reply_mode("web"),
+        "mode": pj_get(current_project("web")[0] or "", "reply_mode")
+                or reply_mode("web"),
         "stt_status": STATE.get("stt") or "",
         "version": APP_VERSION,
         "user": _current_user() if _admin_hash() else "",

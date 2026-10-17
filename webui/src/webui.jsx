@@ -696,7 +696,8 @@ export default function App() {
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={wsColor}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
-                  onOpenModels={() => setView("models")} />
+                  onOpenModels={() => setView("models")}
+                  mode={mode} />
       </Box>
 
       <FileEditor project={project} path={editPath}
