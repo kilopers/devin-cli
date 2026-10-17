@@ -181,6 +181,7 @@ function ProjectSelect({ projects, current, onChange, onAdd,
   };
   return (<>
     <Select size="small" value={current || ""} displayEmpty
+            renderValue={v => v || ""}
             onChange={e => e.target.value === "__add__"
                       ? onAdd?.() : onChange(e.target.value)}
             sx={{ color: "#fff", height: 32, fontSize: 13, maxWidth: 200,
@@ -355,7 +356,13 @@ export default function App() {
     try {
       const d = await apiJson("/api/projects");
       setWsmap(d.wsmap || {});
-      if (d.projects.length) { setProjects(d.projects); setMultiMode(true); }
+      if (d.projects.length) {
+        setProjects(d.projects); setMultiMode(true);
+        // смена пространства → если текущий проект пропал из списка,
+        // выбираем первый доступный (status.current — серверный fallback)
+        if (!d.projects.includes(projRef.current))
+          selectProject(d.current || d.projects[0]);
+      }
     } catch (e) {}
   };
 
