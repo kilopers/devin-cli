@@ -51,12 +51,15 @@ export default function Settings({ open, onClose }) {
               label={f.label}
               type={f.secret ? "password" : "text"}
               autoComplete="off"
-              value={edit[f.key] ?? ""}
+              value={edit[f.key] ?? (f.secret ? ""
+                     : (vals[f.key] || f.env || ""))}
               onChange={e => setEdit({ ...edit, [f.key]: e.target.value })}
-              placeholder={vals[f.key] ? String(vals[f.key])
-                           : (f.env ? "env: " + f.env : "не задано")}
+              placeholder={f.secret
+                ? (vals[f.key] ? "установлен " + vals[f.key]
+                   : (f.env ? "env: " + f.env : "не задано"))
+                : ""}
               helperText={f.hint +
-                (!vals[f.key] && f.env ? " (берётся из env)" : "")}
+                (vals[f.key] ? "" : f.env ? " (из env)" : "")}
               InputProps={vals[f.key] ? { endAdornment:
                 <Tooltip title="удалить значение">
                   <IconButton size="small" onClick={() => clear(f.key)}>
