@@ -25,8 +25,7 @@ export default function Settings({ open, onClose }) {
     const j = await post("/api/settings", edit);
     setBusy(false);
     if (!j.ok) return setMsg({ ok: false, text: j.error });
-    setMsg({ ok: true, text: "сохранено" });
-    setEdit({}); load();
+    setEdit({}); onClose();
   };
 
   const clear = async (k) => {
