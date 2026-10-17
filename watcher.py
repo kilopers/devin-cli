@@ -2088,9 +2088,13 @@ def _http_json(url: str, headers: dict | None = None, timeout: int = 20):
         with TG_OPENER.open(req, timeout=timeout) as r:
             return json.load(r), None
     except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code}"
+        # verbose for the UI popover — "404: repo not found / private"
+        body = e.read().decode("utf-8", errors="replace")[:300]
+        return None, f"HTTP {e.code} {e.reason}: {body.strip()}"
+    except urllib.error.URLError as e:
+        return None, f"сеть: {e.reason}"
     except Exception as e:
-        return None, str(e)[:120]
+        return None, f"{type(e).__name__}: {str(e)[:120]}"
 
 
 def _parse_remote(url: str):

@@ -15,6 +15,7 @@ import ErrorIcon from "@mui/icons-material/Error";
 import CancelIcon from "@mui/icons-material/Cancel";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import CircularProgress from "@mui/material/CircularProgress";
+import Popover from "@mui/material/Popover";
 import Tooltip from "@mui/material/Tooltip";
 import hljs from "highlight.js/lib/common";
 import { apiJson } from "./api.js";
@@ -33,30 +34,61 @@ const BUILD_UI = {
 };
 
 function BuildIcon({ build }) {
+  const [anchor, setAnchor] = useState(null);   // popover with full error
   if (!build) return null;
+
+  // the icon sits in a circled IconButton — visibly clickable
+  const circleBtn = (color, title, onClick, children) => (
+    <Tooltip title={title}>
+      <IconButton size="small" onClick={onClick}
+                  sx={{ width: 24, height: 24, p: 0,
+                        border: `1.5px solid ${color}`,
+                        "&:hover": { bgcolor: color + "22" } }}>
+        {children}
+      </IconButton>
+    </Tooltip>
+  );
+
   if (build.error)
     return (
-      <Tooltip title={"CI: " + build.error}>
-        <WarningAmberIcon sx={{ fontSize: 16, color: "#e6a23c" }} />
-      </Tooltip>
+      <>
+        {circleBtn("#e6a23c", "Ошибка проверки сборки — нажми для деталей",
+                   e => { e.stopPropagation(); setAnchor(e.currentTarget); },
+                   <WarningAmberIcon sx={{ fontSize: 15,
+                                          color: "#e6a23c" }} />)}
+        <Popover open={!!anchor} anchorEl={anchor}
+                 onClose={() => setAnchor(null)}
+                 anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                 transformOrigin={{ vertical: "top", horizontal: "right" }}
+                 onClick={e => e.stopPropagation()}>
+          <Box sx={{ p: 1.5, maxWidth: 380 }}>
+            <Typography variant="subtitle2" sx={{ fontSize: 13 }}>
+              Ошибка проверки сборки
+            </Typography>
+            <Typography variant="body2" sx={{
+              mt: 0.5, fontSize: 12, whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              fontFamily: "ui-monospace, Menlo, monospace" }}>
+              {build.error}
+            </Typography>
+          </Box>
+        </Popover>
+      </>
     );
+
   const ui = BUILD_UI[build.status];
   if (!ui) return null;                       // "none" — remote без CI
   const tip = `${build.provider === "gitlab" ? "GitLab" : "GitHub"} ` +
               `сборка: ${ui.label}` +
-              (build.ref ? ` (${build.ref})` : "");
-  return (
-    <Tooltip title={tip}>
-      <Box component="span" sx={{ display: "flex", alignItems: "center",
-                                  cursor: build.url ? "pointer" : "default" }}
-           onClick={e => { e.stopPropagation();
-                           if (build.url) window.open(build.url, "_blank"); }}>
-        {ui.Icon ? <ui.Icon sx={{ fontSize: 15, color: ui.color }} />
-                 : <CircularProgress size={12} thickness={6}
-                                     sx={{ color: ui.color }} />}
-      </Box>
-    </Tooltip>
-  );
+              (build.ref ? ` (${build.ref})` : "") +
+              (build.url ? " — открыть" : "");
+  return circleBtn(
+    ui.color, tip,
+    e => { e.stopPropagation();
+           if (build.url) window.open(build.url, "_blank"); },
+    ui.Icon ? <ui.Icon sx={{ fontSize: 15, color: ui.color }} />
+            : <CircularProgress size={12} thickness={6}
+                                sx={{ color: ui.color }} />);
 }
 
 function DiffView({ text }) {
