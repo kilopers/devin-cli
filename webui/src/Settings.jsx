@@ -1,7 +1,7 @@
 // Настройки юзера — API-ключи и параметры задач: devin, STT-цепочка,
 // telegram, gitlab base, git identity. Секреты хранятся зашифрованными
 // (enc:v1), в форме видна только маска; пустое поле = не менять.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
   Stack, Typography, TextField, Alert, IconButton, Tooltip,
@@ -18,7 +18,9 @@ export default function Settings({ open, onClose }) {
 
   const load = () => get("/api/settings").then(j => {
     setFields(j.fields || []); setVals(j.settings || {}); });
-  if (open && fields === null) load();
+  // перечитываем при каждом открытии — иначе после сохранения
+  // показывались старые значения
+  useEffect(() => { if (open) load(); }, [open]);
 
   const save = async () => {
     setBusy(true); setMsg(null);
