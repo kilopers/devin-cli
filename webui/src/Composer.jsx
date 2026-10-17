@@ -238,6 +238,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
       <Grid container spacing={1} sx={{
         maxWidth: 1280, mx: "auto", p: 1.5, alignItems: "flex-end" }}>
         <Grid size={{ xs: 12, sm: "grow" }}>
+          <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.5 }}>
+          {modeBtn}
           <TextField
             multiline minRows={1} maxRows={50} fullWidth size="small"
             sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
@@ -254,11 +256,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
               }
             }}
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+          </Box>
         </Grid>
         <Grid size={{ xs: 12, sm: "auto" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,
                      justifyContent: "flex-end", flexWrap: "nowrap" }}>
-            {modeBtn}
             <IconButton onClick={micClick} size="small"
                         color={recording ? "error" : "default"}
                         title="надиктовать голосом"
