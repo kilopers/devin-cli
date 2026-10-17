@@ -45,7 +45,12 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   Версии: MUI 9.4, x-tree-view 9.14 (с ним пин `@mui/x-internals` той же
   версии — у них exports расходятся между минорками), React 19.
   Мобильная адаптация — брейкпоинты MUI `sx`/`useMediaQuery` (Drawer
-  temporary на <md), matchMedia-хаков больше нет.
+  temporary на <md), matchMedia-хаков больше нет. Композер — `Grid`
+  (xs: поле 12, кнопки 12 во вторую строку; «В работу» size=small).
+  Шапка `AppBar position="fixed"` + `<Toolbar variant="dense"/>`-спейсер —
+  всегда прижата к верху. Drawer — `SwipeableDrawer` (свайп от левого
+  края открывает меню; на iOS swipe-to-open выключен — конфликт с жестом
+  «назад» Safari); скролл меню переживает ререндеры (ref+useLayoutEffect).
   Иконка приложения — официальный логотип Devin, скачан с devin.ai
   (`static/favicon.svg|favicon.ico|icon.png|apple-icon.png`, отдаётся штатным
   `/static/*`; `/favicon.ico` — отдельный роут, иначе браузеры ловили

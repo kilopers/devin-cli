@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
@@ -149,50 +150,58 @@ export default function Composer({ project, sttStatus, toast, onSent }) {
     <Paper elevation={4} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
-      <Box sx={{
-        maxWidth: 1280, mx: "auto", display: "flex", gap: 1.5, p: 1.5,
-        alignItems: "flex-end", flexWrap: { xs: "wrap", sm: "nowrap" } }}>
-        <TextField
-          multiline minRows={1} maxRows={6} fullWidth size="small"
-          placeholder={`Задача для Devin по проекту «${project || "…"}» — ` +
-                       "Ctrl+Enter чтобы отправить"}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault(); send();
-            }
-          }}
-          sx={{ flex: { xs: "1 1 100%", sm: 1 },
-                "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-        <IconButton onClick={micClick}
-                    color={recording ? "error" : "default"}
-                    title="надиктовать голосом"
-                    sx={recording
-                      ? { animation: "pulse 1s infinite",
-                          "@keyframes pulse": { "50%": { opacity: 0.35 } } }
-                      : {}}>
-          {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
-        </IconButton>
-        {lastAudio && !recognizing && (
-          <Button size="small" variant="outlined" color="warning"
-                  startIcon={<RefreshIcon sx={{ fontSize: 16 }} />}
-                  onClick={() => sendAudio(lastAudio)}
-                  title="отправить запись на распознавание ещё раз"
-                  sx={{ textTransform: "none", whiteSpace: "nowrap",
-                        alignSelf: "center", fontSize: 12, px: 1 }}>
-            ещё раз
-          </Button>
-        )}
-        <Typography variant="caption" color="text.secondary"
-                    sx={{ minWidth: 44, pb: 1.2, whiteSpace: "nowrap" }}>
-          {shownStat}
-        </Typography>
-        <Button variant="contained" onClick={send} disabled={busy}
-                endIcon={<SendIcon />} sx={{ flex: { xs: 1, sm: "0 0 auto" } }}>
-          В работу
-        </Button>
-      </Box>
+      <Grid container spacing={1} sx={{
+        maxWidth: 1280, mx: "auto", p: 1.5, alignItems: "flex-end" }}>
+        <Grid size={{ xs: 12, sm: "grow" }}>
+          <TextField
+            multiline minRows={1} maxRows={6} fullWidth size="small"
+            placeholder={`Задача для Devin по проекту «${project || "…"}» — ` +
+                         "Ctrl+Enter чтобы отправить"}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault(); send();
+              }
+            }}
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+        </Grid>
+        <Grid size={{ xs: 12, sm: "auto" }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,
+                     justifyContent: "flex-end", flexWrap: "nowrap" }}>
+            <IconButton onClick={micClick} size="small"
+                        color={recording ? "error" : "default"}
+                        title="надиктовать голосом"
+                        sx={recording
+                          ? { animation: "pulse 1s infinite",
+                              "@keyframes pulse":
+                                { "50%": { opacity: 0.35 } } }
+                          : {}}>
+              {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+            </IconButton>
+            {lastAudio && !recognizing && (
+              <Button size="small" variant="outlined" color="warning"
+                      startIcon={<RefreshIcon sx={{ fontSize: 15 }} />}
+                      onClick={() => sendAudio(lastAudio)}
+                      title="отправить запись на распознавание ещё раз"
+                      sx={{ textTransform: "none", whiteSpace: "nowrap",
+                            fontSize: 12, px: 1, minWidth: 0 }}>
+                ещё раз
+              </Button>
+            )}
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ minWidth: 38, whiteSpace: "nowrap",
+                              textAlign: "center" }}>
+              {shownStat}
+            </Typography>
+            <Button variant="contained" size="small" onClick={send}
+                    disabled={busy} endIcon={<SendIcon sx={{fontSize: 15}} />}
+                    sx={{ whiteSpace: "nowrap", px: 1.5, minWidth: 0 }}>
+              В работу
+            </Button>
+          </Box>
+        </Grid>
+      </Grid>
     </Paper>
   );
 }

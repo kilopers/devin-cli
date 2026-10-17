@@ -1,15 +1,16 @@
 // Devin Worker web UI — React + MUI (was: Materialize + vanilla JS).
 // Same JSON API as before; polling every 3 s, infinite scroll-up feed.
-import React, { useCallback, useEffect, useMemo, useRef, useState }
+import React, { useCallback, useEffect, useLayoutEffect, useMemo,
+                useRef, useState }
   from "react";
 import { createRoot } from "react-dom/client";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
   Alert, AppBar, Box, Button, Card, CardContent, Chip, CssBaseline,
-  Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer,
+  Dialog, DialogActions, DialogContent, DialogTitle, Divider,
   GlobalStyles, IconButton, List, ListItemButton, ListItemText,
-  ListSubheader, MenuItem, Paper, Select, Snackbar, TextField,
-  Toolbar, Tooltip, Typography,
+  ListSubheader, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
+  TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import PersonIcon from "@mui/icons-material/Person";
@@ -200,6 +201,15 @@ export default function App() {
   const [editPath, setEditPath] = useState(null);   // file open in editor
   // shared confirm dialog: {kind:"stop"|"cancel", name, stem} | null
   const [confirm, setConfirm] = useState(null);
+  // drawer keeps its scroll position across re-renders (selecting
+  // mode/model inside it used to yank the list back to the top)
+  const drawerBoxRef = useRef(null);
+  const drawerScroll = useRef(0);
+  useLayoutEffect(() => {
+    const el = drawerBoxRef.current;
+    if (el && el.scrollTop !== drawerScroll.current)
+      el.scrollTop = drawerScroll.current;
+  });
   const modelFocus = useRef(false), modeFocus = useRef(false);
   const firstLoad = useRef(true);
 
@@ -357,7 +367,10 @@ export default function App() {
     .finally(() => location = "/login");
 
   const drawer = (
-    <Box sx={{ width: 300 }} role="presentation">
+    <Box ref={drawerBoxRef}
+         onScroll={e => drawerScroll.current = e.currentTarget.scrollTop}
+         sx={{ width: 300, height: "100%", overflowY: "auto" }}
+         role="presentation">
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.2,
                  px: 2, py: 1.5, fontWeight: 600 }}>
         <img src="/static/favicon.svg" alt="" style={{ height: 22 }} />
@@ -400,7 +413,7 @@ export default function App() {
       <CssBaseline />
       <GlobalStyles styles={mdStyles} />
       <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-        <AppBar position="sticky" color="primary">
+        <AppBar position="fixed" color="primary">
           <Toolbar variant="dense" sx={{ gap: 1 }}>
             <IconButton color="inherit" edge="start" title="проекты и настройки"
                         sx={{ display: { md: "none" } }}
@@ -459,11 +472,19 @@ export default function App() {
             </Tooltip>
           </Toolbar>
         </AppBar>
+        {/* spacer — AppBar is position:fixed, header stays pinned on top */}
+        <Toolbar variant="dense" />
 
-        <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)}
+        <SwipeableDrawer open={drawerOpen}
+                onOpen={() => setDrawerOpen(true)}
+                onClose={() => setDrawerOpen(false)}
+                swipeAreaWidth={24}
+                ModalProps={{ keepMounted: true }}
+                disableSwipeToOpen={
+                  /iPad|iPhone|iPod/.test(navigator.userAgent)}
                 sx={{ display: { md: "none" } }}>
           {drawer}
-        </Drawer>
+        </SwipeableDrawer>
 
         <Box sx={{ flex: 1, display: "flex", width: "100%", maxWidth: 1280,
                    mx: "auto" }}>
