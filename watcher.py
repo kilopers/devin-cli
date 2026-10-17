@@ -16,11 +16,13 @@ Tasks run sequentially, oldest first.
 import array
 import base64
 import functools
+import hashlib
 import html
 import json
 import os
 import re
 import secrets
+import shutil
 import signal
 import socket
 import struct
@@ -1853,6 +1855,11 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "created": int(r["created"]),
             "prompt": (r["prompt"] or "")[:2000],
             "output": out,
+            # per-item content hash — the feed re-renders a card only when
+            # this changes (no flicker on identical polls)
+            "h": hashlib.md5(
+                f"{st}|{r['task_status']}|{r['commit_offered']}|{out}"
+                .encode()).hexdigest()[:12],
         })
     if before:
         idx = next((i for i, t in enumerate(items)
@@ -2406,6 +2413,61 @@ def _api_task_cancel():
     db_exec("DELETE FROM tasks WHERE stem=%s", (stem,))
     log(f"web cancel removed queued {stem}")
     return jsonify({"ok": True, "stem": stem})
+
+
+@app.post("/api/project/add")
+@login_required
+def _api_project_add():
+    """«+ Добавить проект» в вебе: clone a repo into PROJECTS_ROOT/<folder>.
+    https URLs get the token injected (x-access-token@ for GitHub,
+    oauth2@ for GitLab); ssh git@ URLs clone as-is (token not used).
+    Output is echoed back for the dark <pre> in the modal, token masked."""
+    body = _req_json()
+    folder = (body.get("folder") or "").strip()
+    url = (body.get("url") or "").strip()
+    token = (body.get("token") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", folder or ""):
+        return jsonify({"ok": False, "error":
+                        "имя папки: только a-z, 0-9, точка, _ и -"}), 400
+    if not PROJECTS_ROOT or not PROJECTS_ROOT.is_dir():
+        return jsonify({"ok": False, "error":
+                        "мультирежим не настроен (DEVIN_PROJECTS_DIR)"}), 400
+    if (PROJECTS_ROOT / folder).exists():
+        return jsonify({"ok": False,
+                        "error": f"папка {folder} уже существует"}), 409
+    parsed = _parse_remote(url)
+    if not parsed:
+        return jsonify({"ok": False, "error":
+                        "не понимаю ссылку — нужен https://… или git@…"}), 400
+    host, path, url_token = parsed
+    tk = token or url_token or ""
+    if not tk:
+        return jsonify({"ok": False, "error":
+                        "нужен токен — GitHub: ghp_…/github_pat_…, "
+                        "GitLab: glpat-…"}), 400
+    clone_url = url
+    if url.startswith(("https://", "http://")) and not url_token:
+        scheme = "https" if url.startswith("https://") else "http"
+        user = "x-access-token" if host == "github.com" else "oauth2"
+        clone_url = f"{scheme}://{user}:{tk}@{host}/{path}.git"
+    env = {k: v for k, v in os.environ.items()
+           if k.lower() not in ("http_proxy", "https_proxy", "no_proxy")}
+    dest = PROJECTS_ROOT / folder
+    try:
+        res = subprocess.run(["git", "clone", "--progress",
+                              clone_url, str(dest)],
+                             capture_output=True, text=True,
+                             timeout=600, env=env)
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(dest, ignore_errors=True)
+        return jsonify({"ok": False, "error": "clone timeout 600 c"}), 500
+    out = (res.stdout + res.stderr).replace(tk, "***")
+    if res.returncode != 0:
+        shutil.rmtree(dest, ignore_errors=True)
+        return jsonify({"ok": False, "error":
+                        out[-4000:] or "clone failed"}), 500
+    log(f"web added project {folder} <- {host}/{path}")
+    return jsonify({"ok": True, "folder": folder, "output": out[-4000:]})
 
 
 @app.post("/api/tasks")

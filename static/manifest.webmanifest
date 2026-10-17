@@ -1,6 +1,6 @@
 {
-  "name": "Devin Worker",
-  "short_name": "Devin",
+  "name": "WebDev",
+  "short_name": "WebDev",
   "description": "Devin CLI worker — задачи из веба и Telegram",
   "id": "/",
   "start_url": "/",

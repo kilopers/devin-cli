@@ -116,8 +116,10 @@ function BuildsPanel({ build }) {
         <Chip size="small" label={runs.length}
               sx={{ ml: 1, height: 18, fontSize: 11 }} />
       </ListItemButton>
-      <Collapse in={open}>
-        <Box sx={{ maxHeight: "30vh", overflow: "auto" }}>
+      <Collapse in={open}
+                sx={{ flex: "0 1 auto", minHeight: 0,
+                       overflowY: "auto" }}>
+        <Box sx={{ overflow: "auto" }}>
           {runs.map((r, i) => {
             const ui = BUILD_UI[r.status] || BUILD_UI.unknown;
             return (
@@ -235,8 +237,10 @@ export default function Changes({ project, toast }) {
           <BuildIcon build={build} />
         </Box>
       </ListItemButton>
-      <Collapse in={open}>
-        <Box sx={{ maxHeight: "35vh", overflow: "auto" }}>
+      <Collapse in={open}
+                sx={{ flex: "0 1 auto", minHeight: 0,
+                       overflowY: "auto" }}>
+        <Box sx={{ overflow: "auto" }}>
           {err ? (
             <Typography variant="caption" color="error"
                         sx={{ px: 2, py: 0.5, display: "block" }}>

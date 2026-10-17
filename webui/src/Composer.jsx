@@ -1,6 +1,8 @@
 // Bottom composer: task input + voice dictation (AudioContext → PCM16 WAV
 // @16kHz → POST /api/stt) + send button. Ctrl+Enter sends too.
 import { useRef, useState } from "react";
+import BottomNavigation from "@mui/material/BottomNavigation";
+import BottomNavigationAction from "@mui/material/BottomNavigationAction";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Grid from "@mui/material/Grid";
@@ -15,7 +17,6 @@ import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, post } from "./api.js";
-import { ConnBadge } from "./ConnDot.jsx";
 
 const STT_RATE = 16000;
 const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
@@ -152,16 +153,12 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
 
-  // ── mobile bottom navigation: [☰] [textarea] [🎙] [➤] [conn dot] ──
+  // ── mobile: textarea + MUI BottomNavigation [меню | мик | в работу] ──
   if (mobile) return (
     <Paper elevation={6} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
-      <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.3,
-                 px: 0.6, py: 0.7 }}>
-        <IconButton size="small" onClick={onOpenDrawer} title="меню">
-          <MenuIcon />
-        </IconButton>
+      <Box sx={{ px: 1, pt: 0.8 }}>
         <TextField
           multiline minRows={1} maxRows={4} fullWidth size="small"
           placeholder={`Задача для «${project || "…"}»`}
@@ -173,36 +170,37 @@ export default function Composer({ project, sttStatus, toast, onSent,
             }
           }}
           sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
-        <IconButton onClick={micClick} size="small"
-                    color={recording ? "error" : "default"}
-                    title="надиктовать голосом"
-                    sx={recording
-                      ? { animation: "pulse 1s infinite",
-                          "@keyframes pulse":
-                            { "50%": { opacity: 0.35 } } }
-                      : {}}>
-          {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
-        </IconButton>
-        {lastAudio && !recognizing && (
-          <IconButton size="small" color="warning"
-                      title="отправить запись ещё раз"
-                      onClick={() => sendAudio(lastAudio)}>
-            <RefreshIcon sx={{ fontSize: 18 }} />
-          </IconButton>
+        {shownStat && (
+          <Typography variant="caption" color="text.secondary"
+                      sx={{ display: "block", pt: 0.2, fontSize: 11 }}>
+            {shownStat}
+          </Typography>
         )}
-        <IconButton color="primary" onClick={send}
-                    disabled={busy || !text.trim()} title="отправить в работу">
-          <SendIcon />
-        </IconButton>
-        <ConnBadge conn={conn} showVer={false} />
       </Box>
-      {shownStat && (
-        <Typography variant="caption" color="text.secondary"
-                    sx={{ display: "block", px: 1.5, pb: 0.5,
-                          fontSize: 11 }}>
-          {shownStat}
-        </Typography>
-      )}
+      <BottomNavigation showLabels sx={{ height: 52 }}>
+        <BottomNavigationAction label="Меню" icon={<MenuIcon />}
+                                onClick={onOpenDrawer}
+                                sx={{ minWidth: 0 }} />
+        <BottomNavigationAction
+          label={recording ? "Стоп" : "Запись"}
+          icon={recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+          onClick={micClick}
+          sx={{ minWidth: 0,
+                color: recording ? "error.main" : "text.secondary",
+                ...(recording && {
+                  animation: "pulse 1s infinite",
+                  "@keyframes pulse": { "50%": { opacity: 0.35 } } }) }} />
+        {lastAudio && !recognizing && (
+          <BottomNavigationAction label="Ещё раз"
+            icon={<RefreshIcon />}
+            onClick={() => sendAudio(lastAudio)}
+            sx={{ minWidth: 0, color: "warning.main" }} />
+        )}
+        <BottomNavigationAction label="В работу" icon={<SendIcon />}
+          onClick={send} disabled={busy || !text.trim()}
+          sx={{ minWidth: 0,
+                color: text.trim() ? "primary.main" : "text.disabled" }} />
+      </BottomNavigation>
     </Paper>
   );
 

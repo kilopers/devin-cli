@@ -51,10 +51,14 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   всегда прижата к верху. Drawer — `SwipeableDrawer` (свайп от левого
   края открывает меню; на iOS swipe-to-open выключен — конфликт с жестом
   «назад» Safari); скролл меню переживает ререндеры (ref+useLayoutEffect).
-  На <md композер — bottom-nav строка: [☰ меню] [textarea] [🎙] [➤ send]
-  [ConnBadge справа]; send активен только при непустом тексте. SSE одна —
-  `useConnStatus(version)` хук шарит `conn` между `ConnDot` (плавающий,
-  только ≥md) и мобильной панелью.
+  Название приложения — **WebDev** (шапка, drawer, login, manifest).
+  ConnBadge живёт в шапке рядом с `(v…)` — точка связи + авторелоад по
+  `event: version`. На <md композер — textarea + MUI `BottomNavigation`
+  [Меню | Запись/Стоп | (Ещё раз) | В работу]; send активен только при
+  непустом тексте; статус распознавания — строкой под textarea.
+  `/api/tasks` отдаёт per-item хэш `h` (md5 статуса+output) — фронт
+  заменяет элементы `feed` только при смене хэша и `TaskCard` обёрнут
+  в `React.memo`: лента не мерцает на идентичных опросах.
   Иконка приложения — официальный логотип Devin, скачан с devin.ai
   (`static/favicon.svg|favicon.ico|icon.png|apple-icon.png`, отдаётся штатным
   `/static/*`; `/favicon.ico` — отдельный роут, иначе браузеры ловили
@@ -63,7 +67,12 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   `Service-Worker-Allowed: /` — скоуп шире `/static/`); SW кэширует только
   `/static/*`, `/api/*` и POST'ы идут в сеть. Проект выбирается селектом в
   шапке (`ProjectSelect`, после названия+версии; `POST /api/project` →
-  `kv.project_web`, сохраняется между логинами); вкладок-проектов нет,
+  `kv.project_web`, сохраняется между логинами); пункт «➕ Добавить
+  проект…» в селекте и drawer → `AddProject.jsx` (папка+URL+токен →
+  `POST /api/project/add` клонирует в `PROJECTS_ROOT/<folder>`,
+  https-URL получает `x-access-token:`/`oauth2:`-инжект, вывод clone
+  показывается тёмным `<pre>` в модалке, токен маскируется `***`).
+  Вкладок-проектов нет,
   в мобильном drawer список проектов продублирован. Справа в вебе —
   дерево файлов проекта (`GET /api/files` отдаёт один уровень, ленивое
   раскрытие аяксом; на мобильном — в drawer под «Файлы»). Раскрытые папки

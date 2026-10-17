@@ -22,8 +22,9 @@ import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
 import Changes from "./Changes.jsx";
 import FileEditor from "./FileEditor.jsx";
+import AddProject from "./AddProject.jsx";
 import Composer from "./Composer.jsx";
-import ConnDot, { useConnStatus } from "./ConnDot.jsx";
+import { ConnBadge, useConnStatus } from "./ConnDot.jsx";
 
 const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -81,7 +82,8 @@ function StatusChip({ t }) {
       : undefined} />;
 }
 
-function TaskCard({ t, onCommit, onStop, onCancel }) {
+const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
+                                                onCancel }) {
   return (
     <Card sx={{ mb: 1.5 }}>
       <CardContent sx={{ p: "14px 18px", "&:last-child": { pb: "14px" } }}>
@@ -141,18 +143,22 @@ function TaskCard({ t, onCommit, onStop, onCancel }) {
       </CardContent>
     </Card>
   );
-}
+});
 
 // Project picker in the header — replaces the old tabs row; selection
 // persists server-side via POST /api/project (kv.project_web).
-function ProjectSelect({ projects, current, onChange }) {
+function ProjectSelect({ projects, current, onChange, onAdd }) {
   return (
     <Select size="small" value={current || ""} displayEmpty
-            onChange={e => onChange(e.target.value)}
+            onChange={e => e.target.value === "__add__"
+                      ? onAdd?.() : onChange(e.target.value)}
             sx={{ color: "#fff", height: 32, fontSize: 13, maxWidth: 200,
                   bgcolor: "rgba(255,255,255,.15)",
                   "& .MuiSelect-icon": { color: "rgba(255,255,255,.8)" } }}>
       {projects.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+      <MenuItem value="__add__" sx={{ color: "#1565c0", fontSize: 13 }}>
+        ➕ Добавить проект…
+      </MenuItem>
     </Select>
   );
 }
@@ -199,6 +205,7 @@ export default function App() {
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
   const [editPath, setEditPath] = useState(null);   // file open in editor
+  const [addOpen, setAddOpen] = useState(false);    // add-project dialog
   // shared confirm dialog: {kind:"stop"|"cancel", name, stem} | null
   const [confirm, setConfirm] = useState(null);
   // drawer keeps its scroll position across re-renders (selecting
@@ -227,7 +234,13 @@ export default function App() {
         encodeURIComponent(p) + "&limit=5");
       setFeed(m => {
         const n = new Map(m);
-        d.tasks.forEach(t => n.set(t.stem, t));
+        // keep object identity for unchanged tasks (h = server-side
+        // content hash) — React.memo(TaskCard) then skips re-render and
+        // the feed stops flickering on identical polls
+        d.tasks.forEach(t => {
+          const prev = n.get(t.stem);
+          if (!prev || prev.h !== t.h) n.set(t.stem, t);
+        });
         return n;
       });
       if (firstLoad.current) { setHasMore(d.has_more); firstLoad.current = false; }
@@ -245,7 +258,10 @@ export default function App() {
       setFeed(m => {
         const n = new Map(m);
         let got = false;
-        d.tasks.forEach(t => { if (!n.has(t.stem)) { n.set(t.stem, t); got = true; } });
+        d.tasks.forEach(t => {
+          const prev = n.get(t.stem);
+          if (!prev || prev.h !== t.h) { n.set(t.stem, t); got = true; }
+        });
         setHasMore(got ? d.has_more : false);
         return n;
       });
@@ -269,6 +285,13 @@ export default function App() {
       if (!modelFocus.current) setModels(d);
     } catch (e) {}
   }, []);
+
+  const refreshProjects = async () => {
+    try {
+      const d = await apiJson("/api/projects");
+      if (d.projects.length) { setProjects(d.projects); setMultiMode(true); }
+    } catch (e) {}
+  };
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
@@ -376,7 +399,7 @@ export default function App() {
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.2,
                  px: 2, py: 1.5, fontWeight: 600 }}>
         <img src="/static/favicon.svg" alt="" style={{ height: 22 }} />
-        Devin Worker
+        WebDev
       </Box>
       <List subheader={<ListSubheader>Проекты</ListSubheader>} dense>
         {projects.map(p => (
@@ -384,6 +407,12 @@ export default function App() {
                           onClick={() => selectProject(p)}>
             <ListItemText primary={p} />
           </ListItemButton>))}
+        <ListItemButton onClick={() => { setDrawerOpen(false);
+                                         setAddOpen(true); }}>
+          <ListItemText primary="➕ Добавить проект…"
+                        primaryTypographyProps={{ color: "#1565c0",
+                                                 fontSize: 14 }} />
+        </ListItemButton>
       </List>
       <Divider />
       <ListSubheader>Файлы</ListSubheader>
@@ -424,16 +453,20 @@ export default function App() {
             </IconButton>
             <img src="/static/favicon.svg" alt=""
                  style={{ height: 24, filter: "invert(1)" }} />
-            <Typography variant="h6" sx={{ fontSize: 19, flexShrink: 0 }}>
-              Devin Worker
+            <Typography variant="h6" sx={{ fontSize: 19, flexShrink: 0,
+                                           display: "flex",
+                                           alignItems: "center", gap: 0.8 }}>
+              WebDev
               <Typography component="span" variant="caption"
-                          sx={{ opacity: .55, ml: 0.8, fontSize: 11 }}>
+                          sx={{ opacity: .55, fontSize: 11 }}>
                 (v{status.version || "…"})
               </Typography>
+              <ConnBadge conn={conn} showVer={false} />
             </Typography>
             {multiMode && (
               <ProjectSelect projects={projects} current={project}
-                             onChange={selectProject} />
+                             onChange={selectProject}
+                             onAdd={() => setAddOpen(true)} />
             )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
@@ -533,7 +566,10 @@ export default function App() {
 
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
-      <ConnDot conn={conn} />
+      <AddProject open={addOpen} onClose={() => setAddOpen(false)}
+                  onAdded={f => { refreshProjects()
+                    .then(() => selectProject(f)); }} />
+
 
       <Dialog open={!!confirm} onClose={() => setConfirm(null)}
               maxWidth="xs" fullWidth>
