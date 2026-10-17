@@ -529,9 +529,6 @@ def run_task(task: dict) -> None:
                DEVIN_EXPORT_FILE=str(export_path))
     chat_id = task.get("chat_id")
     out_path = progress_dir / f"{stem}.out"
-    # HEAD до задачи — после неё покажем diff изменений в веб-ленте
-    rc, _out = _git(workdir, "rev-parse", "HEAD")
-    before_sha = _out.strip() if rc == 0 else ""
     global _task_proc
     try:
         # stdout+stderr go to a file the progress thread tails — devin -p
@@ -562,9 +559,6 @@ def run_task(task: dict) -> None:
     finally:
         _task_proc = None
 
-    diff_txt = _git_diff_since(workdir, before_sha)
-    if diff_txt:
-        body += f"\n\n### Что изменилось в репо\n\n```diff\n{diff_txt}\n```\n"
     db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
             " finished=%s WHERE stem=%s", (body, status, time.time(), stem))
     STATE.update(current_task=None, last_task=name,
@@ -1405,26 +1399,6 @@ def _git(workdir, *args) -> tuple:
     return res.returncode, (res.stdout + res.stderr).strip()
 
 
-def _git_diff_since(workdir, before: str, max_lines: int = 250) -> str:
-    """Diff рабочего дерева против HEAD'а до задачи + список новых
-    untracked-файлов (их контента в diff нет). Пусто = нечего показывать."""
-    if not before:
-        return ""
-    rc, diff = _git(workdir, "diff", "--no-color", before)
-    if rc != 0:
-        return ""
-    _, st = _git(workdir, "status", "--porcelain")
-    untracked = [l[3:] for l in st.splitlines() if l.startswith("??")]
-    lines = diff.splitlines()
-    if len(lines) > max_lines:
-        lines = lines[:max_lines] + \
-            [f"… ещё {len(diff.splitlines()) - max_lines} строк diff'а"]
-    out = "\n".join(lines)
-    if untracked:
-        out += "\nновые файлы: " + ", ".join(untracked[:20])
-    return out.strip()
-
-
 def offer_commit(task: dict, chat_id, workdir) -> None:
     """After a task: flag commit_offered (web buttons) + tg buttons if chat."""
     try:
@@ -2090,6 +2064,25 @@ def _api_diff_file():
     return jsonify({"ok": True, "path": rel, "diff": ""})
 
 
+@app.get("/api/stream")
+@login_required
+def _api_stream():
+    """SSE keepalive stream. The web UI opens an EventSource here purely
+    for connection liveness — the header dot goes green on open, spinner
+    while the browser auto-reconnects (retry: 2 s), red when it can't.
+    (Waitress is WSGI — no WebSocket — so SSE, which is the right fit:
+    one thread per client out of the 16, keepalives keep the channel
+    under channel_timeout and detect dead peers on write.)"""
+    def gen():
+        yield "retry: 2000\n\n"
+        while True:
+            yield ": ping\n\n"
+            time.sleep(15)
+    return Response(gen(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache",
+                             "X-Accel-Buffering": "no"})
+
+
 def _file_target(proj: str, rel: str):
     """Resolve a project-relative file path, rejecting ../ traversal."""
     try:
@@ -2222,6 +2215,18 @@ def _api_commit():
         return jsonify({"ok": True, "result": result})
     log(f"web commit skipped for {stem}")
     return jsonify({"ok": True, "skipped": True})
+
+
+@app.post("/api/stop")
+@login_required
+def _api_stop():
+    """Web «Стоп» button — same kill_task() as telegram /stop."""
+    if _task_proc and STATE["current_task"]:
+        name = STATE["current_task"]
+        kill_task()
+        log(f"web stop killed {name}")
+        return jsonify({"ok": True, "stopped": name})
+    return jsonify({"ok": False, "error": "нет активной задачи"})
 
 
 @app.post("/api/tasks")

@@ -65,7 +65,16 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   (`FileEditor.jsx`; `GET /api/file` читает текст ≤1 МБ, `POST /api/file`
   пишет атомарно через tmp+replace; `..`/бинарники отсекаются).
   Бандл — ESM со `splitting`: языковые пакеты CodeMirror ленивыми чанками
-  `static/app/chunks/*`, шаблоны грузят `<script type="module">`. Роуты под
+  `static/app/chunks/*`, шаблоны грузят `<script type="module">`.
+  В ленту diff задачи больше НЕ дописывается — всё в панели «Изменения».
+  Индикатор связи — SSE `GET /api/stream` (EventSource, keepalive `: ping`
+  15 с, `retry: 2000`): `ConnDot.jsx` в правом нижнем углу — зелёная точка
+  онлайн, спиннер при автореконнекте, красная + «нет подключения» офлайн.
+  WebSocket не используем — waitress чистый WSGI. Кнопка «⛔ Стоп» в шапке
+  при `status.current_task` → диалог-подтверждение → `POST /api/stop`
+  (тот же `kill_task`, что и телеграм `/stop`). В композере: при ошибке
+  STT запись сохраняется в `lastAudio` и рядом с микрофоном появляется
+  «ещё раз» — повторная отправка того же WAV, аудио не теряется. Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
   auth off). Telegram webhook (`POST /` и `POST /<any>` — корень тоже, иначе 405) и GET /status — публичные.

@@ -10,6 +10,7 @@ import Typography from "@mui/material/Typography";
 import MicIcon from "@mui/icons-material/Mic";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import { api, post } from "./api.js";
 
 const STT_RATE = 16000;
@@ -59,6 +60,7 @@ export default function Composer({ project, sttStatus, toast, onSent }) {
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
+  const [lastAudio, setLastAudio] = useState(null);  // failed WAV → retry
 
   const send = async () => {
     const t = text.trim();
@@ -82,18 +84,32 @@ export default function Composer({ project, sttStatus, toast, onSent }) {
     const wav = encodeWav(resample(r.chunks, r.ctx.sampleRate, STT_RATE),
                           STT_RATE);
     r.ctx.close();
+    sendAudio(wav);
+  };
+
+  // POST the WAV to STT. On any failure keep the blob in lastAudio —
+  // providers (yandex etc.) often recover within seconds, the «ещё раз»
+  // button resends it so the recording isn't lost.
+  const sendAudio = async wav => {
     setRecognizing(true);
     setRecInfo("распознаю…");
     try {
       const d = await (await api("/api/stt", { method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: wav })).json();
-      if (d.ok && d.text.trim())
+      if (d.ok && d.text.trim()) {
         setText(prev => (prev ? prev.replace(/\s+$/, "") + " " : "") +
                         d.text.trim());
-      else if (!d.ok) toast("STT: " + (d.error || "?"));
-      else toast("Ничего не распознано");
-    } catch (e) { toast("STT сеть: " + e); }
+        setLastAudio(null);
+      } else {
+        toast(d.ok ? "Ничего не распознано"
+                   : "STT: " + (d.error || "?"));
+        setLastAudio(wav);
+      }
+    } catch (e) {
+      toast("STT сеть: " + e);
+      setLastAudio(wav);
+    }
     setRecognizing(false);
     setRecInfo("");
   };
@@ -158,6 +174,16 @@ export default function Composer({ project, sttStatus, toast, onSent }) {
                       : {}}>
           {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
         </IconButton>
+        {lastAudio && !recognizing && (
+          <Button size="small" variant="outlined" color="warning"
+                  startIcon={<RefreshIcon sx={{ fontSize: 16 }} />}
+                  onClick={() => sendAudio(lastAudio)}
+                  title="отправить запись на распознавание ещё раз"
+                  sx={{ textTransform: "none", whiteSpace: "nowrap",
+                        alignSelf: "center", fontSize: 12, px: 1 }}>
+            ещё раз
+          </Button>
+        )}
         <Typography variant="caption" color="text.secondary"
                     sx={{ minWidth: 44, pb: 1.2, whiteSpace: "nowrap" }}>
           {shownStat}

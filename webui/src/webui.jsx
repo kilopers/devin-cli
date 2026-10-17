@@ -22,6 +22,7 @@ import FileTree from "./FileTree.jsx";
 import Changes from "./Changes.jsx";
 import FileEditor from "./FileEditor.jsx";
 import Composer from "./Composer.jsx";
+import ConnDot from "./ConnDot.jsx";
 
 const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -165,6 +166,7 @@ export default function App() {
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
   const [editPath, setEditPath] = useState(null);   // file open in editor
+  const [stopConfirm, setStopConfirm] = useState(false);
   const modelFocus = useRef(false), modeFocus = useRef(false);
   const firstLoad = useRef(true);
 
@@ -286,6 +288,16 @@ export default function App() {
     loadModels(); loadStatus();
   }).catch(() => {});
 
+  const stopTask = async () => {
+    setStopConfirm(false);
+    try {
+      const d = await post("/api/stop", {});
+      setToast(d.ok ? "⛔ Остановлено: " + d.stopped
+                    : "Ошибка: " + (d.error || "?"));
+      loadStatus();
+    } catch (e) { setToast("Сеть: " + e); }
+  };
+
   const setModeApi = m => post("/api/mode", { mode: m }).then(d => {
     setToast(d.ok ? (m === "ask" ? "Режим: ответ на вопрос" : "Режим: код")
                   : "Ошибка: " + (d.error || "?"));
@@ -369,6 +381,15 @@ export default function App() {
                     fontSize: 13 }}>
               {statusText}
             </Typography>
+            {status.current_task && (
+              <Button size="small" variant="outlined" color="inherit"
+                      onClick={() => setStopConfirm(true)}
+                      sx={{ borderColor: "rgba(255,255,255,.55)",
+                            color: "#ffcdd2", fontSize: 11, px: 1,
+                            whiteSpace: "nowrap" }}>
+                ⛔ Стоп
+              </Button>
+            )}
             <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 1 }}
                  onFocus={() => modelFocus.current = true}
                  onBlur={() => modelFocus.current = false}>
@@ -446,6 +467,27 @@ export default function App() {
 
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
+      <ConnDot />
+
+      <Dialog open={stopConfirm} onClose={() => setStopConfirm(false)}
+              maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 16 }}>
+          Остановить задачу?
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            «{status.current_task}» будет принудительно убита — воркер
+            возьмёт следующую из очереди. Незакоммиченные изменения в репо
+            останутся.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStopConfirm(false)}>Отмена</Button>
+          <Button color="error" variant="contained" onClick={stopTask}>
+            Остановить
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={profileOpen} onClose={() => setProfileOpen(false)}
               maxWidth="xs" fullWidth>
