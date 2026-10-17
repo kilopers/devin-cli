@@ -6,9 +6,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo,
 import { createRoot } from "react-dom/client";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
-  Alert, AppBar, Box, Button, Card, CardContent, Chip, CssBaseline,
-  Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-  GlobalStyles, IconButton,
+  Alert, AppBar, Box, Button, Card, CardContent, Chip, Collapse,
+  CssBaseline, Dialog, DialogActions, DialogContent, DialogTitle,
+  Divider, GlobalStyles, IconButton,
   ListSubheader, Menu, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
   TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
@@ -18,11 +18,13 @@ import KeyIcon from "@mui/icons-material/VpnKey";
 import LockIcon from "@mui/icons-material/Lock";
 import RepoKeys from "./RepoKeys.jsx";
 import Workspaces, { Dot as WsDot } from "./Workspaces.jsx";
+import ModelsPage from "./ModelsPage.jsx";
 import WorkspacesIcon from "@mui/icons-material/Layers";
 import Users from "./Users.jsx";
 import PeopleIcon from "@mui/icons-material/People";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
@@ -109,6 +111,8 @@ function StatusChip({ t }) {
 
 const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
                                                 onCancel }) {
+  // свёрнута: заголовок + ~3 строки задачи; «подробнее» — slide-down
+  const [open, setOpen] = useState(false);
   return (
     <Card sx={{ mb: 1.5 }}>
       <CardContent sx={{ p: "14px 18px", "&:last-child": { pb: "14px" } }}>
@@ -150,21 +154,40 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
             <StatusChip t={t} />
           </Box>
         </Box>
-        <Typography variant="body2" sx={{ whiteSpace: "pre-wrap",
-          fontWeight: 500, my: 1 }}>{t.prompt}</Typography>
-        {t.output
-          ? (t.status === "done"
-              ? <Markdown text={t.output} />
-              : <pre className="out">{t.output}</pre>)
-          : null}
-        {t.commit_offered ? (
-          <Box sx={{ mt: 1.5, display: "flex", gap: 1 }}>
-            <Button size="small" variant="contained" color="success"
-                    onClick={() => onCommit(t.stem, "commit")}>
-              ✅ закоммитить и запушить</Button>
-            <Button size="small" onClick={() => onCommit(t.stem, "skip")}>
-              ⏭ пропустить</Button>
-          </Box>) : null}
+        <Typography variant="body2" onClick={() => setOpen(o => !o)}
+          sx={{ whiteSpace: "pre-wrap", fontWeight: 500, my: 1,
+                cursor: "pointer",
+                ...(!open && {
+                  display: "-webkit-box", WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 3, overflow: "hidden" }) }}>
+          {t.prompt}</Typography>
+        <Collapse in={open} unmountOnExit>
+          {t.output
+            ? (t.status === "done"
+                ? <Markdown text={t.output} />
+                : <pre className="out">{t.output}</pre>)
+            : <Typography variant="body2" color="text.secondary">
+                {t.status === "queued" ? "в очереди — вывод ещё пуст"
+                                      : "вывод пока пуст"}</Typography>}
+          {t.commit_offered ? (
+            <Box sx={{ mt: 1.5, display: "flex", gap: 1 }}>
+              <Button size="small" variant="contained" color="success"
+                      onClick={() => onCommit(t.stem, "commit")}>
+                ✅ закоммитить и запушить</Button>
+              <Button size="small" onClick={() => onCommit(t.stem, "skip")}>
+                ⏭ пропустить</Button>
+            </Box>) : null}
+        </Collapse>
+        <Box onClick={() => setOpen(o => !o)}
+             sx={{ display: "flex", alignItems: "center", gap: 0.5,
+                   justifyContent: "center", cursor: "pointer", mt: 0.5,
+                   color: "text.secondary", fontSize: 11,
+                   "&:hover": { color: "#1565c0" } }}>
+          {open ? "свернуть" : "подробнее"}
+          <ExpandMoreIcon sx={{
+            fontSize: 16, transition: "transform .25s",
+            transform: open ? "rotate(180deg)" : "none" }} />
+        </Box>
       </CardContent>
     </Card>
   );
@@ -259,6 +282,7 @@ export default function App() {
   const [wsOpen, setWsOpen] = useState(false);   // «Рабочее пространство»
   const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
   const [wsmap, setWsmap] = useState({});        // project -> ws id
+  const [view, setView] = useState("feed");      // feed | models
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
@@ -624,6 +648,10 @@ export default function App() {
 
         <Box sx={{ flex: 1, display: "flex", width: "100%", maxWidth: 1280,
                    mx: "auto" }}>
+          {view === "models"
+            ? <ModelsPage accent={wsColor} toast={setToast}
+                          onClose={() => setView("feed")} />
+          : <>
           <Box sx={{ flex: 1, minWidth: 0, p: "16px 12px 150px" }}>
             {loadingOlder &&
               <Typography align="center" color="text.secondary" sx={{ py: 1 }}>
@@ -658,11 +686,13 @@ export default function App() {
             <Divider />
             <Changes project={project} toast={setToast} />
           </Paper>
+          </>}
         </Box>
 
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={wsColor}
-                  conn={conn} onOpenDrawer={() => setDrawerOpen(true)} />
+                  conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
+                  onOpenModels={() => setView("models")} />
       </Box>
 
       <FileEditor project={project} path={editPath}

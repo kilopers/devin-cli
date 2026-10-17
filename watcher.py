@@ -1255,12 +1255,13 @@ def _models_from_json(data) -> list:
     name itself isn't a runnable model id, so it's never offered."""
     out = []
 
-    def add(mid, desc=""):
+    def add(mid, desc="", info=None):
         if isinstance(mid, str) \
                 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", mid) \
                 and all(m["id"] != mid for m in out):
             out.append({"id": mid,
-                        "description": desc if isinstance(desc, str) else ""})
+                        "description": desc if isinstance(desc, str) else "",
+                        "info": info or {}})
 
     def walk(x, desc=""):
         if isinstance(x, dict):
@@ -1275,7 +1276,11 @@ def _models_from_json(data) -> list:
                 if isinstance(v, str):
                     mid = v  # leaf dict — name is the model id
             if mid and kids is None:
-                add(mid, d)
+                # всё, что devin отдал по модели — на страницу моделей
+                info = {k: v for k, v in x.items()
+                        if not isinstance(v, (dict, list))
+                        or k in ("aliases",)}
+                add(mid, d, info)
             fam = mid or (x.get("name") if isinstance(x.get("name"), str)
                           else "")
             for v in kids or []:
@@ -1864,8 +1869,15 @@ def api_projects() -> dict:
             "multi": multi_mode()}
 
 
-def api_models() -> dict:
-    return {"models": get_models(), "current": current_model("web")}
+def api_models(fresh: bool = False) -> dict:
+    global _models_cache
+    # fresh — страница «Модели»: синхронный вызов `devin models list`
+    # с полной выдачей; кэш при этом тоже обновляется
+    models = devin_models() if fresh else get_models()
+    if fresh and models:
+        _models_cache = models
+    return {"models": models, "current": current_model("web"),
+            "fresh": bool(fresh)}
 
 
 def _tail(path: Path, limit: int = 12000) -> str:
@@ -2339,7 +2351,8 @@ def _api_projects():
 @app.get("/api/models")
 @login_required
 def _api_models():
-    return jsonify(api_models())
+    return jsonify(api_models(
+        fresh=request.args.get("fresh") == "1"))
 
 
 @app.get("/api/tasks")
