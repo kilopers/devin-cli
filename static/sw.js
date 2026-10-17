@@ -12,7 +12,7 @@
 //
 // Bump the suffix on any policy change: activate() wipes every cache that
 // isn't CACHE, which is also how clients stuck on devin-static-v1 get free.
-const CACHE = "devin-static-v2";
+const CACHE = "devin-static-v3";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", e =>

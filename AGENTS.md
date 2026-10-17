@@ -59,9 +59,10 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   `/api/tasks` отдаёт per-item хэш `h` (md5 статуса+output) — фронт
   заменяет элементы `feed` только при смене хэша и `TaskCard` обёрнут
   в `React.memo`: лента не мерцает на идентичных опросах.
-  Иконка приложения — официальный логотип Devin, скачан с devin.ai
-  (`static/favicon.svg|favicon.ico|icon.png|apple-icon.png`, отдаётся штатным
-  `/static/*`; `/favicon.ico` — отдельный роут, иначе браузеры ловили
+  Иконка приложения — фиолетовая шестерёнка с `</>`, генерируется скриптом
+  `scripts/gen_icon.py` (Pillow → png/ico + векторный favicon.svg из той же
+  геометрии; файлы `static/favicon.svg|favicon.ico|icon.png|apple-icon.png`,
+  отдаётся штатным `/static/*`; `/favicon.ico` — отдельный роут, иначе браузеры ловили
   status-page из catch-all). Установка на рабочий стол телефона — PWA:
   `static/manifest.webmanifest` + `sw.js` с роута `/sw.js` (нужен заголовок
   `Service-Worker-Allowed: /` — скоуп шире `/static/`); SW кэширует только

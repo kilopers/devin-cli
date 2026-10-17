@@ -189,9 +189,10 @@ nginx режет путь; работает всегда).
 HTTP-слой — Flask + waitress; страницы — Jinja2-шаблоны (`templates/`,
 `render_template`; путь переопределяется `TEMPLATES_DIR`), логин — тоже
 MUI-форма, POST на `/login`.
-Иконка приложения — официальный логотип Devin, скачан с devin.ai:
-`static/favicon.svg` (+ `favicon.ico` и `icon.png` для `apple-touch-icon`),
-показан в шапке, мобильном меню и на странице входа.
+Иконка приложения — фиолетовая шестерёнка с `</>`: `static/favicon.svg`
+(+ `favicon.ico`, `icon.png`, `apple-icon.png`), показана в шапке,
+мобильном меню и на странице входа. Все размеры генерируются одним
+скриптом `scripts/gen_icon.py` (Pillow; SVG — та же геометрия).
 Веб-морда — **PWA**: `static/manifest.webmanifest` + `sw.js` (роут `/sw.js`,
 кэширует только `/static/*`, `/api/*` и POST'ы всегда в сеть) — на Android
 Chrome предложит «Установить приложение», на iPhone — «На экран Домой»
