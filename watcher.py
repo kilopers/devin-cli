@@ -1988,6 +1988,39 @@ def _api_tasks():
                              request.args.get("before")))
 
 
+@app.get("/api/files")
+@login_required
+def _api_files():
+    """One directory level of the selected project's file tree. The web
+    panel lazy-loads children on each expand — a full recursive listing
+    of a big repo would hang the request (and the browser)."""
+    proj = (request.args.get("project") or "").strip()
+    rel = (request.args.get("path") or "").strip().strip("/")
+    root = (PROJECTS_ROOT / proj) \
+        if (proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir()) \
+        else WORKDIR
+    try:
+        base = root.resolve()
+        target = (base / rel).resolve()
+    except OSError:
+        return jsonify({"ok": False, "error": "bad path"}), 400
+    if not target.is_relative_to(base):   # ../ traversal stays out
+        return jsonify({"ok": False, "error": "bad path"}), 400
+    if not target.is_dir():
+        return jsonify({"ok": False, "error": "not a dir"}), 404
+    try:
+        items = sorted(
+            (p for p in target.iterdir() if p.name != ".git"),
+            key=lambda p: (not p.is_dir(), p.name.lower()))
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+    entries = [{"name": it.name,
+                "type": "dir" if it.is_dir() else "file"}
+               for it in items[:500]]
+    return jsonify({"ok": True, "path": rel, "entries": entries,
+                    "truncated": len(items) > 500})
+
+
 @app.post("/api/stt")
 @login_required
 def _api_stt():

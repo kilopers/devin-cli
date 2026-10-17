@@ -18,7 +18,9 @@
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 <style>
   body { display: flex; flex-direction: column; min-height: 100vh; background: #f5f7fb; }
-  #feed { flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 16px 12px 150px; }
+  #mainWrap { flex: 1; display: flex; width: 100%; max-width: 1280px;
+              margin: 0 auto; }
+  #feed { flex: 1; min-width: 0; padding: 16px 12px 150px; }
   #topbar { position: sticky; top: 0; z-index: 20; }
   #tabs { display: flex; flex-wrap: wrap; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   #tabs a { padding: 12px 20px; font-size: 14px; font-weight: 500; color: #5f6368;
@@ -98,6 +100,31 @@
       display: block; width: 100%; max-width: none; height: 38px;
       margin: 0 0 10px; color: #212121; background: #fff;
       border: 1px solid #dadce0; border-radius: 4px; font-size: 14px; }
+  /* right-side project file tree — lazy per-directory AJAX loading */
+  #treePanel { width: 290px; flex-shrink: 0; margin: 16px 12px 150px 4px;
+      background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+      align-self: flex-start; position: sticky; top: 112px;
+      max-height: calc(100vh - 132px); display: flex; flex-direction: column; }
+  .tree-head { padding: 10px 12px; font-weight: 500; font-size: 13px;
+      border-bottom: 1px solid #eee; display: flex; align-items: center;
+      gap: 6px; color: #3c4043; }
+  .tree-head a { color: #5f6368; display: flex; }
+  #treeHost { overflow: auto; padding: 4px 6px 10px; font-size: 13px; }
+  #treeHost ul { list-style: none; margin: 0; padding-left: 18px; }
+  #treeHost > ul { padding-left: 2px; }
+  .tnode { display: flex; align-items: center; padding: 3px 2px;
+      border-radius: 4px; color: #3c4043; }
+  .tnode .tlabel { overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; }
+  .tnode.dir { cursor: pointer; }
+  .tnode.dir:hover { background: #f1f3f4; }
+  .tnode i { font-size: 17px; color: #5f6368; margin-right: 2px;
+      flex-shrink: 0; }
+  .tnode i.tic { color: #9aa0a6; }
+  .tree-note { color: #9aa0a6; font-size: 12px; padding: 5px 2px; }
+  /* the same panel node moves into the mobile drawer on narrow screens */
+  #treeSlot #treePanel { width: auto; margin: 4px 0 8px; position: static;
+      max-height: 45vh; box-shadow: none; border: 1px solid #e0e0e0; }
   @media (max-width: 992px) {
     #tabs { display: none; }
   }
@@ -141,9 +168,24 @@
       alt="">Devin Worker</span></li>
   <li><a class="subheader">Проекты</a></li>
   <li id="navDivider"><div class="divider"></div></li>
+  <li><a class="subheader">Файлы</a></li>
+  <li id="treeSlot"></li>
+  <li><div class="divider"></div></li>
   <li id="hdrCtrlsSlot"></li>
 </ul>
+<div id="mainWrap">
 <div id="feed"><div id="empty">Загрузка…</div></div>
+<aside id="treePanel">
+  <div class="tree-head">
+    <i class="material-icons" style="font-size:18px">folder_open</i>
+    Файлы проекта
+    <a id="treeReload" href="#" class="right" title="обновить"
+       style="margin-left:auto"><i class="material-icons"
+       style="font-size:18px">refresh</i></a>
+  </div>
+  <div id="treeHost"></div>
+</aside>
+</div>
 <div id="profileModal" class="modal" style="max-width:400px">
   <div class="modal-content">
     <h6 style="margin-top:0">Смена пароля</h6>
@@ -211,6 +253,7 @@ function selectProject(p) {
   feedItems.clear(); oldestStem = null;
   hasMore = false; lastSig = "";
   loadTasks();
+  reloadTree();
   const sn = M.Sidenav.getInstance(document.getElementById("mobileNav"));
   if (sn) sn.close();
 }
@@ -548,6 +591,64 @@ micBtn.onclick = async () => {
   } catch (e) { M.toast({html: "Микрофон: " + e}); }
 };
 
+// project file tree (right panel): lazy per-directory loading — only the
+// top level is fetched up front, each expand pulls its own children via
+// GET /api/files; a full recursive listing would stall a big repo
+const treeHost = document.getElementById("treeHost");
+
+async function treeLoadDir(path, ul) {
+  ul.innerHTML = '<li class="tree-note"><span class="spin"></span>загрузка…</li>';
+  try {
+    const d = await (await api("/api/files?project=" +
+      encodeURIComponent(currentProject || "") +
+      "&path=" + encodeURIComponent(path))).json();
+    if (!d.ok) throw new Error(d.error || "?");
+    const html = d.entries.map(e => {
+      const p = path ? path + "/" + e.name : e.name;
+      return e.type === "dir"
+        ? `<li><span class="tnode dir" data-path="${esc(p)}" ` +
+          `title="${esc(p)}"><i class="material-icons">chevron_right</i>` +
+          `<i class="material-icons tic">folder</i>` +
+          `<span class="tlabel">${esc(e.name)}</span></span></li>`
+        : `<li><span class="tnode" title="${esc(p)}">` +
+          `<i class="material-icons tic" style="margin-left:19px">description</i>` +
+          `<span class="tlabel">${esc(e.name)}</span></span></li>`;
+    }).join("") +
+      (d.truncated ? '<li class="tree-note">… показаны первые 500</li>' : "");
+    ul.innerHTML = html || '<li class="tree-note">пусто</li>';
+    ul.querySelectorAll(".tnode.dir").forEach(n =>
+      n.onclick = () => treeToggle(n));
+  } catch (e) {
+    ul.innerHTML =
+      `<li class="tree-note red-text">ошибка: ${esc(String(e && e.message || e))}</li>`;
+  }
+}
+
+function treeToggle(node) {
+  const li = node.parentElement;
+  let ul = li.querySelector("ul");
+  const chevron = node.querySelector("i");
+  if (ul) {
+    ul.hidden = !ul.hidden;
+    chevron.textContent = ul.hidden ? "chevron_right" : "expand_more";
+    return;
+  }
+  chevron.textContent = "expand_more";
+  ul = document.createElement("ul");
+  li.appendChild(ul);
+  treeLoadDir(node.dataset.path, ul);
+}
+
+function reloadTree() {
+  const ul = document.createElement("ul");
+  treeHost.innerHTML = "";
+  treeHost.appendChild(ul);
+  treeLoadDir("", ul);
+}
+
+document.getElementById("treeReload").onclick =
+  e => { e.preventDefault(); reloadTree(); };
+
 // mobile drawer (hamburger → projects + settings) and adaptive header:
 // on narrow screens the model/mode selects and status text physically move
 // from the navbar into the drawer — same DOM nodes, handlers stay wired
@@ -570,6 +671,20 @@ if (mqMobile.addEventListener)
   mqMobile.addEventListener("change", placeHdrCtrls);
 else mqMobile.addListener(placeHdrCtrls);
 placeHdrCtrls();
+
+// same trick for the file tree: on mobile the whole panel node lives in
+// the drawer under "Файлы", on desktop — back beside the feed
+const treePanel = document.getElementById("treePanel");
+function placeTree() {
+  if (mqMobile.matches)
+    document.getElementById("treeSlot").appendChild(treePanel);
+  else
+    document.getElementById("mainWrap").appendChild(treePanel);
+}
+if (mqMobile.addEventListener)
+  mqMobile.addEventListener("change", placeTree);
+else mqMobile.addListener(placeTree);
+placeTree();
 
 // profile modal (password change) + logout
 M.Modal.init(document.getElementById("profileModal"));
@@ -603,7 +718,7 @@ document.getElementById("sendBtn").onclick = send;
 document.getElementById("taskText").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
 });
-loadProjects().then(loadTasks);
+loadProjects().then(() => { loadTasks(); reloadTree(); });
 loadStatus();
 loadModels();
 setInterval(() => { loadStatus(); loadTasks(); loadModels(); }, 3000);
