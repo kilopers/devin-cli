@@ -17,6 +17,8 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import KeyIcon from "@mui/icons-material/VpnKey";
 import LockIcon from "@mui/icons-material/Lock";
 import RepoKeys from "./RepoKeys.jsx";
+import Workspaces, { Dot as WsDot } from "./Workspaces.jsx";
+import WorkspacesIcon from "@mui/icons-material/Layers";
 import Users from "./Users.jsx";
 import PeopleIcon from "@mui/icons-material/People";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
@@ -170,20 +172,46 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
 
 // Project picker in the header — replaces the old tabs row; selection
 // persists server-side via POST /api/project (kv.project_web).
-function ProjectSelect({ projects, current, onChange, onAdd }) {
-  return (
+function ProjectSelect({ projects, current, onChange, onAdd,
+                         wsmap, wsList, onWs }) {
+  const [wsMenu, setWsMenu] = useState(null); // {anchor, project}
+  const wsColor = p => {
+    const w = (wsList || []).find(w => w.id === (wsmap || {})[p]);
+    return w ? w.color : "#999";
+  };
+  return (<>
     <Select size="small" value={current || ""} displayEmpty
             onChange={e => e.target.value === "__add__"
                       ? onAdd?.() : onChange(e.target.value)}
             sx={{ color: "#fff", height: 32, fontSize: 13, maxWidth: 200,
                   bgcolor: "rgba(255,255,255,.15)",
                   "& .MuiSelect-icon": { color: "rgba(255,255,255,.8)" } }}>
-      {projects.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+      {projects.map(p => (
+        <MenuItem key={p} value={p}
+                  sx={{ display: "flex", alignItems: "center" }}>
+          <WsDot color={wsColor(p)} />
+          <Box sx={{ flex: 1 }}>{p}</Box>
+          <IconButton size="small"
+            title="перенести в пространство"
+            onClick={e => { e.stopPropagation();
+                            setWsMenu({ a: e.currentTarget, p }); }}
+            sx={{ p: 0.2, ml: 1 }}>
+            <WorkspacesIcon sx={{ fontSize: 15 }} />
+          </IconButton>
+        </MenuItem>))}
       <MenuItem value="__add__" sx={{ color: "#1565c0", fontSize: 13 }}>
         ➕ Добавить проект…
       </MenuItem>
     </Select>
-  );
+    <Menu anchorEl={wsMenu?.a} open={!!wsMenu}
+          onClose={() => setWsMenu(null)}>
+      {(wsList || []).map(w => (
+        <MenuItem key={w.id}
+          onClick={() => { onWs(wsMenu.p, w.id); setWsMenu(null); }}>
+          <WsDot color={w.color} />{w.name}
+        </MenuItem>))}
+    </Menu>
+  </>);
 }
 
 function ModelSelect({ models, current, onChange, sx }) {
@@ -227,6 +255,9 @@ export default function App() {
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
   const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
   const [usersOpen, setUsersOpen] = useState(false); // «Пользователи» (админ)
+  const [wsOpen, setWsOpen] = useState(false);   // «Рабочее пространство»
+  const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
+  const [wsmap, setWsmap] = useState({});        // project -> ws id
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
@@ -323,9 +354,16 @@ export default function App() {
   const refreshProjects = async () => {
     try {
       const d = await apiJson("/api/projects");
+      setWsmap(d.wsmap || {});
       if (d.projects.length) { setProjects(d.projects); setMultiMode(true); }
     } catch (e) {}
   };
+
+  const loadWs = () => apiJson("/api/ws")
+    .then(j => setWsInfo({ ws: j.ws || [], active: j.active || 0 }))
+    .catch(() => {});
+  const wsColor = (wsInfo.ws.find(w => w.id === wsInfo.active) || {})
+    .color || "#1565c0";
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
@@ -358,6 +396,7 @@ export default function App() {
     (async () => {
       try {
         const d = await apiJson("/api/projects");
+        setWsmap(d.wsmap || {}); loadWs();
         const projs = d.projects.length ? d.projects : ["workspace"];
         setProjects(projs); setMultiMode(!!d.projects.length);
         // онбординг: проектов нет → сначала ключи, потом репозиторий
@@ -473,7 +512,8 @@ export default function App() {
       <GlobalStyles styles={mdStyles} />
       <ErrBoundary>
       <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-        <AppBar position="fixed" color="primary">
+        <AppBar position="fixed" color="primary"
+                sx={{ bgcolor: wsColor }}>
           <Toolbar variant="dense" sx={{ gap: 1 }}>
             <img src="/static/favicon.svg" alt=""
                  style={{ height: 24, filter: "invert(1)" }} />
@@ -491,7 +531,12 @@ export default function App() {
             {multiMode && (
               <ProjectSelect projects={projects} current={project}
                              onChange={selectProject}
-                             onAdd={() => setAddOpen(true)} />
+                             onAdd={() => setAddOpen(true)}
+                             wsmap={wsmap} wsList={wsInfo.ws}
+                             onWs={(p, id) =>
+                               post("/api/project/ws",
+                                    { project: p, ws: id })
+                                 .then(() => refreshProjects())} />
             )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
@@ -534,6 +579,11 @@ export default function App() {
                   <PeopleIcon fontSize="small" sx={{ mr: 1 }} />
                   Пользователи
                 </MenuItem>}
+              <MenuItem onClick={() => { setProfMenu(null);
+                                         setWsOpen(true); }}>
+                <WorkspacesIcon fontSize="small" sx={{ mr: 1 }} />
+                Рабочее пространство
+              </MenuItem>
               <MenuItem onClick={() => { setProfMenu(null);
                                          setKeysOpen(true); }}>
                 <KeyIcon fontSize="small" sx={{ mr: 1 }} />
@@ -604,7 +654,7 @@ export default function App() {
         </Box>
 
         <Composer project={project} sttStatus={status.stt_status}
-                  toast={setToast} onSent={loadTasks}
+                  toast={setToast} onSent={loadTasks} accent={wsColor}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)} />
       </Box>
 
@@ -613,9 +663,12 @@ export default function App() {
       <RepoKeys open={keysOpen}
                 onClose={() => { setKeysOpen(false);
                                  if (!multiMode) setAddOpen(true); }} />
+      <Workspaces open={wsOpen} onClose={() => setWsOpen(false)}
+                  onChanged={() => { loadWs(); refreshProjects(); }} />
       <Users open={usersOpen} onClose={() => setUsersOpen(false)}
              me={status.user} />
       <AddProject open={addOpen} onClose={() => setAddOpen(false)}
+                  wsList={wsInfo.ws} wsActive={wsInfo.active}
                   onAdded={f => { refreshProjects()
                     .then(() => selectProject(f)); }} />
 

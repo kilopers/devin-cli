@@ -249,6 +249,21 @@ def init_db() -> None:
         user VARCHAR(64) NOT NULL,
         PRIMARY KEY (name, user)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # рабочие пространства: у каждого юзера свои; проект попадает в
+    # пространство КОНКРЕТНОГО юзера (шаренный → дефолтное получателя)
+    db_exec("""CREATE TABLE IF NOT EXISTS workspaces (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        owner VARCHAR(64) NOT NULL,
+        name VARCHAR(64) NOT NULL,
+        color VARCHAR(16) NOT NULL DEFAULT '#1565c0',
+        is_default TINYINT NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    db_exec("""CREATE TABLE IF NOT EXISTS project_ws (
+        user VARCHAR(64) NOT NULL,
+        name VARCHAR(190) NOT NULL,
+        ws_id INT NOT NULL,
+        PRIMARY KEY (user, name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     for col, ddl in (("model", "model VARCHAR(80) NULL"),
                      ("reply_mode", "reply_mode VARCHAR(8) NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
@@ -1837,9 +1852,14 @@ def api_status() -> dict:
 
 
 def api_projects() -> dict:
-    mine = _user_projects(_current_user())
+    u = _current_user()
+    visible = _user_projects(u)
+    wid = _active_ws(u)
+    # только проекты активного пространства; wsmap — цвета точек в селекте
+    mine = [p for p in visible if _project_ws(u, p) == wid]
     cur = current_project("web")[0]
     return {"projects": mine,
+            "wsmap": {p: _project_ws(u, p) for p in visible},
             "current": cur if cur in mine else (mine[0] if mine else None),
             "multi": multi_mode()}
 
@@ -1995,6 +2015,63 @@ def _owns_project(name: str) -> bool:
         name in _granted_projects(u)
 
 
+# --- рабочие пространства (per-user) ------------------------------------
+
+def _ensure_default_ws(user: str) -> int:
+    """«По умолчанию» — создаётся каждому юзеру один раз, удалить нельзя
+    (только переименовать/перекрасить)."""
+    r = db_query("SELECT id FROM workspaces"
+                 " WHERE owner=%s AND is_default=1", (user,))
+    if r:
+        return r[0]["id"]
+    db_exec("INSERT INTO workspaces(owner, name, color, is_default)"
+            " VALUES(%s,'По умолчанию','#1565c0',1)", (user,))
+    return db_query("SELECT id FROM workspaces"
+                    " WHERE owner=%s AND is_default=1", (user,))[0]["id"]
+
+
+def _user_ws(user: str) -> list:
+    _ensure_default_ws(user)
+    return db_query("SELECT id, name, color, is_default"
+                    " FROM workspaces WHERE owner=%s ORDER BY id", (user,))
+
+
+def _active_ws(user: str) -> int:
+    """Активное пространство юзера (kv.ws:<uid>), невалидное → дефолтное."""
+    ws = _user_ws(user)
+    wid = int(kv_get(f"ws:{user}") or 0)
+    if not any(w["id"] == wid for w in ws):
+        wid = next(w["id"] for w in ws if w["is_default"])
+        kv_set(f"ws:{user}", str(wid))
+    return wid
+
+
+def _project_ws(user: str, name: str) -> int:
+    """Пространство проекта для юзера; без записи → дефолтное
+    (новые/зашаренные сюда и попадают)."""
+    r = db_query("SELECT ws_id FROM project_ws WHERE user=%s AND name=%s",
+                 (user, name))
+    if r:
+        return r[0]["ws_id"]
+    wid = _ensure_default_ws(user)
+    db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"
+            " VALUES(%s,%s,%s)", (user, name, wid))
+    return wid
+
+
+def _migrate_workspaces() -> None:
+    """Одноразово: дефолтное пространство каждому юзеру + все существующие
+    проекты в дефолт их владельцев/получателей."""
+    users = {WEB_ADMIN_USER} | {
+        r["username"] for r in db_query("SELECT username FROM users")}
+    for u in users:
+        _ensure_default_ws(u)
+    for r in db_query("SELECT name, owner FROM project_owner"):
+        _project_ws(r["owner"], r["name"])
+    for r in db_query("SELECT name, user FROM project_acl"):
+        _project_ws(r["user"], r["name"])
+
+
 def login_required(fn):
     """Session gate: 401 JSON for /api/*, redirect to /login for pages.
     Disabled entirely when no admin password is configured."""
@@ -2100,6 +2177,7 @@ def _api_users_add():
     db_exec("INSERT INTO users(username, pw_hash, is_admin, created)"
             " VALUES(%s,%s,%s,%s)",
             (u, generate_password_hash(pw), 0, time.time()))
+    _ensure_default_ws(u)   # «По умолчанию» — у каждого с рождения
     log(f"web user created: {u}")
     return jsonify({"ok": True, "user": u})
 
@@ -2149,8 +2227,101 @@ def _api_users_perms_set():
     for p in projs:
         db_exec("INSERT INTO project_acl(name, user) VALUES(%s,%s)",
                 (p, u))
+        _project_ws(u, p)   # зашаренный проект → дефолт юзера
     log(f"web perms for {u}: {projs}")
     return jsonify({"ok": True, "granted": projs})
+
+
+# --- API рабочих пространств ---------------------------------------------
+
+@app.get("/api/ws")
+@login_required
+def _api_ws_list():
+    u = _current_user()
+    return jsonify({"ok": True, "active": _active_ws(u),
+                    "ws": [{"id": w["id"], "name": w["name"],
+                            "color": w["color"],
+                            "default": bool(w["is_default"])}
+                           for w in _user_ws(u)]})
+
+
+@app.post("/api/ws")
+@login_required
+def _api_ws_new():
+    body = _req_json()
+    name = (body.get("name") or "").strip()[:64]
+    color = (body.get("color") or "#1565c0").strip()[:16]
+    if not name:
+        return jsonify({"ok": False, "error": "имя пустое"}), 400
+    db_exec("INSERT INTO workspaces(owner, name, color, is_default)"
+            " VALUES(%s,%s,%s,0)", (_current_user(), name, color))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/ws/update")
+@login_required
+def _api_ws_update():
+    """Переименовать/перекрасить своё пространство (дефолтное — можно)."""
+    body = _req_json()
+    wid = int(body.get("id") or 0)
+    u = _current_user()
+    ws = [w for w in _user_ws(u) if w["id"] == wid]
+    if not ws:
+        return jsonify({"ok": False, "error": "нет такого"}), 404
+    name = (body.get("name") or ws[0]["name"]).strip()[:64]
+    color = (body.get("color") or ws[0]["color"]).strip()[:16]
+    db_exec("UPDATE workspaces SET name=%s, color=%s WHERE id=%s",
+            (name, color, wid))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/ws/delete")
+@login_required
+def _api_ws_del():
+    body = _req_json()
+    wid = int(body.get("id") or 0)
+    u = _current_user()
+    ws = [w for w in _user_ws(u) if w["id"] == wid]
+    if not ws:
+        return jsonify({"ok": False, "error": "нет такого"}), 404
+    if ws[0]["is_default"]:
+        return jsonify({"ok": False,
+                        "error": "дефолтное нельзя удалить"}), 400
+    dw = _ensure_default_ws(u)
+    db_exec("UPDATE project_ws SET ws_id=%s WHERE user=%s AND ws_id=%s",
+            (dw, u, wid))
+    db_exec("DELETE FROM workspaces WHERE id=%s", (wid,))
+    if _active_ws(u) == wid:
+        kv_set(f"ws:{u}", str(dw))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/ws/active")
+@login_required
+def _api_ws_active():
+    wid = int((_req_json().get("id") or 0))
+    u = _current_user()
+    if wid not in [w["id"] for w in _user_ws(u)]:
+        return jsonify({"ok": False, "error": "нет такого"}), 404
+    kv_set(f"ws:{u}", str(wid))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/project/ws")
+@login_required
+def _api_project_ws():
+    """Перенести проект в другое своё пространство (точка в селекте)."""
+    body = _req_json()
+    p = (body.get("project") or "").strip()
+    wid = int(body.get("ws") or 0)
+    u = _current_user()
+    if not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    if wid not in [w["id"] for w in _user_ws(u)]:
+        return jsonify({"ok": False, "error": "нет такого"}), 404
+    db_exec("INSERT INTO project_ws(user, name, ws_id) VALUES(%s,%s,%s)"
+            " ON DUPLICATE KEY UPDATE ws_id=VALUES(ws_id)", (u, p, wid))
+    return jsonify({"ok": True})
 
 
 @app.get("/api/status")
@@ -2669,6 +2840,10 @@ def _api_project_add():
                         out[-4000:] or "clone failed"}), 500
     db_exec("INSERT IGNORE INTO project_owner(name, owner)"
             " VALUES(%s,%s)", (folder, _current_user()))
+    wsel = int(body.get("ws") or 0)
+    if wsel in [w["id"] for w in _user_ws(_current_user())]:
+        db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"
+                " VALUES(%s,%s,%s)", (_current_user(), folder, wsel))
     log(f"web added project {folder} <- {host}/{path}"
         f" (owner {_current_user()})")
     return jsonify({"ok": True, "folder": folder, "output": out[-4000:]})
@@ -2956,6 +3131,7 @@ def main() -> int:
 
     init_db()
     migrate_files_to_db()
+    _migrate_workspaces()
     cleanup_legacy_files()
     ensure_repo()
     start_mihomo()

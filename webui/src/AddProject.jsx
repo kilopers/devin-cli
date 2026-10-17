@@ -5,7 +5,7 @@
 import { useRef, useState } from "react";
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-  TextField, Typography,
+  MenuItem, TextField, Typography,
 } from "@mui/material";
 import { post } from "./api.js";
 
@@ -34,7 +34,9 @@ function previewUrl(url, token) {
          `${d.path}.git`;
 }
 
-export default function AddProject({ open, onClose, onAdded }) {
+export default function AddProject({ open, onClose, onAdded,
+                                     wsList = [], wsActive = 0 }) {
+  const [ws, setWs] = useState(wsActive);
   const [folder, setFolder] = useState("");
   const folderDirty = useRef(false);        // autofill until user edits
   const [url, setUrl] = useState("");
@@ -60,7 +62,7 @@ export default function AddProject({ open, onClose, onAdded }) {
     setBusy(true); setResult(null);
     try {
       const d = await post("/api/project/add",
-                           { folder, url, token });
+                           { folder, url, token, ws });
       setResult(d.ok ? { ok: true, output: d.output || "готово" }
                      : { ok: false, output: d.error || "?" });
       if (d.ok) onAdded?.(d.folder);
@@ -99,6 +101,15 @@ export default function AddProject({ open, onClose, onAdded }) {
                                     setFolder(e.target.value); }}
                    placeholder="my-repo"
                    helperText="Имя папки внутри projects/ — a-z, 0-9, точка, _ -" />
+        {wsList.length > 0 && (
+          <TextField select label="Пространство" size="small" fullWidth
+                     value={ws || ""}
+                     onChange={e => setWs(Number(e.target.value))}
+                     helperText="проект попадёт в это пространство">
+            {wsList.map(w => (
+              <MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>))}
+          </TextField>
+        )}
         {!sshNote && (
           <TextField label="Токен (необязательно)" size="small" type="password"
                      value={token}

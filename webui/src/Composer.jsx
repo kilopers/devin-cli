@@ -59,7 +59,7 @@ function encodeWav(chunks, rate) {
 }
 
 export default function Composer({ project, sttStatus, toast, onSent,
-                                   conn, onOpenDrawer }) {
+                                   conn, onOpenDrawer, accent }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -180,7 +180,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         )}
       </Box>
       <BottomNavigation showLabels sx={{
-        height: 52, bgcolor: "primary.main",
+        height: 52, bgcolor: accent || "primary.main",
         "& .MuiBottomNavigationAction-root": {
           color: "rgba(255,255,255,.72)" },
         "& .MuiBottomNavigationAction-root.Mui-selected": {
