@@ -67,7 +67,8 @@ export default function FileTree({ project, onError }) {
   };
 
   return (
-    <Box sx={{ overflow: "auto", flex: 1, px: 1, py: 0.5, fontSize: 13 }}>
+    <Box sx={{ overflow: "auto", flex: "1 1 auto", minHeight: 0,
+               px: 1, py: 0.5, fontSize: 13 }}>
       <SimpleTreeView onItemExpansionToggle={onExpand}
                       sx={{ "& .MuiTreeItem-content": { py: 0.2 } }}>
         {renderLevel("", dirs[""])}

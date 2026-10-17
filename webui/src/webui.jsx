@@ -414,7 +414,8 @@ export default function App() {
             width: 290, flexShrink: 0, m: "16px 12px 150px 4px",
             display: { xs: "none", md: "flex" }, flexDirection: "column",
             alignSelf: "flex-start", position: "sticky", top: 112,
-            maxHeight: "calc(100vh - 132px)", borderRadius: 2 }}>
+            maxHeight: "calc(100vh - 132px)", borderRadius: 2,
+            overflow: "hidden" }}>
             <Box sx={{ px: 1.5, py: 1, fontWeight: 500, fontSize: 13,
                        borderBottom: "1px solid #eee", display: "flex",
                        alignItems: "center", gap: 0.8 }}>
