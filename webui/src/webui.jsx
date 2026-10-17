@@ -356,6 +356,10 @@ export default function App() {
                  style={{ height: 24, filter: "invert(1)" }} />
             <Typography variant="h6" sx={{ fontSize: 19, mr: "auto" }}>
               Devin Worker
+              <Typography component="span" variant="caption"
+                          sx={{ opacity: .55, ml: 0.8, fontSize: 11 }}>
+                (v{status.version || "…"})
+              </Typography>
             </Typography>
             <Typography variant="body2"
               sx={{ display: { xs: "none", md: "block" }, opacity: .9,

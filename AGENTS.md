@@ -16,6 +16,14 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
 автообновление — `watchtower` (метка `com.centurylinklabs.watchtower.enable`,
 5 мин, требует `docker login ghcr.io` на хосте).
 
+## Версия
+
+- При **каждом** изменении поднимай патч-версию в файле `VERSION`
+  (0.0.1 → 0.0.2 → …, semver). watcher читает её в `APP_VERSION`
+  (`/app/VERSION`, env `VERSION_FILE`) и отдаёт в `/api/status.version`;
+  веб показывает серым в шапке рядом с названием — так видно, какая сборка
+  реально стоит на сервере.
+
 ## Коммиты и язык
 
 - Сообщения коммитов писать **на русском языке** (заголовок и описание) —

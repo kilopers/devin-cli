@@ -81,6 +81,7 @@ RUN mkdir -p /root/.config/devin \
 
 COPY entrypoint.sh /usr/local/bin/devin-task
 COPY watcher.py /app/watcher.py
+COPY VERSION /app/VERSION
 COPY templates/ /app/templates/
 COPY static/ /app/static/
 COPY --from=webui-build /repo/static/app/ /app/static/app/

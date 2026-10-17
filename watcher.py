@@ -79,6 +79,12 @@ YANDEX_LANG = os.environ.get("YANDEX_LANG", "ru-RU")
 # Web UI pages are Jinja2 templates rendered by Flask (render_template):
 # templates/login.html — MUI login form, templates/webui.html — main page.
 TEMPLATES_DIR = Path(os.environ.get("TEMPLATES_DIR", "/app/templates"))
+# App version — single file VERSION bumped every change (see AGENTS.md),
+# shown in the web header next to the title.
+APP_VERSION = (Path(os.environ.get("VERSION_FILE", "/app/VERSION"))
+               .read_text().strip()
+               if Path(os.environ.get("VERSION_FILE", "/app/VERSION")).exists()
+               else "dev")
 # Web UI auth: single admin account. The password hash lives in
 # kv.admin_password_hash — seeded from WEB_ADMIN_PASSWORD on first use,
 # afterwards the profile page rewrites the kv copy (env is a bootstrap only).
@@ -1805,6 +1811,7 @@ def api_status() -> dict:
         "project": project_label(),
         "mode": reply_mode("web"),
         "stt_status": STATE.get("stt") or "",
+        "version": APP_VERSION,
     }
 
 
