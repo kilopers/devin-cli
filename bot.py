@@ -26,6 +26,14 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 USERNAME = os.environ.get("TG_USERNAME", "kiloper").lstrip("@")
 CHAT_ID = os.environ.get("CHAT_ID") or None
 TEXT = os.environ.get("MESSAGE_TEXT", "привет")
+
+# версия сборки — в скобках к тексту, чтобы было видно, что поднялось
+try:
+    _ver = open(os.environ.get("VERSION_FILE", "/app/VERSION")).read().strip()
+except OSError:
+    _ver = ""
+if _ver:
+    TEXT = f"{TEXT} ({_ver})"
 INTERVAL = int(os.environ.get("INTERVAL", "60"))
 PROXY = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 
