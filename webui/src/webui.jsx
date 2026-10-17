@@ -17,6 +17,8 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import KeyIcon from "@mui/icons-material/VpnKey";
 import LockIcon from "@mui/icons-material/Lock";
 import RepoKeys from "./RepoKeys.jsx";
+import Users from "./Users.jsx";
+import PeopleIcon from "@mui/icons-material/People";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { api, apiJson, post } from "./api.js";
@@ -224,6 +226,7 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
   const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
+  const [usersOpen, setUsersOpen] = useState(false); // «Пользователи» (админ)
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
@@ -357,6 +360,9 @@ export default function App() {
         const d = await apiJson("/api/projects");
         const projs = d.projects.length ? d.projects : ["workspace"];
         setProjects(projs); setMultiMode(!!d.projects.length);
+        // онбординг: проектов нет → сначала ключи, потом репозиторий
+        if (!d.projects.length && d.current === null)
+          setKeysOpen(true);
         const cur = d.current || projs[0];
         setProject(cur); projRef.current = cur;
         loadTasks();
@@ -521,6 +527,12 @@ export default function App() {
             </Tooltip>
             <Menu anchorEl={profMenu} open={!!profMenu}
                   onClose={() => setProfMenu(null)}>
+              {status.is_admin &&
+                <MenuItem onClick={() => { setProfMenu(null);
+                                           setUsersOpen(true); }}>
+                  <PeopleIcon fontSize="small" sx={{ mr: 1 }} />
+                  Пользователи
+                </MenuItem>}
               <MenuItem onClick={() => { setProfMenu(null);
                                          setKeysOpen(true); }}>
                 <KeyIcon fontSize="small" sx={{ mr: 1 }} />
@@ -597,7 +609,11 @@ export default function App() {
 
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
-      <RepoKeys open={keysOpen} onClose={() => setKeysOpen(false)} />
+      <RepoKeys open={keysOpen}
+                onClose={() => { setKeysOpen(false);
+                                 if (!multiMode) setAddOpen(true); }} />
+      <Users open={usersOpen} onClose={() => setUsersOpen(false)}
+             me={status.user} />
       <AddProject open={addOpen} onClose={() => setAddOpen(false)}
                   onAdded={f => { refreshProjects()
                     .then(() => selectProject(f)); }} />

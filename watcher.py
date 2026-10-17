@@ -232,6 +232,18 @@ def init_db() -> None:
         message_id BIGINT NULL,
         created DOUBLE NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # мультиюзер: учётки веба (админ = WEB_ADMIN_USER, живёт в kv) и
+    # владельцы проектов (папка общая, принадлежность — в базе)
+    db_exec("""CREATE TABLE IF NOT EXISTS users (
+        username VARCHAR(64) PRIMARY KEY,
+        pw_hash VARCHAR(255) NOT NULL,
+        is_admin TINYINT NOT NULL DEFAULT 0,
+        created DOUBLE NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    db_exec("""CREATE TABLE IF NOT EXISTS project_owner (
+        name VARCHAR(190) PRIMARY KEY,
+        owner VARCHAR(64) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     for col, ddl in (("model", "model VARCHAR(80) NULL"),
                      ("reply_mode", "reply_mode VARCHAR(8) NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
@@ -1794,11 +1806,16 @@ def api_status() -> dict:
         "mode": reply_mode("web"),
         "stt_status": STATE.get("stt") or "",
         "version": APP_VERSION,
+        "user": _current_user() if _admin_hash() else "",
+        "is_admin": _is_admin(),
     }
 
 
 def api_projects() -> dict:
-    return {"projects": list_projects(), "current": current_project("web")[0],
+    mine = _user_projects(_current_user())
+    cur = current_project("web")[0]
+    return {"projects": mine,
+            "current": cur if cur in mine else (mine[0] if mine else None),
             "multi": multi_mode()}
 
 
@@ -1896,6 +1913,53 @@ def _admin_hash() -> str:
     return _admin_pw_hash
 
 
+def _user_hash(user: str) -> str:
+    """Password hash for a web account: admin из kv, остальные — users."""
+    if user == WEB_ADMIN_USER:
+        return _admin_hash()
+    r = db_query("SELECT pw_hash FROM users WHERE username=%s", (user,))
+    return r[0]["pw_hash"] if r else ""
+
+
+def _current_user() -> str:
+    """uid из сессии; без auth (пустой пароль) — условный админ."""
+    return session.get("uid") or WEB_ADMIN_USER
+
+
+def _is_admin(user: str | None = None) -> bool:
+    u = user or _current_user()
+    if u == WEB_ADMIN_USER:
+        return True
+    r = db_query("SELECT is_admin FROM users WHERE username=%s", (u,))
+    return bool(r and r[0]["is_admin"])
+
+
+def _project_owner(name: str) -> str:
+    """Владелец проекта; не размеченные (существовавшие до мультиюзера)
+    лениво отдаются админу."""
+    r = db_query("SELECT owner FROM project_owner WHERE name=%s", (name,))
+    if r:
+        return r[0]["owner"]
+    db_exec("INSERT IGNORE INTO project_owner(name, owner)"
+            " VALUES(%s,%s)", (name, WEB_ADMIN_USER))
+    return WEB_ADMIN_USER
+
+
+def _user_projects(user: str) -> list:
+    """Проекты, видимые пользователю: админ — все, юзер — свои."""
+    allp = list_projects()
+    if _is_admin(user):
+        return allp
+    return [p for p in allp if _project_owner(p) == user]
+
+
+def _owns_project(name: str) -> bool:
+    # «workspace» и прочие несуществующие папки — не проекты, доступны всем
+    if not PROJECTS_ROOT or not (PROJECTS_ROOT / name).is_dir():
+        return True
+    return _is_admin() or _project_owner(name) == _current_user()
+
+
 def login_required(fn):
     """Session gate: 401 JSON for /api/*, redirect to /login for pages.
     Disabled entirely when no admin password is configured."""
@@ -1920,8 +1984,8 @@ def _login():
     if request.method == "POST":
         user = request.form.get("user", "")
         pw = request.form.get("password", "")
-        if user == WEB_ADMIN_USER and \
-                check_password_hash(_admin_hash(), pw):
+        if _user_hash(user) and \
+                check_password_hash(_user_hash(user), pw):
             session["uid"] = user
             log(f"web login ok: {user}")
             return redirect("/")
@@ -1944,16 +2008,80 @@ def _logout():
 def _api_password():
     global _admin_pw_hash
     body = _req_json()
-    if not check_password_hash(_admin_hash(), body.get("current") or ""):
+    u = _current_user()
+    if not check_password_hash(_user_hash(u), body.get("current") or ""):
         return jsonify({"ok": False,
                         "error": "неверный текущий пароль"}), 403
     new = body.get("new") or ""
     if len(new) < 6:
         return jsonify({"ok": False,
                         "error": "новый пароль короче 6 символов"}), 400
-    _admin_pw_hash = generate_password_hash(new)
-    kv_set("admin_password_hash", _admin_pw_hash)
-    log("web admin password changed via profile")
+    h = generate_password_hash(new)
+    if u == WEB_ADMIN_USER:
+        _admin_pw_hash = h
+        kv_set("admin_password_hash", h)
+    else:
+        db_exec("UPDATE users SET pw_hash=%s WHERE username=%s", (h, u))
+    log(f"web password changed ({u})")
+    return jsonify({"ok": True})
+
+
+# --- управление пользователями (только админ) ---------------------------
+
+def _admin_only() -> bool:
+    return _admin_hash() and _is_admin()
+
+
+@app.get("/api/users")
+@login_required
+def _api_users():
+    if not _admin_only():
+        return jsonify({"ok": False, "error": "только для админа"}), 403
+    out = [{"user": WEB_ADMIN_USER, "admin": True}]
+    for r in db_query("SELECT username, is_admin FROM users"
+                      " ORDER BY created"):
+        out.append({"user": r["username"], "admin": bool(r["is_admin"])})
+    return jsonify({"ok": True, "users": out})
+
+
+@app.post("/api/users")
+@login_required
+def _api_users_add():
+    if not _admin_only():
+        return jsonify({"ok": False, "error": "только для админа"}), 403
+    body = _req_json()
+    u = (body.get("user") or "").strip()
+    pw = body.get("password") or ""
+    if not re.fullmatch(r"[A-Za-z0-9._-]{2,64}", u):
+        return jsonify({"ok": False, "error":
+                        "логин: 2-64 символа, a-z, 0-9, точка, _ -"}), 400
+    if u == WEB_ADMIN_USER or \
+            db_query("SELECT 1 FROM users WHERE username=%s", (u,)):
+        return jsonify({"ok": False,
+                        "error": "такой пользователь уже есть"}), 409
+    if len(pw) < 6:
+        return jsonify({"ok": False,
+                        "error": "пароль короче 6 символов"}), 400
+    db_exec("INSERT INTO users(username, pw_hash, is_admin, created)"
+            " VALUES(%s,%s,%s,%s)",
+            (u, generate_password_hash(pw), 0, time.time()))
+    log(f"web user created: {u}")
+    return jsonify({"ok": True, "user": u})
+
+
+@app.post("/api/users/delete")
+@login_required
+def _api_users_del():
+    if not _admin_only():
+        return jsonify({"ok": False, "error": "только для админа"}), 403
+    u = (_req_json().get("user") or "").strip()
+    if u == WEB_ADMIN_USER:
+        return jsonify({"ok": False, "error": "админа нельзя"}), 400
+    db_exec("DELETE FROM users WHERE username=%s", (u,))
+    # проекты ушедшего юзера переходят админу — иначе «осиротеют»
+    db_exec("UPDATE project_owner SET owner=%s WHERE owner=%s",
+            (WEB_ADMIN_USER, u))
+    log(f"web user deleted: {u}")
     return jsonify({"ok": True})
 
 
@@ -1982,7 +2110,10 @@ def _api_tasks():
         limit = int(request.args.get("limit", "5"))
     except ValueError:
         limit = 5
-    return jsonify(api_tasks(request.args.get("project"),
+    proj = request.args.get("project")
+    if proj and not _owns_project(proj):
+        abort(403)
+    return jsonify(api_tasks(proj,
                              min(max(limit, 1), 50),
                              request.args.get("before")))
 
@@ -1995,9 +2126,7 @@ def _api_files():
     of a big repo would hang the request (and the browser)."""
     proj = (request.args.get("project") or "").strip()
     rel = (request.args.get("path") or "").strip().strip("/")
-    root = (PROJECTS_ROOT / proj) \
-        if (proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir()) \
-        else WORKDIR
+    root = _proj_root(proj)
     try:
         base = root.resolve()
         target = (base / rel).resolve()
@@ -2021,9 +2150,11 @@ def _api_files():
 
 
 def _proj_root(proj: str) -> Path:
-    return (PROJECTS_ROOT / proj) \
-        if (proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir()) \
-        else WORKDIR
+    if proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir():
+        if not _owns_project(proj):
+            abort(403)
+        return PROJECTS_ROOT / proj
+    return WORKDIR
 
 
 @app.get("/api/diff")
@@ -2468,21 +2599,32 @@ def _api_project_add():
         shutil.rmtree(dest, ignore_errors=True)
         return jsonify({"ok": False, "error":
                         out[-4000:] or "clone failed"}), 500
-    log(f"web added project {folder} <- {host}/{path}")
+    db_exec("INSERT IGNORE INTO project_owner(name, owner)"
+            " VALUES(%s,%s)", (folder, _current_user()))
+    log(f"web added project {folder} <- {host}/{path}"
+        f" (owner {_current_user()})")
     return jsonify({"ok": True, "folder": folder, "output": out[-4000:]})
 
 
-# --- repo credential store (kv.git_creds = {"host": "token"}) -----------
+# --- repo credential store (kv.git_creds:<user> = {"host": "token"}) ----
 
 def _creds() -> dict:
     try:
-        return json.loads(kv_get("git_creds", "{}"))
+        d = json.loads(kv_get(f"git_creds:{_current_user()}", ""))
     except Exception:
-        return {}
+        d = {}
+    # наследие: до мультиюзера ключи лежали глобально — админ их видит
+    if not d and _is_admin():
+        try:
+            d = json.loads(kv_get("git_creds", "{}"))
+        except Exception:
+            d = {}
+    return d
 
 
 def _creds_save(d: dict) -> None:
-    kv_set("git_creds", json.dumps(d, ensure_ascii=False))
+    kv_set(f"git_creds:{_current_user()}",
+           json.dumps(d, ensure_ascii=False))
 
 
 def _cred_get(host: str) -> str:
@@ -2499,6 +2641,9 @@ def _cred_propagate(host: str, token: str) -> int:
            if k.lower() not in ("http_proxy", "https_proxy", "no_proxy")}
     n = 0
     for d in (PROJECTS_ROOT.iterdir() if PROJECTS_ROOT else []):
+        # только свои проекты: чужие ремоуты трогать нельзя
+        if _project_owner(d.name) != _current_user():
+            continue
         if not d.is_dir() or not (d / ".git").exists():
             continue
         try:
@@ -2580,7 +2725,7 @@ def _api_task_new():
         return jsonify({"ok": False, "error": "empty text"}), 400
     if len(text) > 20000:
         return jsonify({"ok": False, "error": "text too long"}), 400
-    if multi_mode() and project not in list_projects():
+    if multi_mode() and project not in _user_projects(_current_user()):
         return jsonify({"ok": False, "error": "unknown project"}), 400
     name = enqueue_task(text, project=project, prefix="web")
     return jsonify({"ok": True, "name": name}), 201
