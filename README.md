@@ -108,7 +108,10 @@ nginx режет путь; работает всегда).
 Поток:
 
 1. Голосовое → `getFile` → OGG → STT (`STT_PROVIDER`: yandex / gemini /
-   openai-compatible) → текст. Yandex SpeechKit работает в **асинхронном**
+   openai-compatible — можно списком через запятую `gemini,openai`:
+   провайдеры пробуются по очереди, при отказе первого распознаёт
+   следующий — переживает и 403 у Gemini, и недоступность API) → текст.
+   Yandex SpeechKit работает в **асинхронном**
    режиме (API v3 `recognizeFileAsync`, аудио уходит base64-контентом без
    Object Storage): бот пишет «отправлено на распознавание», каждые 10с
    обновляет статус («пока не готово, проверяю ещё»), при готовности то же
@@ -303,7 +306,7 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 | `MYSQL_DATABASE` | `devin_worker` | База; таблицы `tasks`/`kv`/`pending` создаются сами |
 | `GEMINI_API_KEY` | — | Ключ Gemini для распознавания голосовых |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Модель Gemini для STT |
-| `STT_PROVIDER` | `gemini` | `gemini` / `openai` (OpenAI-совместимый API) / `yandex` |
+| `STT_PROVIDER` | `gemini` | `gemini` / `openai` (OpenAI-совместимый API) / `yandex`; через запятую — цепочка запасных (`gemini,openai`) |
 | `STT_API_KEY` | — | Ключ STT: OpenAI/Groq токен или `Api-Key` Яндекс.Облака |
 | `STT_BASE_URL` | `https://api.openai.com/v1` | Базовый URL STT API (для `openai`) |
 | `STT_MODEL` | `whisper-1` | Модель STT (напр. `whisper-large-v3-turbo` у Groq) |

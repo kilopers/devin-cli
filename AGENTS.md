@@ -76,7 +76,10 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   (ресемпл на клиенте) и шлёт `POST /api/stt` (octet-stream, ≤16 МБ);
   ответ дописывается в textarea. У кнопки — таймер записи и статус
   распознавания (`STATE["stt"]` → `GET /api/status.stt_status`).
-  Распознаёт тем же `STT_PROVIDER`; для yandex в `web_transcribe` вилка:
+  Распознаёт тем же `STT_PROVIDER` — он может быть списком через запятую
+  (`gemini,openai`): `_stt_chain` разбирает, `_stt_run` пробует по очереди
+  и собирает ошибки всех провайдеров; `_stt_ready` — проверка ключей.
+  Для yandex в `web_transcribe` вилка:
   <28с — v1 sync (LPCM), длиннее — v3 async с WAV-контейнером
   (`_wav_wrap`), как у телеграм-голосовых.
 - Оффер коммита общий для всех источников: `offer_commit` ставит

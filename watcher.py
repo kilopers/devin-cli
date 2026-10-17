@@ -844,15 +844,57 @@ def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
     raise RuntimeError("yandex stt: recognition did not finish in 10 min")
 
 
-def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None,
-               duration=None) -> str:
-    if STT_PROVIDER == "yandex":
+def _stt_chain() -> list[str]:
+    """STT providers to try, in order — STT_PROVIDER may be a comma-separated
+    fallback chain ('gemini,openai', 'yandex,openai', …): when the first
+    provider is down/denied, the next one still transcribes. Empty value
+    keeps the legacy openai-compatible default."""
+    return [p.strip() for p in STT_PROVIDER.split(",") if p.strip()] \
+        or ["openai"]
+
+
+def _stt_ready(p: str) -> bool:
+    """Provider p has credentials configured — openai-compatible and yandex
+    share STT_API_KEY, gemini has its own."""
+    return bool(GEMINI_API_KEY) if p == "gemini" else bool(STT_API_KEY)
+
+
+def _stt_run(chain: list[str], try_fn, on_status=None) -> str:
+    """First success wins; failures are logged and tried against the next
+    provider. The combined error of all providers is raised at the end."""
+    errs = []
+    for i, p in enumerate(chain):
+        try:
+            return try_fn(p)
+        except Exception as e:
+            errs.append(f"{p}: {e}")
+            log(f"stt provider {p} failed: {e}")
+            if on_status and i < len(chain) - 1:
+                try:
+                    on_status("⚠️ Провайдер не ответил — "
+                              "пробую запасной…")
+                except Exception:
+                    pass
+    raise RuntimeError("STT провайдеры упали: " + " | ".join(errs))
+
+
+def _stt_dispatch(p: str, audio: bytes, mime: str, on_status=None,
+                  duration=None, rate: int = 48000) -> str:
+    if p == "yandex":
         if duration is not None and duration < 28:
-            return yandex_transcribe_sync(audio, mime)
+            return yandex_transcribe_sync(audio, mime, rate)
         return yandex_transcribe(audio, mime, on_status)
-    if STT_PROVIDER == "gemini":
+    if p == "gemini":
         return gemini_transcribe(audio, mime)
     return openai_transcribe(audio, mime)
+
+
+def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None,
+               duration=None) -> str:
+    return _stt_run(
+        _stt_chain(),
+        lambda p: _stt_dispatch(p, audio, mime, on_status, duration),
+        on_status)
 
 
 def _wav_rate(wav: bytes) -> int:
@@ -894,14 +936,19 @@ def web_transcribe(wav: bytes) -> str:
         STATE["stt"] = msg
         log(f"web stt: {msg}")
 
-    if STT_PROVIDER == "yandex":
-        if not STT_API_KEY:
-            raise RuntimeError("STT не настроен: нет STT_API_KEY (yandex)")
-        rate = _wav_rate(wav)
-        pcm = wav[44:] if wav[:4] == b"RIFF" else wav
-        if rate not in (8000, 16000, 48000):   # safety net for odd clients
-            pcm, rate = _pcm_resample(pcm, rate, 16000), 16000
-        duration = len(pcm) / 2 / rate
+    chain = _stt_chain()
+    if not any(_stt_ready(p) for p in chain):
+        raise RuntimeError("STT не настроен: нет ключей провайдеров "
+                           "(GEMINI_API_KEY / STT_API_KEY)")
+    rate = _wav_rate(wav)
+    pcm = wav[44:] if wav[:4] == b"RIFF" else wav
+    if rate not in (8000, 16000, 48000):   # safety net for odd clients
+        pcm, rate = _pcm_resample(pcm, rate, 16000), 16000
+    duration = len(pcm) / 2 / rate
+
+    def _try(p: str) -> str:
+        if p != "yandex":
+            return _stt_dispatch(p, wav, "audio/wav")
         try:
             if duration < 28:
                 return yandex_transcribe_sync(pcm, "audio/L16", rate)
@@ -911,11 +958,8 @@ def web_transcribe(wav: bytes) -> str:
                                      on_status=_status)
         finally:
             STATE["stt"] = None
-    if STT_PROVIDER == "gemini" and not GEMINI_API_KEY:
-        raise RuntimeError("STT не настроен: нет GEMINI_API_KEY")
-    if STT_PROVIDER not in ("gemini", "yandex") and not STT_API_KEY:
-        raise RuntimeError("STT не настроен: нет STT_API_KEY")
-    return transcribe(wav, "audio/wav")
+
+    return _stt_run(chain, _try, _status)
 
 
 def _load_json(path: Path) -> dict:
@@ -1619,11 +1663,10 @@ def handle_update(upd: dict) -> None:
     try:
         if voice := msg.get("voice"):
             log(f"voice from @{sender} chat={chat_id}, {voice.get('duration', '?')}s")
-            if STT_PROVIDER == "gemini" and not GEMINI_API_KEY:
-                tg_send(chat_id, "voice received, but GEMINI_API_KEY is not set")
-                return
-            if STT_PROVIDER != "gemini" and not STT_API_KEY:
-                tg_send(chat_id, "voice received, but STT_API_KEY is not set")
+            chain = _stt_chain()
+            if not any(_stt_ready(p) for p in chain):
+                tg_send(chat_id, "voice received, but no STT provider "
+                                 "keys are set")
                 return
             if multi_mode() and not current_project()[0]:
                 tg_send(chat_id, "Сначала выбери проект: /projects")
@@ -1631,11 +1674,11 @@ def handle_update(upd: dict) -> None:
                 return
             dur = voice.get("duration")
             dur_txt = f" ({dur}с)" if dur else ""
-            if STT_PROVIDER == "yandex":
+            if chain == ["yandex"]:
                 mode_txt = "синхронный" if dur is not None and dur < 28 \
                     else "асинхронный"
             else:
-                mode_txt = STT_PROVIDER
+                mode_txt = "+".join(chain)
             res = tg_api("sendMessage", chat_id=chat_id,
                          text=f"📤 Аудио{dur_txt} отправлено на распознавание"
                               f" ({mode_txt} режим), жду…")
