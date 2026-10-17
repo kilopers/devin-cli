@@ -1,6 +1,8 @@
 // Project file tree — lazy per-directory loading: only the top level is
 // fetched up front, each expand pulls its children via GET /api/files.
-import { useCallback, useEffect, useState } from "react";
+// Expanded dirs and scroll position persist per project in localStorage —
+// a page reload (or re-login) restores the same view.
+import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import { SimpleTreeView } from "@mui/x-tree-view/SimpleTreeView";
@@ -8,6 +10,14 @@ import { TreeItem } from "@mui/x-tree-view/TreeItem";
 import FolderIcon from "@mui/icons-material/Folder";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import { apiJson } from "./api.js";
+
+const LS_EXP = p => `ft:expanded:${p || "_"}`;
+const LS_SCR = p => `ft:scroll:${p || "_"}`;
+const lsGet = (k, d) => {
+  try { const v = localStorage.getItem(k); return v === null ? d : v; }
+  catch (e) { return d; }
+};
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 
 const Label = ({ icon, name }) => (
   <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0 }}>
@@ -21,12 +31,17 @@ const Label = ({ icon, name }) => (
 export default function FileTree({ project, onError, onOpenFile }) {
   // path -> entries[] | "loading" | "error" | undefined (not fetched yet)
   const [dirs, setDirs] = useState({});
+  const [expanded, setExpanded] = useState([]);
+  const boxRef = useRef(null);
+  const scrollSave = useRef(null);
+  const projRef = useRef(project);
+  const scrRestoredFor = useRef(null);   // project whose scroll was applied
 
   const load = useCallback(async p => {
     setDirs(d => ({ ...d, [p]: "loading" }));
     try {
       const d = await apiJson("/api/files?project=" +
-        encodeURIComponent(project || "") +
+        encodeURIComponent(projRef.current || "") +
         "&path=" + encodeURIComponent(p));
       if (!d.ok) throw new Error(d.error || "?");
       setDirs(prev => ({ ...prev, [p]: d.entries }));
@@ -34,13 +49,49 @@ export default function FileTree({ project, onError, onOpenFile }) {
       setDirs(prev => ({ ...prev, [p]: "error" }));
       onError?.("Файлы: " + (e.message || e));
     }
-  }, [project, onError]);
+  }, [onError]);
 
-  // fresh project → drop cache (manual refresh = remount via key)
-  useEffect(() => { setDirs({}); load(""); }, [project]);
+  // fresh project → drop caches, restore saved expansion + scroll
+  useEffect(() => {
+    projRef.current = project;
+    setDirs({}); load("");
+    let saved = [];
+    try { saved = JSON.parse(lsGet(LS_EXP(project), "[]")) || []; }
+    catch (e) { saved = []; }
+    setExpanded(saved);
+    // lazy-load every saved dir so deep expansions render again
+    saved.forEach(p => { if (p) load(p); });
+  }, [project]);
 
-  const onExpand = (_e, itemId, expanded) => {
-    if (expanded && dirs[itemId] === undefined) load(itemId);
+  // restore scrollTop once the top level has rendered — twice: right
+  // away, then after saved deep dirs finish loading (content grows)
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || !Array.isArray(dirs[""]) ||
+        scrRestoredFor.current === project) return;
+    scrRestoredFor.current = project;
+    const apply = () => {
+      el.scrollTop = parseInt(lsGet(LS_SCR(project), "0"), 10) || 0;
+    };
+    apply();
+    const t = setTimeout(apply, 800);
+    return () => clearTimeout(t);
+  }, [dirs, project]);
+
+  const onExpandedChange = (_e, ids) => {
+    setExpanded(ids);
+    lsSet(LS_EXP(project), JSON.stringify(ids));
+  };
+
+  const onExpand = (_e, itemId, isExpanded) => {
+    if (isExpanded && dirs[itemId] === undefined) load(itemId);
+  };
+
+  const onScroll = e => {
+    const top = e.currentTarget.scrollTop;
+    clearTimeout(scrollSave.current);
+    scrollSave.current = setTimeout(
+      () => lsSet(LS_SCR(project), String(top)), 300);
   };
 
   const node = (p, name, isDir) => isDir ? (
@@ -78,9 +129,12 @@ export default function FileTree({ project, onError, onOpenFile }) {
   };
 
   return (
-    <Box sx={{ overflow: "auto", flex: "1 1 auto", minHeight: 0,
+    <Box ref={boxRef} onScroll={onScroll}
+         sx={{ overflow: "auto", flex: "1 1 auto", minHeight: 0,
                px: 1, py: 0.5, fontSize: 13 }}>
-      <SimpleTreeView onItemExpansionToggle={onExpand}
+      <SimpleTreeView expandedItems={expanded}
+                      onExpandedItemsChange={onExpandedChange}
+                      onItemExpansionToggle={onExpand}
                       sx={{ "& .MuiTreeItem-content": { py: 0.2 } }}>
         {renderLevel("", dirs[""])}
       </SimpleTreeView>
