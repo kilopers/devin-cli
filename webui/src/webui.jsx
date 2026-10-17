@@ -444,7 +444,8 @@ export default function App() {
       </Box>
       <ListSubheader>Файлы</ListSubheader>
       <Box sx={{ maxHeight: "40vh", overflow: "auto", px: 1 }}>
-        <FileTree project={project} onError={setToast}
+        <FileTree key={project + ":" + treeVer}
+                  project={project} onError={setToast}
                   onOpenFile={setEditPath} />
       </Box>
       <Divider />
