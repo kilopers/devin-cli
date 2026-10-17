@@ -47,7 +47,9 @@ Docker-образ (`ghcr.io/kilopers/devin-cli`) с автономным Devin C
   `/static/*`, `/api/*` и POST'ы идут в сеть. Справа в вебе — дерево файлов
   проекта (`GET /api/files` отдаёт один уровень, ленивое раскрытие аяксом;
   на мобильном панель `#treePanel` переносится в sidenav тем же matchMedia).
-  Роуты под
+  Блок «Изменения» — сворачиваемый список git-status файлов (`/api/diff`),
+  клик → fullscreen-диалог с diff (`/api/diff/file`, hljs `diff`-подсветка;
+  untracked → `git diff --no-index /dev/null`). Роуты под
   `login_required` (сессия-cookie; хеш пароля — `kv.admin_password_hash`,
   сид из `WEB_ADMIN_*`, смена — профиль/`POST /api/password`; пустой пароль =
   auth off). Telegram webhook (`POST /` и `POST /<any>` — корень тоже, иначе 405) и GET /status — публичные.

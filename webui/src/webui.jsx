@@ -19,6 +19,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
+import Changes from "./Changes.jsx";
 import Composer from "./Composer.jsx";
 
 const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
@@ -316,6 +317,8 @@ export default function App() {
         <FileTree project={project} onError={setToast} />
       </Box>
       <Divider />
+      <Changes project={project} toast={setToast} />
+      <Divider />
       <Box sx={{ px: 2, py: 1.5, display: "flex", flexDirection: "column",
                  gap: 1.5 }}>
         <Typography variant="caption" color="text.secondary">
@@ -418,6 +421,8 @@ export default function App() {
             </Box>
             <FileTree key={project + ":" + treeVer}
                       project={project} onError={setToast} />
+            <Divider />
+            <Changes project={project} toast={setToast} />
           </Paper>
         </Box>
 

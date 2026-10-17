@@ -2021,6 +2021,68 @@ def _api_files():
                     "truncated": len(items) > 500})
 
 
+def _proj_root(proj: str) -> Path:
+    return (PROJECTS_ROOT / proj) \
+        if (proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir()) \
+        else WORKDIR
+
+
+@app.get("/api/diff")
+@login_required
+def _api_diff():
+    """Changed files of the project repo (git status --porcelain) — feeds
+    the collapsible «Изменения» section under the web file tree."""
+    proj = (request.args.get("project") or "").strip()
+    root = _proj_root(proj)
+    if not (root / ".git").exists():
+        return jsonify({"ok": True, "entries": []})
+    rc, out = _git(root, "status", "--porcelain")
+    if rc != 0:
+        return jsonify({"ok": False, "error": out[:200]}), 500
+    entries = []
+    for line in out.splitlines():
+        # _git() strips stdout — the leading " " of " M file" is gone, so
+        # fixed offsets won't do: split on the first whitespace run
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        status, path = parts
+        if " -> " in path:           # rename: "old -> new"
+            path = path.split(" -> ", 1)[1]
+        entries.append({"path": path.strip(), "status": status.strip()})
+    return jsonify({"ok": True, "entries": entries})
+
+
+@app.get("/api/diff/file")
+@login_required
+def _api_diff_file():
+    """Unified diff of one changed file (git diff HEAD — staged+unstaged);
+    untracked files get an all-added diff via `git diff --no-index`."""
+    proj = (request.args.get("project") or "").strip()
+    rel = (request.args.get("path") or "").strip().strip("/")
+    try:
+        base = _proj_root(proj).resolve()
+        target = (base / rel).resolve()
+    except OSError:
+        return jsonify({"ok": False, "error": "bad path"}), 400
+    if not rel or not target.is_relative_to(base):
+        return jsonify({"ok": False, "error": "bad path"}), 400
+    rc, out = _git(base, "diff", "--no-color", "HEAD", "--", rel)
+    if rc == 0 and out.strip():
+        return jsonify({"ok": True, "path": rel,
+                        "diff": out[:300_000]})
+    if target.is_file():
+        # untracked — exit code 1 means "differs", that's expected here
+        rc, out = _git(base, "diff", "--no-index", "--no-color",
+                       "--", "/dev/null", str(target))
+        if out.strip():
+            return jsonify({"ok": True, "path": rel,
+                            "diff": out[:300_000]})
+        return jsonify({"ok": True, "path": rel, "diff": "",
+                        "error": (out[:200] or "not a file")})
+    return jsonify({"ok": True, "path": rel, "diff": ""})
+
+
 @app.post("/api/stt")
 @login_required
 def _api_stt():

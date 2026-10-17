@@ -1,0 +1,143 @@
+// «Изменения» — collapsible section under the file tree listing git-dirty
+// files of the project (GET /api/diff, polled). Click → fullscreen dialog
+// with the unified diff, syntax-highlighted via hljs' "diff" language
+// (additions green, deletions red — same palette as github-dark).
+import { useEffect, useRef, useState } from "react";
+import {
+  Alert, AppBar, Box, Chip, Collapse, Dialog, IconButton, ListItemButton,
+  Toolbar, Typography,
+} from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import hljs from "highlight.js/lib/common";
+import { apiJson } from "./api.js";
+
+const STATUS_COLOR = { M: "#e6a23c", A: "#2e7d32", D: "#c62828",
+                       R: "#1565c0", "??": "#2e7d32" };
+
+function DiffView({ text }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.textContent = text;
+      try { hljs.highlightElement(el); } catch (e) {}
+    }
+  }, [text]);
+  return (
+    <Box component="pre" sx={{
+      m: 0, p: 2, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontSize: 12.5, lineHeight: 1.45, whiteSpace: "pre", overflow: "auto",
+      flex: 1, bgcolor: "#0d1117", color: "#c9d1d9",
+      "& .hljs-addition": { bgcolor: "rgba(46,160,67,.15)",
+        color: "#aff5b4", display: "block" },
+      "& .hljs-deletion": { bgcolor: "rgba(248,81,73,.15)",
+        color: "#ffdcd7", display: "block" },
+    }}>
+      <code ref={ref} className="language-diff" />
+    </Box>
+  );
+}
+
+export default function Changes({ project, toast }) {
+  const [open, setOpen] = useState(true);
+  const [entries, setEntries] = useState([]);
+  const [diff, setDiff] = useState(null);  // {path, diff?, error?}
+  const projRef = useRef(project);
+  projRef.current = project;
+
+  useEffect(() => {
+    setEntries([]);
+    const load = async () => {
+      try {
+        const d = await apiJson("/api/diff?project=" +
+          encodeURIComponent(projRef.current || ""));
+        if (d.ok) setEntries(d.entries);
+      } catch (e) {}
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [project]);
+
+  const openFile = async path => {
+    setDiff({ path, diff: null });
+    try {
+      const d = await apiJson("/api/diff/file?project=" +
+        encodeURIComponent(projRef.current || "") +
+        "&path=" + encodeURIComponent(path));
+      setDiff({ path, diff: d.diff, error: d.ok ? null : d.error });
+    } catch (e) {
+      setDiff({ path, diff: null, error: String(e) });
+    }
+  };
+
+  return (
+    <>
+      <ListItemButton dense onClick={() => setOpen(o => !o)}
+                      sx={{ px: 1.5, py: 0.5 }}>
+        {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
+               : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+        <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
+          Изменения
+        </Typography>
+        <Chip size="small" label={entries.length}
+              sx={{ ml: 1, height: 18, fontSize: 11 }} />
+      </ListItemButton>
+      <Collapse in={open}>
+        <Box sx={{ maxHeight: "35vh", overflow: "auto" }}>
+          {entries.length === 0 ? (
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ px: 2, py: 0.5, display: "block" }}>
+              чисто — изменений нет
+            </Typography>
+          ) : entries.map(e => (
+            <ListItemButton key={e.path} dense
+                            onClick={() => openFile(e.path)}
+                            sx={{ px: 1.5, py: 0.3 }}>
+              <Box component="span" sx={{
+                fontSize: 10, fontWeight: 700, width: 16, flexShrink: 0,
+                color: STATUS_COLOR[e.status] || "#9aa0a6" }}>
+                {e.status === "??" ? "?" : e.status[0]}
+              </Box>
+              <Typography variant="body2" noWrap
+                          sx={{ fontSize: 12.5, fontFamily:
+                            "ui-monospace, Menlo, monospace" }}>
+                {e.path}
+              </Typography>
+            </ListItemButton>
+          ))}
+        </Box>
+      </Collapse>
+
+      <Dialog fullScreen open={!!diff} onClose={() => setDiff(null)}>
+        <AppBar position="sticky" color="primary">
+          <Toolbar variant="dense" sx={{ gap: 1 }}>
+            <IconButton color="inherit" onClick={() => setDiff(null)}>
+              <CloseIcon />
+            </IconButton>
+            <Typography variant="body2" noWrap sx={{
+              fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13 }}>
+              {diff?.path}
+            </Typography>
+          </Toolbar>
+        </AppBar>
+        <Box sx={{ display: "flex", flexDirection: "column", flex: 1,
+                   minHeight: 0 }}>
+          {diff?.error ? (
+            <Alert severity="error" sx={{ m: 2 }}>{diff.error}</Alert>
+          ) : diff?.diff === null ? (
+            <Typography sx={{ p: 2 }} color="text.secondary">
+              загрузка…</Typography>
+          ) : diff?.diff === "" ? (
+            <Typography sx={{ p: 2 }} color="text.secondary">
+              пустой diff</Typography>
+          ) : (
+            <DiffView text={diff?.diff || ""} />
+          )}
+        </Box>
+      </Dialog>
+    </>
+  );
+}
