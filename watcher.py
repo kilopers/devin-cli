@@ -2552,7 +2552,9 @@ def _api_creds_set():
     old = d.get(host)
     d[host] = token
     _creds_save(d)
-    n = _cred_propagate(host, token) if old and old != token else 0
+    # всегда — idempotent: если remote уже с этим токеном, set-url no-op;
+    # зато чинит remote'ы, когда ключ сохранили до появления propagate.
+    n = _cred_propagate(host, token)
     log(f"web saved cred for {host}" + (f", updated {n} remotes" if n else ""))
     return jsonify({"ok": True, "host": host, "updated": n})
 
