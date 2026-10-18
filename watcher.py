@@ -1127,8 +1127,12 @@ def enqueue_task(text: str, chat_id: int | None = None,
     stem = f"{prefix}-{pname}-{aname}-{time.strftime('%m%d-%H%M%S')}"
     model = pj_get(proj, "model") if proj else ""
     model = model or current_model(scope)
-    rmode = pj_get(proj, "reply_mode") if proj else ""
-    rmode = rmode or reply_mode(scope)
+    if scope == "web":
+        rmode = pj_get(proj, "reply_mode") if proj else ""
+        rmode = rmode or reply_mode(scope)
+    else:
+        # телеграм: /mode — явный выбор юзера, важнее дефолта проекта
+        rmode = us_get(author, "reply_mode") or             (pj_get(proj, "reply_mode") if proj else "")             or reply_mode(scope)
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
@@ -1319,7 +1323,8 @@ def set_reply_mode(mode: str, scope: str = "telegram") -> None:
 
 
 def send_mode_menu(chat_id, msg_id=None) -> None:
-    cur = reply_mode()
+    actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+    cur = us_get(actor, "reply_mode") or reply_mode()
     kb = [[{"text": ("✅ " if cur == "code" else "") + "🛠 Написание кода",
             "callback_data": "mode:code"}],
           [{"text": ("✅ " if cur == "ask" else "") + "💬 Ответ на вопрос",
@@ -1669,8 +1674,10 @@ def handle_command(chat_id, text: str) -> None:
         else:
             tg_send(chat_id, "Сейчас ничего не выполняется.")
     elif cmd == "mode":
+        actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
         if arg.strip() in ("ask", "code"):
-            set_reply_mode(arg.strip())
+            us_set(actor, "reply_mode", arg.strip())
+            log(f"reply mode -> {arg.strip()} (user {actor})")
             tg_send(chat_id, f"Режим ответа: {arg.strip()}.")
         else:
             send_mode_menu(chat_id)
@@ -1732,7 +1739,9 @@ def handle_callback(cb: dict) -> None:
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Неизвестный режим")
             return
-        set_reply_mode(pid)
+        actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+        us_set(actor, "reply_mode", pid)
+        log(f"reply mode -> {pid} (user {actor})")
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                text=f"Режим ответа: {pid}.",
                reply_markup={"inline_keyboard": []})
