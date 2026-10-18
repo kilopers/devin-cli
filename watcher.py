@@ -1662,11 +1662,17 @@ def handle_command(chat_id, text: str) -> None:
                     "воркер возьмёт следующую из очереди.")
         else:
             tg_send(chat_id, "Сейчас ничего не выполняется.")
+    elif cmd == "mode":
+        if arg.strip() in ("ask", "code"):
+            set_reply_mode(arg.strip())
+            tg_send(chat_id, f"Режим ответа: {arg.strip()}.")
+        else:
+            send_mode_menu(chat_id)
     elif cmd == "status":
         tg_send(chat_id, status_text())
     else:
         tg_send(chat_id,
-                "Команды: /menu, /models, /model <name>, /status.\n"
+                "Команды: /menu, /models, /model <name>, /mode, /status.\n"
                 "Или пришли задачу текстом/голосовым.")
 
 
