@@ -37,3 +37,15 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+      
+      
+      - name: Deploy hook → watchtower
+        if: success()
+        env:
+          DEPLOY_HOOK_URL: ${{ vars.DEPLOY_HOOK_URL }}
+        run: |
+          [ -n "$DEPLOY_HOOK_URL" ] || exit 0
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.WATCHTOWER_TOKEN }}" \
+            -A "Mozilla/5.0" \
+            "$DEPLOY_HOOK_URL"
