@@ -1,5 +1,8 @@
 # Release notes
 
+## 1.0.22
+- Тестовый бамп для проверки deploy hook из GitHub Actions.
+
 ## 1.0.21
 - Deploy hook в GitHub Actions: после сборки дёргает /deploy → watchtower
   обновляет контейнер сразу, не дожидаясь интервала.
