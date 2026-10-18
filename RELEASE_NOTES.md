@@ -1,5 +1,8 @@
 # Release notes
 
+## 1.0.23
+- Тестовый бамп: проверка deploy hook Actions → watchtower.
+
 ## 1.0.22
 - Тестовый бамп для проверки deploy hook из GitHub Actions.
 
