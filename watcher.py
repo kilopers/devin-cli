@@ -873,7 +873,7 @@ def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg",
 
 
 def yandex_transcribe(audio: bytes, mime: str = "audio/ogg",
-                      on_status=None) -> str:
+                      on_status=None, user: str | None = None) -> str:
     """SpeechKit v3 async recognition — audio goes as base64 `content`,
     no Object Storage needed. Polls getRecognition every 10s (≤10 min),
     reporting progress through on_status()."""
