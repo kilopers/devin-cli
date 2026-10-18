@@ -425,7 +425,7 @@ export default function App() {
     loadTasks();
   }, [multiMode, loadTasks]);
 
-  const commitAct = async (stem, action) => {
+  const commitAct = useCallback(async (stem, action) => {
     try {
       const d = await post("/api/commit", { stem, action });
       if (d.ok && d.skipped) setToast("Пропущено — изменения остались в репо");
@@ -438,7 +438,14 @@ export default function App() {
       else setToast("Коммит: " + (d.error || "?"));
     } catch (e) { setToast("Коммит сеть: " + e); }
     loadTasks();
-  };
+  }, [loadTasks]);
+
+  // стабильные колбэки — иначе memo-карточки ререндерятся на каждом опросе
+  // и выделение текста слетает
+  const askStop = useCallback(
+    t2 => setConfirm({ kind: "stop", name: t2.name }), []);
+  const askCancel = useCallback(
+    t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
 
   // initial project list + tasks; polling every 3 s
   useEffect(() => {
@@ -665,9 +672,8 @@ export default function App() {
             {items.length
               ? items.map(t => <TaskCard key={t.stem} t={t}
                     onCommit={commitAct}
-                    onStop={t2 => setConfirm({ kind: "stop", name: t2.name })}
-                    onCancel={t2 => setConfirm({ kind: "cancel",
-                                    name: t2.name, stem: t2.stem })} />)
+                    onStop={askStop}
+                    onCancel={askCancel} />)
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
           </Box>
