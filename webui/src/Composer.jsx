@@ -18,6 +18,8 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import CodeIcon from "@mui/icons-material/Code";
 import QuestionAnswerIcon from "@mui/icons-material/QuestionAnswer";
+import FlashOnIcon from "@mui/icons-material/FlashOn";
+import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, post } from "./api.js";
 
@@ -62,7 +64,8 @@ function encodeWav(chunks, rate) {
 }
 
 export default function Composer({ project, sttStatus, toast, onSent,
-                                   conn, onOpenDrawer, accent, onOpenModels, mode, onMode }) {
+                                   conn, onOpenDrawer, accent, onOpenModels, mode, onMode,
+                                   fast, onFast }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -224,6 +227,12 @@ export default function Composer({ project, sttStatus, toast, onSent,
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
                 color: text.trim() ? "#fff" : "rgba(255,255,255,.4)" }} />
+        <BottomNavigationAction label={fast ? "Быстрый" : "Обычный"}
+          icon={fast ? <FlashOnIcon /> : <FlashOffIcon />}
+          onClick={() => onFast && onFast(fast ? "0" : "1")}
+          disabled={!project}
+          sx={{ minWidth: 0,
+                color: fast ? "#ffd54f" : "rgba(255,255,255,.72)" }} />
         <BottomNavigationAction label="Модели" icon={<SmartToyIcon />}
           onClick={onOpenModels}
           sx={{ minWidth: 0, color: "#fff" }} />

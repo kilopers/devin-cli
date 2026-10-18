@@ -1062,6 +1062,8 @@ def enqueue_task(text: str, chat_id: int | None = None,
     proj = project or (current_project(scope)[0] if multi_mode() else None)
     model = pj_get(proj, "model") if proj else ""
     model = model or current_model(scope)
+    if proj and pj_get(proj, "fast") == "1":
+        model = re.sub(r"-(medium|high|xhigh|max)$", "-low", model)
     rmode = pj_get(proj, "reply_mode") if proj else ""
     rmode = rmode or reply_mode(scope)
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
@@ -1895,6 +1897,7 @@ def api_status() -> dict:
         "project": project_label(),
         "mode": pj_get(current_project("web")[0] or "", "reply_mode")
                 or reply_mode("web"),
+        "fast": pj_get(current_project("web")[0] or "", "fast") or "0",
         "stt_status": STATE.get("stt") or "",
         "version": APP_VERSION,
         "user": _current_user() if _admin_hash() else "",
@@ -2541,7 +2544,8 @@ def _api_project_settings_get():
     return jsonify({"ok": True,
                     "model": pj_get(p, "model"),
                     "reply_mode": pj_get(p, "reply_mode"),
-                    "auto_commit": pj_get(p, "auto_commit")})
+                    "auto_commit": pj_get(p, "auto_commit"),
+                    "fast": pj_get(p, "fast")})
 
 
 @app.post("/api/project/settings")
@@ -2553,7 +2557,8 @@ def _api_project_settings_set():
         return jsonify({"ok": False, "error": "нет доступа"}), 403
     for k, ok in (("model", None),
                   ("reply_mode", ("", "ask", "code")),
-                  ("auto_commit", ("", "0", "1"))):
+                  ("auto_commit", ("", "0", "1")),
+                  ("fast", ("", "0", "1"))):
         if k not in body:
             continue  # частичное обновление — не трогаем пропущенные ключи
         v = (body.get(k) or "").strip()

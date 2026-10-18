@@ -287,6 +287,7 @@ export default function App() {
   const [status, setStatus] = useState({});
   const [models, setModels] = useState({ models: [], current: "" });
   const [mode, setMode] = useState("code");
+  const [fast, setFast] = useState(false);
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -382,6 +383,7 @@ export default function App() {
       }
       setStatus(d);
       if (d.mode && !modeFocus.current) setMode(d.mode);
+      setFast(d.fast === "1");
     } catch (e) {}
   }, []);
 
@@ -698,6 +700,15 @@ export default function App() {
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
                   onOpenModels={() => setView("models")}
                   mode={mode}
+                  fast={fast}
+                  onFast={v => post("/api/project/settings",
+                      { project, fast: v }).then(d => {
+                    setToast(d.ok
+                      ? (v === "1" ? "Быстрый режим — модель на low effort"
+                                   : "Обычный режим")
+                      : "Ошибка: " + (d.error || "?"));
+                    if (d.ok) setFast(v === "1");
+                  }).catch(() => setToast("Сеть: не сохранил режим"))}
                   onMode={m => post("/api/project/settings",
                       { project, reply_mode: m }).then(d => {
                     setToast(d.ok
