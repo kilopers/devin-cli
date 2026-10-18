@@ -588,6 +588,24 @@ export default function App() {
                                  .then(() => refreshProjects())}
                              onSettings={p => setPSetOpen(p)} />
             )}
+            {wsInfo.ws.length > 1 && (
+              <Select size="small" value={wsInfo.active}
+                onChange={e => post("/api/ws/active", { id: e.target.value })
+                  .then(() => { loadWs(); refreshProjects(); })}
+                renderValue={v =>
+                  (wsInfo.ws.find(w => w.id === v) || {}).name || "…"}
+                sx={{ display: { xs: "none", md: "inline-flex" },
+                      height: 32, fontSize: 13, color: "#fff",
+                      ".MuiOutlinedInput-notchedOutline":
+                        { borderColor: "rgba(255,255,255,.4)" },
+                      "& .MuiSelect-icon":
+                        { color: "rgba(255,255,255,.8)" } }}>
+                {wsInfo.ws.map(w =>
+                  <MenuItem key={w.id} value={w.id}>
+                    <WsDot color={w.color} /> {w.name}
+                  </MenuItem>)}
+              </Select>
+            )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
               sx={{ display: { xs: "none", md: "block" }, opacity: .9,
