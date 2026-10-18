@@ -41,6 +41,9 @@ services:
       # Webhook mode: voice/text -> task in inbox, result -> back to the chat
       TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      # Deploy hook: POST <app>/deploy с Bearer-токеном → watchtower /v1/update
+      WATCHTOWER_HTTP_API_TOKEN: ${WATCHTOWER_HTTP_API_TOKEN:-}
+      WATCHTOWER_API_URL: ${WATCHTOWER_API_URL:-http://watchtower:8080}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       # Alternative STT provider (OpenAI-compatible API: OpenAI, Groq, …)
@@ -122,7 +125,13 @@ services:
       - /root/.docker/config.json:/config.json:ro
     environment:
       WATCHTOWER_LABEL_ENABLE: "true"
-    command: ["--interval", "300", "--cleanup"]
+      # HTTP API: POST /v1/update триггерит обновление мгновенно.
+      # Снаружи порт не публикуется — сюда проксирует само приложение
+      # (POST /deploy с Bearer <WATCHTOWER_HTTP_API_TOKEN>).
+      WATCHTOWER_HTTP_API_UPDATE: "true"
+      WATCHTOWER_HTTP_API_TOKEN: ${WATCHTOWER_HTTP_API_TOKEN:-}
+      WATCHTOWER_HTTP_API_PERIODIC_POLLS: "true"
+    command: ["--interval", "300", "--cleanup", "--http-api-update"]
 
   # One-time interactive login:  docker compose --profile auth run --rm auth
   auth:

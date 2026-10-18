@@ -68,6 +68,12 @@ PROJECTS_ROOT = Path(os.environ["DEVIN_PROJECTS_DIR"]) \
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TG_WEBHOOK_URL = os.environ.get("TELEGRAM_WEBHOOK_URL", "")
 TG_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+# Деплой-хук: POST /<DEPLOY_PATH> с Bearer <DEPLOY_TOKEN> → проброс в HTTP
+# API watchtower внутри compose-сети (он наружу не торчит).
+DEPLOY_TOKEN = os.environ.get(
+    "DEPLOY_TOKEN") or os.environ.get("WATCHTOWER_HTTP_API_TOKEN", "")
+WATCHTOWER_API_URL = os.environ.get(
+    "WATCHTOWER_API_URL", "http://watchtower:8080")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 # STT provider for voice messages: "gemini" or "openai" (OpenAI-compatible
@@ -3434,6 +3440,8 @@ def _webhook(_any: str = ""):
     # any POST to a non-/api path is the telegram webhook — robust against
     # whatever path prefix the reverse proxy preserves. Юзерские боты приходят
     # на <TG_WEBHOOK_URL>/bot/<uid>; токен бота — из настроек этого юзера.
+    if re.fullmatch(r"(?:.*/)?deploy/?", _any or ""):
+        return _deploy_hook()
     uid = None
     token = TG_TOKEN
     hdr = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
@@ -3470,6 +3478,28 @@ def _webhook(_any: str = ""):
     threading.Thread(target=_handle_ctx, args=(upd, uid, token),
                      daemon=True).start()
     return "", 200
+
+
+def _deploy_hook():
+    """POST /deploy (Bearer DEPLOY_TOKEN) → POST watchtower /v1/update."""
+    if not DEPLOY_TOKEN:
+        return "", 404
+    if request.headers.get("Authorization") != f"Bearer {DEPLOY_TOKEN}":
+        log(f"POST /deploy: bad token — 403")
+        return "", 403
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        r = urllib.request.Request(f"{WATCHTOWER_API_URL}/v1/update",
+                                   data=b"", method="POST",
+                                   headers={"Authorization":
+                                            f"Bearer {DEPLOY_TOKEN}"})
+        with opener.open(r, timeout=60) as res:
+            out = res.read()
+        log("deploy hook: watchtower update triggered")
+        return out, 200, {"Content-Type": "application/json"}
+    except Exception as e:
+        log(f"deploy hook failed: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 502
 
 
 def _handle_ctx(upd: dict, uid: str | None, token: str) -> None:

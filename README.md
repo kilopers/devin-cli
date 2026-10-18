@@ -361,6 +361,8 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 | `INTERVAL` | `60` | Период отправки, сек |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | — | Исходящий прокси для devin API и telegram; git всегда напрямую |
 | `TELEGRAM_WEBHOOK_URL` | — | Публичный URL — регистрируется setWebhook при старте |
+| `WATCHTOWER_HTTP_API_TOKEN` | — | Токен деплой-хука и API watchtower |
+| `WATCHTOWER_API_URL` | `http://watchtower:8080` | Адрес HTTP API watchtower |
 | `TELEGRAM_WEBHOOK_SECRET` | — | Секрет для проверки заголовка webhook |
 | `MYSQL_HOST` / `MYSQL_PORT` | `mysql` / `3306` | Хост БД — по умолчанию сервис `mysql` из compose; можно указать внешний |
 | `MYSQL_USER` / `MYSQL_PASSWORD` | `devin` / — | Пользователь и пароль (обязательны) |
@@ -464,3 +466,19 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   `GetCliModelConfigs` (remote config) через него не укладывался в таймаут.
   Со встроенным mihomo проблема ушла — пин снят, проверка:
   `devin -p "ping" --model adaptive --respect-workspace-trust false`.
+
+## Deploy hook (обновление по вебхуку)
+
+Watchtower умеет HTTP API (`/v1/update`), но его порт наружу не выставлен.
+Приложение проксирует: `POST https://<host>/deploy` с заголовком
+`Authorization: Bearer <WATCHTOWER_HTTP_API_TOKEN>` → watchtower `/v1/update`.
+Задай токен в `.env` (`WATCHTOWER_HTTP_API_TOKEN=...`) и в GitHub Actions
+(secret `WATCHTOWER_TOKEN`), шаг в конце workflow:
+
+```yaml
+- name: Обновить контейнеры
+  run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.WATCHTOWER_TOKEN }}" https://<host>/deploy
+```
+
+`WATCHTOWER_HTTP_API_PERIODIC_POLLS` оставляет и интервальный опрос — хук
+даёт мгновенный деплой, опрос остаётся страховкой.
