@@ -1908,10 +1908,15 @@ _BOT_COMMANDS = [
 
 
 def _bot_secret(token: str) -> str:
-    """Secret-token для вебхука: общий env-секрет, иначе хэш токена бота
-    (неугадываемый без токена)."""
+    """Secret-token вебхука основного бота: env-секрет или хэш токена."""
     return TG_WEBHOOK_SECRET or hashlib.sha256(
         ("wh:" + token).encode()).hexdigest()[:24]
+
+
+def _user_secret(token: str) -> str:
+    """Secret-token вебхука юзер-бота — ВСЕГДА хэш его токена. Прокси может
+    резать путь /bot/<uid>, поэтому маршрутизация идёт по secret_token."""
+    return hashlib.sha256(("wh:" + token).encode()).hexdigest()[:24]
 
 
 def _user_bots() -> dict:
@@ -1936,7 +1941,7 @@ def register_bot_webhook(uid: str, token: str) -> bool:
         return False
     try:
         tg_api("setWebhook", url=f"{TG_WEBHOOK_URL.rstrip('/')}/bot/{uid}",
-               secret_token=_bot_secret(token), _token=token)
+               secret_token=_user_secret(token), _token=token)
         tg_api("setMyCommands", commands=_BOT_COMMANDS, _token=token)
         log(f"user bot webhook registered: {TG_WEBHOOK_URL}/bot/{uid}")
         return True
@@ -3422,6 +3427,7 @@ def _webhook(_any: str = ""):
     # на <TG_WEBHOOK_URL>/bot/<uid>; токен бота — из настроек этого юзера.
     uid = None
     token = TG_TOKEN
+    hdr = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     m = re.search(r"(?:^|/)bot/([A-Za-z0-9_-]+)/?$", _any)
     if m:
         uid = m.group(1)
@@ -3429,9 +3435,19 @@ def _webhook(_any: str = ""):
         if not token:
             log(f"POST /{_any}: no bot token for {uid}, ignored")
             return "", 200
-    expected = _bot_secret(token) if (uid or TG_WEBHOOK_SECRET) else ""
-    if expected and request.headers.get(
-            "X-Telegram-Bot-Api-Secret-Token") != expected:
+    elif hdr:
+        # прокси мог срезать /bot/<uid> — находим бота по secret_token
+        for u, tok in _user_bots().items():
+            if hdr == _user_secret(tok):
+                uid, token = u, tok
+                break
+    if uid:
+        expected = _user_secret(token)
+    elif TG_WEBHOOK_SECRET:
+        expected = _bot_secret(token)
+    else:
+        expected = ""
+    if expected and hdr != expected:
         log(f"POST /{_any}: bad webhook secret — 403")
         return "", 403
     body = request.get_data()
