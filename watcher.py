@@ -1089,11 +1089,12 @@ def _load_json(path: Path) -> dict:
 
 def enqueue_task(text: str, chat_id: int | None = None,
                  project: str | None = None, prefix: str = "tg") -> str:
-    stem = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}" \
-           f"-{(int(time.time() * 1000) % 100000):05d}"
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
     scope = source if source in ("web", "telegram") else ""
     proj = project or (current_project(scope)[0] if multi_mode() else None)
+    pname = re.sub(r"[^a-z0-9_-]+", "-",
+                   (proj or "job").lower()).strip("-") or "job"
+    stem = f"{prefix}-{pname}-{time.strftime('%m%d-%H%M%S')}"
     model = pj_get(proj, "model") if proj else ""
     model = model or current_model(scope)
     rmode = pj_get(proj, "reply_mode") if proj else ""
