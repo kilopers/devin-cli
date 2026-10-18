@@ -1062,8 +1062,6 @@ def enqueue_task(text: str, chat_id: int | None = None,
     proj = project or (current_project(scope)[0] if multi_mode() else None)
     model = pj_get(proj, "model") if proj else ""
     model = model or current_model(scope)
-    if proj and pj_get(proj, "fast") == "1":
-        model = re.sub(r"-(medium|high|xhigh|max)$", "-low", model)
     rmode = pj_get(proj, "reply_mode") if proj else ""
     rmode = rmode or reply_mode(scope)
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
@@ -1161,8 +1159,9 @@ def current_project(scope: str = "telegram") -> tuple:
     """
     if not multi_mode():
         return None, WORKDIR
-    name = kv_get("project_web" if scope == "web" else "project")
-    if not name and scope == "web":
+    if scope == "web":
+        name = kv_get(f"project_web:{_current_user()}")             or kv_get("project_web") or kv_get("project")
+    else:
         name = kv_get("project")
     if name and (PROJECTS_ROOT / name).is_dir():
         return name, PROJECTS_ROOT / name
@@ -1170,7 +1169,8 @@ def current_project(scope: str = "telegram") -> tuple:
 
 
 def set_project(name: str, scope: str = "telegram") -> None:
-    kv_set("project_web" if scope == "web" else "project", name)
+    kv_set(f"project_web:{_current_user()}" if scope == "web"
+           else "project", name)
     log(f"project switched to {name} (scope {scope})")
 
 
@@ -1895,14 +1895,23 @@ def api_status() -> dict:
         "tasks_done": STATE["tasks_done"],
         "model": current_model("web"),
         "project": project_label(),
-        "mode": pj_get(current_project("web")[0] or "", "reply_mode")
+        "mode": pj_get(_web_current(_current_user()) or "", "reply_mode")
                 or reply_mode("web"),
-        "fast": pj_get(current_project("web")[0] or "", "fast") or "0",
+        "fast": pj_get(_web_current(_current_user()) or "", "fast") or "0",
         "stt_status": STATE.get("stt") or "",
         "version": APP_VERSION,
         "user": _current_user() if _admin_hash() else "",
         "is_admin": _is_admin(),
     }
+
+
+def _web_current(user: str) -> str | None:
+    """Проект, реально показанный выбранным в вебе: сохранённый, если он в
+    активном пространстве, иначе первый из списка (как в api_projects)."""
+    wid = _active_ws(user)
+    mine = [p for p in _user_projects(user) if _project_ws(user, p) == wid]
+    cur = current_project("web")[0]
+    return cur if cur in mine else (mine[0] if mine else None)
 
 
 def api_projects() -> dict:
@@ -1911,7 +1920,7 @@ def api_projects() -> dict:
     wid = _active_ws(u)
     # только проекты активного пространства; wsmap — цвета точек в селекте
     mine = [p for p in visible if _project_ws(u, p) == wid]
-    cur = current_project("web")[0]
+    cur = _web_current(u)
     return {"projects": mine,
             "wsmap": {p: _project_ws(u, p) for p in visible},
             "current": cur if cur in mine else (mine[0] if mine else None),

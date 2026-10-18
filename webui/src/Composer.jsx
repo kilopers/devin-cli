@@ -75,19 +75,22 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
   const [lastAudio, setLastAudio] = useState(null);  // failed WAV → retry
+  const textRef = useRef("");
+  textRef.current = text;
 
-  const send = async () => {
-    const t = text.trim();
-    if (!t) return;
+  const sendText = async raw => {
+    const s = raw.trim();
+    if (!s) return;
     setBusy(true);
     try {
       const d = await post("/api/tasks", {
-        project: project === "workspace" ? null : project, text: t });
+        project: project === "workspace" ? null : project, text: s });
       if (d.ok) { setText(""); onSent?.(); }
       else toast("Ошибка: " + (d.error || "?"));
     } catch (e) { toast("Сеть: " + e); }
     setBusy(false);
   };
+  const send = () => sendText(textRef.current);
 
   const stopRec = async r => {
     recRef.current = null;
@@ -112,8 +115,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
         headers: { "Content-Type": "application/octet-stream" },
         body: wav })).json();
       if (d.ok && d.text.trim()) {
-        setText(prev => (prev ? prev.replace(/\s+$/, "") + " " : "") +
-                        d.text.trim());
+        const merged = (textRef.current
+                        ? textRef.current.replace(/\s+$/, "") + " "
+                        : "") + d.text.trim();
+        if (fast) sendText(merged);          // быстрый: сразу в работу
+        else setText(merged);
         setLastAudio(null);
       } else {
         toast(d.ok ? "Ничего не распознано"
