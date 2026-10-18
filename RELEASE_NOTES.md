@@ -1,5 +1,9 @@
 # Release notes
 
+## 1.0.24
+- Deploy hook отвечает 202 сразу: вызов watchtower ушёл в фоновый тред с
+  ретраями — иначе watchtower убивал контейнер до ответа и Actions видел 502.
+
 ## 1.0.23
 - Тестовый бамп: проверка deploy hook Actions → watchtower.
 

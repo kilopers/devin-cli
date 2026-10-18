@@ -3496,19 +3496,27 @@ def _deploy_hook():
     if request.headers.get("Authorization") != f"Bearer {DEPLOY_TOKEN}":
         log(f"POST /deploy: bad token — 403")
         return "", 403
+    # в фоне: watchtower пересоздаст ЭТОТ контейнер — ответить надо до смерти
+    threading.Thread(target=_wt_update, daemon=True).start()
+    return jsonify({"ok": True, "update": "triggered"}), 202
+
+
+def _wt_update() -> None:
+    """Проброс в watchtower /v1/update с ретраями (он может быть занят
+    пересозданием другого контейнера или самого себя)."""
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    try:
-        r = urllib.request.Request(f"{WATCHTOWER_API_URL}/v1/update",
-                                   data=b"", method="POST",
-                                   headers={"Authorization":
-                                            f"Bearer {DEPLOY_TOKEN}"})
-        with opener.open(r, timeout=60) as res:
-            out = res.read()
-        log("deploy hook: watchtower update triggered")
-        return out, 200, {"Content-Type": "application/json"}
-    except Exception as e:
-        log(f"deploy hook failed: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 502
+    for attempt in range(1, 4):
+        try:
+            r = urllib.request.Request(
+                f"{WATCHTOWER_API_URL}/v1/update", data=b"", method="POST",
+                headers={"Authorization": f"Bearer {DEPLOY_TOKEN}"})
+            with opener.open(r, timeout=60):
+                pass
+            log("deploy hook: watchtower update triggered")
+            return
+        except Exception as e:
+            log(f"deploy hook attempt {attempt}: {e}")
+            time.sleep(5)
 
 
 def _handle_ctx(upd: dict, uid: str | None, token: str) -> None:
