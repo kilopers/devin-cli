@@ -1110,18 +1110,21 @@ def enqueue_task(text: str, chat_id: int | None = None,
     proj = project or (current_project(scope)[0] if multi_mode() else None)
     pname = re.sub(r"[^a-z0-9_-]+", "-",
                    (proj or "job").lower()).strip("-") or "job"
-    stem = f"{prefix}-{pname}-{time.strftime('%m%d-%H%M%S')}"
-    model = pj_get(proj, "model") if proj else ""
-    model = model or current_model(scope)
-    rmode = pj_get(proj, "reply_mode") if proj else ""
-    rmode = rmode or reply_mode(scope)
     if scope == "web":
         author = _current_user()
     elif chat_id:
         author = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
     else:
         author = WEB_ADMIN_USER
-    bot = getattr(_tg_tls, "token", "") or         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
+    aname = re.sub(r"[^a-z0-9_-]+", "-",
+                   author.lower()).strip("-") or "user"
+    stem = f"{prefix}-{pname}-{aname}-{time.strftime('%m%d-%H%M%S')}"
+    model = pj_get(proj, "model") if proj else ""
+    model = model or current_model(scope)
+    rmode = pj_get(proj, "reply_mode") if proj else ""
+    rmode = rmode or reply_mode(scope)
+    bot = getattr(_tg_tls, "token", "") or \
+        (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
                  rmode, author, bot)
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "

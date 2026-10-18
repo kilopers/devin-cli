@@ -34,6 +34,21 @@ except OSError:
     _ver = ""
 if _ver:
     TEXT = f"{TEXT} ({_ver})"
+
+# краткая сводка по версии из RELEASE_NOTES.md — секция "## <версия>"
+try:
+    _notes = open(os.environ.get(
+        "RELEASE_NOTES_FILE", "/app/RELEASE_NOTES.md")).read()
+    _sec = re.search(
+        rf"^##\s+{re.escape(_ver)}\s*\n(.*?)(?=^##\s|\Z)",
+        _notes, re.M | re.S)
+    if _sec:
+        _items = [l for l in _sec.group(1).strip().splitlines()
+                  if l.strip()][:6]
+        if _items:
+            TEXT += "\n\nЧто нового:\n" + "\n".join(_items)
+except OSError:
+    pass
 INTERVAL = int(os.environ.get("INTERVAL", "60"))
 PROXY = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 
