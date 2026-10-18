@@ -266,7 +266,8 @@ def init_db() -> None:
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     for col, ddl in (("model", "model VARCHAR(80) NULL"),
                      ("reply_mode", "reply_mode VARCHAR(8) NULL"),
-                     ("user", "user VARCHAR(64) NULL")):
+                     ("user", "user VARCHAR(64) NULL"),
+                     ("bot", "bot VARCHAR(80) NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -285,13 +286,14 @@ def _insert_task(stem: str, prompt: str, source: str,
                  project: str | None, chat_id, created: float,
                  model: str | None = None,
                  reply_mode: str | None = None,
-                 user: str | None = None) -> None:
+                 user: str | None = None,
+                 bot: str | None = None) -> None:
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
-            " model, reply_mode, user, created) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            " model, reply_mode, user, bot, created) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
             (stem, source, project, chat_id, prompt, model, reply_mode,
-             user, created))
+             user, bot, created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -711,13 +713,26 @@ def ensure_repo() -> None:
 
 # --- telegram / gemini -------------------------------------------------------
 
+_tg_tls = threading.local()  # токен бота, обслуживающего текущий апдейт
+
+
+def _chat_token(chat_id) -> str:
+    """Токен бота для чата: per-user бот из карты tg_bot:<chat_id>, иначе
+    токен из TLS (тред вебхука), иначе основной env-бот."""
+    t = getattr(_tg_tls, "token", "")
+    if not t and chat_id:
+        t = kv_get(f"tg_bot:{chat_id}")
+    return t or TG_TOKEN
+
+
 def tg_api(method: str, **params) -> dict:
+    token = params.pop("_token", None) or _chat_token(params.get("chat_id"))
     shown = {k: ("***" if k == "secret_token" else str(v)[:120])
              for k, v in params.items()}
     log(f"tg -> {method} {shown}")
     data = json.dumps(params).encode()
     req = urllib.request.Request(
-        f"https://api.telegram.org/bot{TG_TOKEN}/{method}",
+        f"https://api.telegram.org/bot{token}/{method}",
         data=data, headers={"Content-Type": "application/json"},
     )
     try:
@@ -731,7 +746,7 @@ def tg_api(method: str, **params) -> dict:
     return res
 
 
-def tg_send(chat_id: int, text: str) -> None:
+def tg_send(chat_id: int, text: str, token: str | None = None) -> None:
     """sendMessage, splitting into <=4000-char chunks, max 5 messages."""
     chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)][:5]
     if len(text) > 20000:
@@ -739,14 +754,15 @@ def tg_send(chat_id: int, text: str) -> None:
     log(f"reply to chat {chat_id}: {len(chunks)} message(s), {len(text)} chars")
     for chunk in chunks:
         try:
-            tg_api("sendMessage", chat_id=chat_id, text=chunk)
+            tg_api("sendMessage", chat_id=chat_id, text=chunk,
+                   _token=token)
         except Exception as e:
             log(f"telegram sendMessage error: {e}")
 
 
 def tg_download(file_id: str) -> bytes:
     file_path = tg_api("getFile", file_id=file_id)["result"]["file_path"]
-    url = f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}"
+    url = f"https://api.telegram.org/file/bot{_chat_token(None)}/{file_path}"
     log(f"downloading voice file {file_path}")
     with TG_OPENER.open(url, timeout=60) as r:
         data = r.read()
@@ -1099,9 +1115,15 @@ def enqueue_task(text: str, chat_id: int | None = None,
     model = model or current_model(scope)
     rmode = pj_get(proj, "reply_mode") if proj else ""
     rmode = rmode or reply_mode(scope)
-    author = _current_user() if scope == "web" else WEB_ADMIN_USER
+    if scope == "web":
+        author = _current_user()
+    elif chat_id:
+        author = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+    else:
+        author = WEB_ADMIN_USER
+    bot = getattr(_tg_tls, "token", "") or         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
-                 rmode, author)
+                 rmode, author, bot)
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
         f"project={proj}, model={model}, mode={rmode}")
     return _task_name(stem)
@@ -1774,7 +1796,7 @@ def handle_callback(cb: dict) -> None:
     tg_api("answerCallbackQuery", callback_query_id=cb_id)
 
 
-def handle_update(upd: dict) -> None:
+def handle_update(upd: dict, actor: str | None = None) -> None:
     if cb := upd.get("callback_query"):
         try:
             handle_callback(cb)
@@ -1788,11 +1810,14 @@ def handle_update(upd: dict) -> None:
     if not chat_id:
         log(f"update ignored (no chat): {json.dumps(upd)[:200]}")
         return
+    actor = actor or WEB_ADMIN_USER
+    kv_set(f"tg_user:{chat_id}", actor)
+    kv_set(f"tg_bot:{chat_id}", _tg_tls.token or TG_TOKEN)
     try:
         if voice := msg.get("voice"):
             log(f"voice from @{sender} chat={chat_id}, {voice.get('duration', '?')}s")
-            chain = _stt_chain(WEB_ADMIN_USER)
-            if not any(_stt_ready(p, WEB_ADMIN_USER) for p in chain):
+            chain = _stt_chain(actor)
+            if not any(_stt_ready(p, actor) for p in chain):
                 tg_send(chat_id, "voice received, but no STT provider "
                                  "keys are set")
                 return
@@ -1820,7 +1845,7 @@ def handle_update(upd: dict) -> None:
                     pass
 
             text = transcribe(tg_download(voice["file_id"]),
-                              on_status=_st, duration=dur)
+                              on_status=_st, duration=dur, user=actor)
             pid, entry = _pending_for_chat(chat_id)
             if pid:
                 _add_to_pending(chat_id, pid, entry, text)
@@ -1868,7 +1893,56 @@ def notify_chat(task_stem: str, response_text: str) -> None:
         log(f"no chat mapping for {task_stem} — result not sent to telegram")
         return
     log(f"delivering result of {task_stem} to chat {chat_id}")
-    tg_send(chat_id, response_text)
+    tg_send(chat_id, response_text, token=row.get("bot") or None)
+
+
+_BOT_COMMANDS = [
+    {"command": "menu", "description": "меню бота"},
+    {"command": "projects", "description": "выбор проекта"},
+    {"command": "models", "description": "выбор модели"},
+    {"command": "session", "description": "режим сессий"},
+    {"command": "stop", "description": "убить текущую задачу"},
+    {"command": "mode", "description": "код или ответ на вопрос"},
+    {"command": "status", "description": "статус воркера"},
+]
+
+
+def _bot_secret(token: str) -> str:
+    """Secret-token для вебхука: общий env-секрет, иначе хэш токена бота
+    (неугадываемый без токена)."""
+    return TG_WEBHOOK_SECRET or hashlib.sha256(
+        ("wh:" + token).encode()).hexdigest()[:24]
+
+
+def _user_bots() -> dict:
+    """{uid: token} — per-user TG-боты из настроек, кроме дубля основного."""
+    out = {}
+    try:
+        users = [WEB_ADMIN_USER] + [r["username"] for r in db_query(
+            "SELECT username FROM users")]
+    except Exception:
+        users = [WEB_ADMIN_USER]
+    for u in users:
+        tok = us_get(u, "telegram.bot_token")
+        if tok and tok != TG_TOKEN:
+            out[u] = tok
+    return out
+
+
+def register_bot_webhook(uid: str, token: str) -> bool:
+    """setWebhook + setMyCommands для бота юзера на /bot/<uid>."""
+    if not TG_WEBHOOK_URL:
+        log("no TELEGRAM_WEBHOOK_URL — user bot webhooks skipped")
+        return False
+    try:
+        tg_api("setWebhook", url=f"{TG_WEBHOOK_URL.rstrip('/')}/bot/{uid}",
+               secret_token=_bot_secret(token), _token=token)
+        tg_api("setMyCommands", commands=_BOT_COMMANDS, _token=token)
+        log(f"user bot webhook registered: {TG_WEBHOOK_URL}/bot/{uid}")
+        return True
+    except Exception as e:
+        log(f"user bot webhook for {uid} failed: {e}")
+        return False
 
 
 def register_webhook() -> None:
@@ -1886,6 +1960,8 @@ def register_webhook() -> None:
                 f"(pending updates: {info.get('pending_update_count', 0)})")
     except Exception as e:
         log(f"setWebhook failed: {e}")
+    for uid, tok in _user_bots().items():
+        register_bot_webhook(uid, tok)
 
 
 def register_commands() -> None:
@@ -1893,15 +1969,7 @@ def register_commands() -> None:
     if not TG_TOKEN:
         return
     try:
-        tg_api("setMyCommands", commands=[
-            {"command": "menu", "description": "меню бота"},
-            {"command": "projects", "description": "выбор проекта"},
-            {"command": "models", "description": "выбор модели"},
-            {"command": "session", "description": "режим сессий"},
-            {"command": "stop", "description": "убить текущую задачу"},
-            {"command": "mode", "description": "код или ответ на вопрос"},
-            {"command": "status", "description": "статус воркера"},
-        ])
+        tg_api("setMyCommands", commands=_BOT_COMMANDS)
         log("telegram commands registered (menu button)")
     except Exception as e:
         log(f"setMyCommands failed: {e}")
@@ -2642,11 +2710,21 @@ def _api_settings_set():
     clear: [key…]."""
     body = _req_json()
     u = _current_user()
+    old_tg = us_get(u, "telegram.bot_token")
     for k in body.get("clear") or []:
         us_set(u, k, "")
     for k, l, s, h, e in SETTING_FIELDS:
         if k in body and isinstance(body[k], str) and body[k] != "":
             us_set(u, k, body[k])
+    new_tg = us_get(u, "telegram.bot_token")
+    if new_tg != old_tg:
+        if old_tg:
+            try:    # снять вебхук со старого токена
+                tg_api("deleteWebhook", _token=old_tg)
+            except Exception as e:
+                log(f"deleteWebhook for old bot of {u}: {e}")
+        if new_tg:
+            register_bot_webhook(u, new_tg)
     return jsonify({"ok": True})
 
 
@@ -3340,10 +3418,20 @@ def _index():
 @app.post("/<path:_any>")
 def _webhook(_any: str = ""):
     # any POST to a non-/api path is the telegram webhook — robust against
-    # whatever path prefix the reverse proxy preserves; secret-token check
-    if TG_WEBHOOK_SECRET and \
-            request.headers.get("X-Telegram-Bot-Api-Secret-Token") \
-            != TG_WEBHOOK_SECRET:
+    # whatever path prefix the reverse proxy preserves. Юзерские боты приходят
+    # на <TG_WEBHOOK_URL>/bot/<uid>; токен бота — из настроек этого юзера.
+    uid = None
+    token = TG_TOKEN
+    m = re.search(r"(?:^|/)bot/([A-Za-z0-9_-]+)/?$", _any)
+    if m:
+        uid = m.group(1)
+        token = us_get(uid, "telegram.bot_token")
+        if not token:
+            log(f"POST /{_any}: no bot token for {uid}, ignored")
+            return "", 200
+    expected = _bot_secret(token) if (uid or TG_WEBHOOK_SECRET) else ""
+    if expected and request.headers.get(
+            "X-Telegram-Bot-Api-Secret-Token") != expected:
         log(f"POST /{_any}: bad webhook secret — 403")
         return "", 403
     body = request.get_data()
@@ -3352,9 +3440,18 @@ def _webhook(_any: str = ""):
     except ValueError:
         log(f"POST /{_any}: bad JSON ({len(body)} bytes), ignored")
         return "", 200
-    log(f"POST /{_any}: update_id={upd.get('update_id')}, {len(body)} bytes")
-    threading.Thread(target=handle_update, args=(upd,), daemon=True).start()
+    log(f"POST /{_any}: update_id={upd.get('update_id')}, "
+        f"{len(body)} bytes" + (f", bot of {uid}" if uid else ""))
+    threading.Thread(target=_handle_ctx, args=(upd, uid, token),
+                     daemon=True).start()
     return "", 200
+
+
+def _handle_ctx(upd: dict, uid: str | None, token: str) -> None:
+    """Контекст треда вебхука: токен бота в TLS (все tg_* ответы пойдут
+    от него) + привязка чата к юзеру/боту в kv для асинхронных ответов."""
+    _tg_tls.token = token or ""
+    handle_update(upd, actor=uid)
 
 
 def _legacy_status_page() -> str:
