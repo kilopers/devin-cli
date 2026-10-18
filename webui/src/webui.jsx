@@ -710,9 +710,12 @@ export default function App() {
                 <RefreshIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Box>
-            <FileTree key={project + ":" + treeVer}
-                      project={project} onError={setToast}
-                      onOpenFile={setEditPath} />
+            <Box sx={{ maxHeight: "60vh", display: "flex",
+                       flexDirection: "column", minHeight: 0 }}>
+              <FileTree key={project + ":" + treeVer}
+                        project={project} onError={setToast}
+                        onOpenFile={setEditPath} />
+            </Box>
             <Divider />
             <Changes project={project} toast={setToast} />
           </Paper>
