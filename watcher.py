@@ -265,7 +265,8 @@ def init_db() -> None:
         PRIMARY KEY (user, name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     for col, ddl in (("model", "model VARCHAR(80) NULL"),
-                     ("reply_mode", "reply_mode VARCHAR(8) NULL")):
+                     ("reply_mode", "reply_mode VARCHAR(8) NULL"),
+                     ("user", "user VARCHAR(64) NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -283,12 +284,14 @@ def _task_name(stem: str) -> str:
 def _insert_task(stem: str, prompt: str, source: str,
                  project: str | None, chat_id, created: float,
                  model: str | None = None,
-                 reply_mode: str | None = None) -> None:
+                 reply_mode: str | None = None,
+                 user: str | None = None) -> None:
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
-            " model, reply_mode, created) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            " model, reply_mode, user, created) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
             (stem, source, project, chat_id, prompt, model, reply_mode,
-             created))
+             user, created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -571,7 +574,8 @@ def run_task(task: dict) -> None:
     started_ts = time.time()
     tproj = task.get("project")
     # владелец проекта = чьи креды/настройки идут в задачу
-    task_user = _project_owner(tproj) if tproj else WEB_ADMIN_USER
+    task_user = task.get("user") or _project_owner(tproj) \
+        or WEB_ADMIN_USER
     if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
         workdir = PROJECTS_ROOT / tproj
     else:
@@ -1094,8 +1098,9 @@ def enqueue_task(text: str, chat_id: int | None = None,
     model = model or current_model(scope)
     rmode = pj_get(proj, "reply_mode") if proj else ""
     rmode = rmode or reply_mode(scope)
+    author = _current_user() if scope == "web" else WEB_ADMIN_USER
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
-                 rmode)
+                 rmode, author)
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
         f"project={proj}, model={model}, mode={rmode}")
     return _task_name(stem)
