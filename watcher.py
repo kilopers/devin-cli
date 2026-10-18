@@ -3504,6 +3504,9 @@ def _deploy_hook():
 def _wt_update() -> None:
     """Проброс в watchtower /v1/update с ретраями (он может быть занят
     пересозданием другого контейнера или самого себя)."""
+    # пауза — ответ 202 должен уйти до того, как watchtower начнёт
+    # пересоздавать этот контейнер, иначе клиент видит 502
+    time.sleep(4)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for attempt in range(1, 4):
         try:
