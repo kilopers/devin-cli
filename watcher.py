@@ -600,34 +600,64 @@ def run_task(task: dict) -> None:
     chat_id = task.get("chat_id")
     out_path = progress_dir / f"{stem}.out"
     global _task_proc
-    try:
-        # stdout+stderr go to a file the progress thread tails — devin -p
-        # prints as it goes, so this gives live output for free.
-        # start_new_session: own process group, so telegram /stop kills the
-        # whole tree (devin-task -> devin -> its children), not just the shell
-        out_f = open(out_path, "w", errors="replace")
-        _task_proc = subprocess.Popen(
-            [DEVIN_TASK], env=env,
-            stdout=out_f, stderr=subprocess.STDOUT,
-            text=True, start_new_session=True,
-        )
-        if chat_id:
-            threading.Thread(
-                target=progress_loop, daemon=True,
-                args=(chat_id, export_path, out_path,
-                      _task_proc, started_ts)).start()
+
+    def _run_once(env2: dict) -> tuple:
+        """Один прогон devin-task: вывод в .progress/<stem>.out,
+        возвращает (status, body)."""
+        global _task_proc
         try:
-            _task_proc.wait(timeout=TASK_TIMEOUT)
-            status = f"exit code: {_task_proc.returncode}"
-        except subprocess.TimeoutExpired:
-            kill_task()
-            _task_proc.wait()
-            status = f"TIMEOUT after {TASK_TIMEOUT}s"
-        out_f.close()
-        body = out_path.read_text(errors="replace") \
-            if out_path.exists() else ""
-    finally:
-        _task_proc = None
+            # stdout+stderr go to a file the progress thread tails —
+            # devin -p prints as it goes, so this gives live output for
+            # free. start_new_session: own process group, so telegram
+            # /stop kills the whole tree (devin-task -> devin -> children)
+            out_f = open(out_path, "w", errors="replace")
+            _task_proc = subprocess.Popen(
+                [DEVIN_TASK], env=env2,
+                stdout=out_f, stderr=subprocess.STDOUT,
+                text=True, start_new_session=True,
+            )
+            if chat_id:
+                threading.Thread(
+                    target=progress_loop, daemon=True,
+                    args=(chat_id, export_path, out_path,
+                          _task_proc, started_ts)).start()
+            try:
+                _task_proc.wait(timeout=TASK_TIMEOUT)
+                st = f"exit code: {_task_proc.returncode}"
+            except subprocess.TimeoutExpired:
+                kill_task()
+                _task_proc.wait()
+                st = f"TIMEOUT after {TASK_TIMEOUT}s"
+            out_f.close()
+            return st, (out_path.read_text(errors="replace")
+                        if out_path.exists() else "")
+        finally:
+            _task_proc = None
+
+    status, body = _run_once(env)
+
+    # Ключ devin.api_key юзера может быть протухшим/обрезанным — CLI тогда
+    # падает на загрузке team settings («Invalid token»). Повторяем один
+    # раз с дефолтным ключом (env → credentials.toml), чтобы задача не
+    # умирала из-за чужого креда.
+    user_key = us_get(task_user, "devin.api_key")
+    default_key = os.environ.get("WINDSURF_API_KEY", "")
+    auth_bad = ("Invalid token" in body
+                or "failed to get primary API key" in body
+                or "failed to validate Devin token" in body)
+    if auth_bad and user_key and user_key != default_key:
+        log(f"{name}: devin.api_key юзера {task_user} отклонён, "
+            "повторяю с дефолтным ключом")
+        env2 = dict(env)
+        if default_key:
+            env2["WINDSURF_API_KEY"] = default_key
+        else:
+            env2.pop("WINDSURF_API_KEY", None)  # credentials.toml
+        note = (f"⚠️ devin.api_key юзера {task_user} не прошёл валидацию "
+                "(Invalid token) — задача перезапущена с ключом "
+                "по умолчанию. Обнови ключ в «Настройках».\n\n")
+        status, body = _run_once(env2)
+        body = note + body
 
     db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
             " finished=%s WHERE stem=%s", (body, status, time.time(), stem))
