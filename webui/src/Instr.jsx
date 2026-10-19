@@ -127,7 +127,12 @@ export default function Instr({ project, open, onToggle, toast }) {
     </Collapse>
 
     <Dialog open={!!view} onClose={() => setView(null)}
-            fullWidth maxWidth="sm">
+            fullWidth maxWidth="sm"
+            PaperProps={{ sx: {
+              // на мобильной — почти во всю ширину экрана
+              m: { xs: "4px", md: "32px" },
+              width: { xs: "calc(100vw - 8px)", md: "auto" },
+              maxWidth: { xs: "calc(100vw - 8px)", md: "sm" } } }}>
       <DialogTitle sx={{ fontSize: 16,
                          p: { xs: "12px 12px 4px", md: "16px 24px" } }}>
         {view?.kind === "system" ? "Системная инструкция"
