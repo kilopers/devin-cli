@@ -2731,7 +2731,7 @@ def _api_project_settings_set():
     if isinstance(body.get("panel"), dict):
         us_set(_current_user(), f"panel:{p}", json.dumps(
             {k: bool(v) for k, v in body["panel"].items()
-             if k in ("files", "changes", "builds", "hooks")}))
+             if k in ("files", "changes", "builds", "hooks", "ws")}))
     return jsonify({"ok": True})
 
 

@@ -315,7 +315,8 @@ export default function App() {
   const [mode, setMode] = useState("code");
   const [fast, setFast] = useState(false);
   const [panels, setPanels] = useState({ files: true, changes: true,
-                                        builds: true, hooks: true });
+                                        builds: true, hooks: true,
+                                        ws: true });
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -360,7 +361,10 @@ export default function App() {
       const d = await apiJson("/api/tasks?project=" +
         encodeURIComponent(p) + "&limit=5");
       setFeed(m => {
-        const n = new Map(m);
+        // выкидываем задачи чужих проектов — ответ опроса за старый
+        // проект мог прилететь уже после переключения ws и висеть вечно
+        const n = new Map([...m].filter(
+          ([, t]) => !t.project || t.project === p));
         // keep object identity for unchanged tasks (h = server-side
         // content hash) — React.memo(TaskCard) then skips re-render and
         // the feed stops flickering on identical polls
@@ -457,12 +461,17 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     setPanels({ files: true, changes: true, builds: true,
-                hooks: true });
+                hooks: true, ws: true });
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
       .then(d => { if (d.ok && d.panel)
         setPanels(s => ({ ...s, ...d.panel })); })
       .catch(() => {});
   }, [project]);
+
+  const switchWs = id =>
+    post("/api/ws/active", { id })
+      .then(() => { loadWs(); refreshProjects(); })
+      .catch(() => setToast("Сеть: не переключил пространство"));
 
   const togglePanel = k => setPanels(s => {
     const n = { ...s, [k]: !s[k] };
@@ -602,6 +611,27 @@ export default function App() {
                open={panels.changes} onToggle={() => togglePanel("changes")}
                bOpen={panels.builds} onToggleB={() => togglePanel("builds")} />
       <Divider />
+      <Panel title="Пространства" open={panels.ws}
+             onToggle={() => togglePanel("ws")}
+             icon={<WorkspacesIcon sx={{ fontSize: 16, ml: 0.5 }} />}
+             chip={<Chip size="small" label={wsInfo.ws.length}
+                         sx={{ ml: 1, height: 18, fontSize: 11 }} />}>
+        <Box>
+          {wsInfo.ws.map(w =>
+            <ListItemButton key={w.id} dense
+                            selected={w.id === wsInfo.active}
+                            onClick={() =>
+                              w.id !== wsInfo.active && switchWs(w.id)}
+                            sx={{ px: 1.5, py: 0.3 }}>
+              <WsDot color={w.color} />
+              <Typography variant="body2" noWrap
+                          sx={{ ml: 0.7, fontSize: 12.5 }}>
+                {w.name}
+              </Typography>
+            </ListItemButton>)}
+        </Box>
+      </Panel>
+      <Divider />
       <Webhooks project={project} open={panels.hooks}
                 onToggle={() => togglePanel("hooks")} />
       <Divider />
@@ -646,24 +676,6 @@ export default function App() {
                                     { project: p, ws: id })
                                  .then(() => refreshProjects())}
                              onSettings={p => setPSetOpen(p)} />
-            )}
-            {wsInfo.ws.length > 1 && (
-              <Select size="small" value={wsInfo.active}
-                onChange={e => post("/api/ws/active", { id: e.target.value })
-                  .then(() => { loadWs(); refreshProjects(); })}
-                renderValue={v =>
-                  (wsInfo.ws.find(w => w.id === v) || {}).name || "…"}
-                sx={{ display: { xs: "none", md: "inline-flex" },
-                      height: 32, fontSize: 13, color: "#fff",
-                      ".MuiOutlinedInput-notchedOutline":
-                        { borderColor: "rgba(255,255,255,.4)" },
-                      "& .MuiSelect-icon":
-                        { color: "rgba(255,255,255,.8)" } }}>
-                {wsInfo.ws.map(w =>
-                  <MenuItem key={w.id} value={w.id}>
-                    <WsDot color={w.color} /> {w.name}
-                  </MenuItem>)}
-              </Select>
             )}
             {multiMode && (
               <Button size="small" variant="outlined" color="inherit"
@@ -800,6 +812,27 @@ export default function App() {
                      bOpen={panels.builds}
                      onToggleB={() => togglePanel("builds")} />
             <Divider />
+            <Panel title="Пространства" open={panels.ws}
+                   onToggle={() => togglePanel("ws")}
+                   icon={<WorkspacesIcon sx={{ fontSize: 16, ml: 0.5 }} />}
+                   chip={<Chip size="small" label={wsInfo.ws.length}
+                                     sx={{ ml: 1, height: 18, fontSize: 11 }} />}>
+              <Box>
+                {wsInfo.ws.map(w =>
+                  <ListItemButton key={w.id} dense
+                                        selected={w.id === wsInfo.active}
+                                        onClick={() =>
+                                          w.id !== wsInfo.active && switchWs(w.id)}
+                                        sx={{ px: 1.5, py: 0.3 }}>
+                    <WsDot color={w.color} />
+                    <Typography variant="body2" noWrap
+                                      sx={{ ml: 0.7, fontSize: 12.5 }}>
+                      {w.name}
+                    </Typography>
+                  </ListItemButton>)}
+              </Box>
+            </Panel>
+      <Divider />
             <Webhooks project={project} open={panels.hooks}
                       onToggle={() => togglePanel("hooks")} />
           </Paper>
