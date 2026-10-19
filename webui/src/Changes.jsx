@@ -18,6 +18,9 @@ import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import CallMergeIcon from "@mui/icons-material/CallMerge";
+import DifferenceIcon from "@mui/icons-material/Difference";
+import BuildCircleIcon from "@mui/icons-material/BuildCircle";
+import WebhookIcon from "@mui/icons-material/Webhook";
 import CircularProgress from "@mui/material/CircularProgress";
 import Popover from "@mui/material/Popover";
 import Tooltip from "@mui/material/Tooltip";
@@ -131,6 +134,7 @@ function BuildsPanel({ build, open, onToggle, project }) {
                       sx={{ px: 1.5, py: 0.5 }}>
         {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
                : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+        <BuildCircleIcon sx={{ fontSize: 16, ml: 0.5 }} />
         <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
           Сборки
         </Typography>
@@ -286,6 +290,7 @@ export function Webhooks({ project, open, onToggle }) {
     <ListItemButton dense onClick={onToggle} sx={{ px: 1.5, py: 0.5 }}>
       {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
             : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+      <WebhookIcon sx={{ fontSize: 16, ml: 0.5 }} />
       <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
         Вебхуки
       </Typography>
@@ -490,6 +495,7 @@ export default function Changes({ project, toast, open, onToggle,
                       sx={{ px: 1.5, py: 0.5 }}>
         {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
                : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+        <DifferenceIcon sx={{ fontSize: 16, ml: 0.5 }} />
         <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
           Изменения
         </Typography>
