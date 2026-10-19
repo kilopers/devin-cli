@@ -1110,7 +1110,8 @@ def _load_json(path: Path) -> dict:
 
 
 def enqueue_task(text: str, chat_id: int | None = None,
-                 project: str | None = None, prefix: str = "tg") -> str:
+                 project: str | None = None, prefix: str = "tg",
+                 reply_mode: str | None = None) -> str:
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
     scope = source if source in ("web", "telegram") else ""
     proj = project or (current_project(scope)[0] if multi_mode() else None)
@@ -1133,6 +1134,8 @@ def enqueue_task(text: str, chat_id: int | None = None,
     else:
         # телеграм: /mode — явный выбор юзера, важнее дефолта проекта
         rmode = us_get(author, "reply_mode") or             (pj_get(proj, "reply_mode") if proj else "")             or reply_mode(scope)
+    if reply_mode in ("ask", "code"):
+        rmode = reply_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
@@ -1180,7 +1183,7 @@ def _update_pending(pid: str, entry: dict) -> None:
 def _pending_text(entry: dict) -> str:
     proj = entry.get("project")
     head = f"Проект: {proj}\n\n" if proj else ""
-    return f"{head}Распознано:\n{entry['text']}"
+    return f"{head}{entry['text']}"
 
 
 def _add_to_pending(chat_id, pid: str, entry: dict, extra: str) -> None:
@@ -1203,8 +1206,12 @@ def _add_to_pending(chat_id, pid: str, entry: dict, extra: str) -> None:
 
 
 def _confirm_keyboard(pid: str) -> dict:
+    # «Кодировать» — задача в code-режиме, «Спросить» — ask-режим,
+    # «Отмена» — выбросить. ok: оставлен для совместимости со старыми
+    # сообщениями (дефолтный режим проекта/юзера).
     return {"inline_keyboard": [[
-        {"text": "✅ Принять", "callback_data": f"ok:{pid}"},
+        {"text": "⚙️ Кодировать", "callback_data": f"cd:{pid}"},
+        {"text": "❓ Спросить", "callback_data": f"ask:{pid}"},
         {"text": "❌ Отмена", "callback_data": f"no:{pid}"},
     ]]}
 
@@ -1808,14 +1815,16 @@ def handle_callback(cb: dict) -> None:
                text="Уже обработано или устарело")
         return
 
-    if action == "ok":
-        name = enqueue_task(entry["text"], chat_id)
+    if action in ("ok", "cd", "ask"):
+        rmode = {"cd": "code", "ask": "ask"}.get(action)
+        name = enqueue_task(entry["text"], chat_id, reply_mode=rmode)
+        tag = {"cd": " — режим кода", "ask": " — вопрос"}.get(action, "")
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
-               text=f"Распознано:\n{entry['text']}\n\n✅ Задача {name} в очереди.",
+               text=f"{entry['text']}\n\n✅ Задача {name} в очереди{tag}.",
                reply_markup={"inline_keyboard": []})
     else:
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
-               text=f"Распознано:\n{entry['text']}\n\n❌ Отменено.",
+               text=f"{entry['text']}\n\n❌ Отменено.",
                reply_markup={"inline_keyboard": []})
     tg_api("answerCallbackQuery", callback_query_id=cb_id)
 
@@ -1897,9 +1906,16 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
                 tg_send(chat_id, "Сначала выбери проект: /projects")
                 send_projects(chat_id)
                 return
-            name = enqueue_task(text, chat_id)
-            tg_send(chat_id,
-                    f"Проект: {project_label()}\nЗадача {name} в очереди.")
+            pid = str(upd.get("update_id") or int(time.time() * 1000))
+            res = tg_api("sendMessage", chat_id=chat_id,
+                         text=_pending_text(
+                             {"text": text, "project": project_label()}),
+                         reply_markup=_confirm_keyboard(pid))
+            _save_pending({"chat_id": chat_id, "text": text,
+                           "project": project_label(),
+                           "message_id": res["result"]["message_id"],
+                           "id": pid})
+            log(f"pending confirm {pid} -> chat {chat_id} (text)")
         else:
             log(f"update from @{sender} chat={chat_id}: unsupported content, skipped")
     except Exception as e:
@@ -2715,7 +2731,7 @@ def _api_project_settings_set():
     if isinstance(body.get("panel"), dict):
         us_set(_current_user(), f"panel:{p}", json.dumps(
             {k: bool(v) for k, v in body["panel"].items()
-             if k in ("files", "changes", "builds")}))
+             if k in ("files", "changes", "builds", "hooks")}))
     return jsonify({"ok": True})
 
 
@@ -3068,6 +3084,94 @@ def _api_build():
     res = _build_status(_proj_root(proj))
     if res.get("ok"):
         _BUILD_CACHE[proj] = (time.time(), res)
+    return jsonify(res)
+
+
+_HOOK_CACHE: dict = {}   # proj -> (ts, result) — тот же TTL, что у сборок
+
+
+def _gh_hooks(repo: str, token: str | None) -> dict:
+    """Вебхуки GitHub-репо + последние 7 доставок каждого."""
+    tk = token or GITHUB_TOKEN
+    headers = {"Authorization": f"Bearer {tk}"} if tk else {}
+    hooks, err = _http_json(
+        f"https://api.github.com/repos/{repo}/hooks?per_page=10", headers)
+    if err:
+        return {"ok": False, "error": f"GitHub: {err}"}
+    out = []
+    for h in hooks or []:
+        delivs, _ = _http_json(
+            f"https://api.github.com/repos/{repo}/hooks/{h['id']}"
+            "/deliveries?per_page=7", headers)
+        items = [{"event": d.get("event") or "",
+                  "code": d.get("status_code"),
+                  "ok": bool(d.get("status_code")) and
+                        200 <= int(d["status_code"]) < 300,
+                  "when": d.get("delivered_at") or "",
+                  "ms": round((d.get("duration") or 0) * 1000)}
+                 for d in delivs or []]
+        cfg = h.get("config") or {}
+        out.append({"id": h.get("id"),
+                    "name": cfg.get("url") or h.get("name") or "web",
+                    "active": h.get("active"), "deliveries": items})
+    return {"ok": True, "provider": "github", "hooks": out}
+
+
+def _gl_hooks(host: str, path: str, token: str | None) -> dict:
+    """Вебхуки GitLab-проекта + последние 7 доставок (events — GitLab ≥16,
+    где API нет — показываем только сами хуки)."""
+    tk = token or GITLAB_TOKEN
+    headers = {"PRIVATE-TOKEN": tk} if tk else {}
+    enc = urllib.parse.quote(path, safe="")
+    base = f"https://{host}/api/v4/projects/{enc}"
+    hooks, err = _http_json(f"{base}/hooks?per_page=10", headers)
+    if err:
+        return {"ok": False, "error": f"GitLab: {err}"}
+    out = []
+    for h in hooks or []:
+        delivs, _ = _http_json(
+            f"{base}/hooks/{h['id']}/events?per_page=7", headers)
+        items = [{"event": d.get("trigger") or "",
+                  "code": d.get("response_status"),
+                  "ok": str(d.get("response_status") or "")
+                        .startswith("2"),
+                  "when": d.get("created_at") or "",
+                  "ms": round((d.get("execution_duration") or 0) * 1000)}
+                 for d in delivs or []]
+        out.append({"id": h.get("id"),
+                    "name": h.get("url") or "hook",
+                    "active": not h.get("disabled_until"),
+                    "deliveries": items})
+    return {"ok": True, "provider": "gitlab", "hooks": out}
+
+
+@app.get("/api/webhooks")
+@login_required
+def _api_webhooks():
+    """Вебхуки origin-репо проекта (GitHub/GitLab) + последние доставки.
+    Кэш 60 с; hooks пуст → фронт секцию «Вебхуки» не рисует."""
+    proj = (request.args.get("project") or "").strip()
+    hit = _HOOK_CACHE.get(proj)
+    if hit and time.time() - hit[0] < _BUILD_TTL:
+        return jsonify(hit[1])
+    root = _proj_root(proj)
+    res = {"ok": True, "provider": None, "hooks": []}
+    if (root / ".git").exists():
+        rc, url = _git(root, "remote", "get-url", "origin")
+        parsed = _parse_remote(url) if rc == 0 else None
+        if parsed:
+            host, path, token = parsed
+            token = token or _cred_get(host)
+            if host == "github.com":
+                res = _gh_hooks(path, token)
+            else:
+                gl_host = urllib.parse.urlparse(uset(
+                    "gitlab.base_url", _current_user(),
+                    "GITLAB_BASE_URL", "https://gitlab.com")).hostname or ""
+                if "gitlab" in host or host == gl_host:
+                    res = _gl_hooks(host, path, token)
+    if res.get("ok"):
+        _HOOK_CACHE[proj] = (time.time(), res)
     return jsonify(res)
 
 

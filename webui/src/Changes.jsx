@@ -172,6 +172,87 @@ function DiffView({ text }) {
   );
 }
 
+
+// «Вебхуки» — последние 7 доставок хуков репозитория (GitHub/GitLab).
+// Хуков нет → секция не рендерится вовсе.
+export function Webhooks({ project, open, onToggle }) {
+  const [data, setData] = useState(null);
+  const projRef = useRef(project);
+  projRef.current = project;
+
+  useEffect(() => {
+    setData(null);
+    let live = true;
+    const load = async () => {
+      try {
+        const d = await apiJson("/api/webhooks?project=" +
+          encodeURIComponent(projRef.current || ""));
+        if (live) setData(d);
+      } catch (e) { if (live) setData({ ok: false }); }
+    };
+    load();
+    const t = setInterval(load, 60000);  // серверный кэш 60 с
+    return () => { live = false; clearInterval(t); };
+  }, [project]);
+
+  const hooks = (data && data.hooks) || [];
+  if (!hooks.length) return null;
+  const delivs = hooks
+    .flatMap(h => (h.deliveries || [])
+      .map(d => ({ ...d, hook: h.name })))
+    .sort((a, b) => (b.when || "").localeCompare(a.when || ""))
+    .slice(0, 7);
+
+  const host = n => {
+    try { return new URL(n).host; } catch (e) { return n; }
+  };
+
+  return (<>
+    <ListItemButton dense onClick={onToggle} sx={{ px: 1.5, py: 0.5 }}>
+      {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
+            : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+      <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
+        Вебхуки
+      </Typography>
+      <Chip size="small" label={hooks.length}
+            sx={{ ml: 1, height: 18, fontSize: 11 }} />
+    </ListItemButton>
+    <Collapse in={open}>
+      <Box>
+        {data && !data.ok ? (
+          <Typography variant="caption" color="error"
+                      sx={{ px: 2, py: 0.5, display: "block" }}>
+            {data.error || "ошибка"}
+          </Typography>
+        ) : delivs.length === 0 ? (
+          <Typography variant="caption" color="text.secondary"
+                      sx={{ px: 2, py: 0.5, display: "block" }}>
+            {hooks.map(h => host(h.name)).join(", ")} — доставок пока нет
+          </Typography>
+        ) : delivs.map((d, i) => (
+          <Box key={i} sx={{ px: 1.5, py: 0.3, display: "flex",
+                            alignItems: "center", gap: 0.7 }}>
+            {d.ok
+              ? <CheckCircleIcon sx={{ fontSize: 15, color: "#2e7d32",
+                                       flexShrink: 0 }} />
+              : <ErrorIcon sx={{ fontSize: 15, color: "#c62828",
+                                 flexShrink: 0 }} />}
+            <Typography variant="body2" noWrap sx={{
+              flex: 1, fontSize: 12.5,
+              fontFamily: "ui-monospace, Menlo, monospace" }}>
+              {d.event || "?"} · {host(d.hook)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ fontSize: 10.5, flexShrink: 0 }}>
+              {d.code || "—"} · {fmtWhen(d.when)}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    </Collapse>
+  </>);
+}
+
 export default function Changes({ project, toast, open, onToggle,
                                   bOpen, bToggle }) {
   const [entries, setEntries] = useState([]);

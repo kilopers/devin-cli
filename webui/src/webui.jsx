@@ -35,7 +35,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
-import Changes from "./Changes.jsx";
+import Changes, { Webhooks } from "./Changes.jsx";
 import FileEditor from "./FileEditor.jsx";
 import AddProject from "./AddProject.jsx";
 import Composer from "./Composer.jsx";
@@ -315,7 +315,7 @@ export default function App() {
   const [mode, setMode] = useState("code");
   const [fast, setFast] = useState(false);
   const [panels, setPanels] = useState({ files: true, changes: true,
-                                        builds: true });
+                                        builds: true, hooks: true });
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -456,7 +456,8 @@ export default function App() {
   // раскрытые секции панели — per-user+project, подгружаем при смене проекта
   useEffect(() => {
     if (!project) return;
-    setPanels({ files: true, changes: true, builds: true });
+    setPanels({ files: true, changes: true, builds: true,
+                hooks: true });
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
       .then(d => { if (d.ok && d.panel)
         setPanels(s => ({ ...s, ...d.panel })); })
@@ -600,6 +601,9 @@ export default function App() {
       <Changes project={project} toast={setToast}
                open={panels.changes} onToggle={() => togglePanel("changes")}
                bOpen={panels.builds} onToggleB={() => togglePanel("builds")} />
+      <Divider />
+      <Webhooks project={project} open={panels.hooks}
+                onToggle={() => togglePanel("hooks")} />
       <Divider />
       <Box sx={{ px: 2, py: 1.5, display: "flex", flexDirection: "column",
                  gap: 1.5 }}>
@@ -795,6 +799,9 @@ export default function App() {
                      onToggle={() => togglePanel("changes")}
                      bOpen={panels.builds}
                      onToggleB={() => togglePanel("builds")} />
+            <Divider />
+            <Webhooks project={project} open={panels.hooks}
+                      onToggle={() => togglePanel("hooks")} />
           </Paper>
           </>}
         </Box>
