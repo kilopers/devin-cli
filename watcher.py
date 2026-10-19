@@ -368,11 +368,12 @@ SYS_INSTR_DEFAULT = """## Системные правила воркера
 
    Контроль деплоя: после любого деплоя/запуска проекта (и если задача
    просит настроить деплой) шли статус — статус появится в секции
-   «Деплой» веб-панели:
-   - из этого контейнера: POST http://127.0.0.1:{port}/api/deploy/status
-     с заголовком X-Internal-Token ($INTERNAL_TOKEN);
-   - из CI/CD и внешних скриптов: POST {public}/api/deploy/status
-     с заголовком Authorization: Bearer $DEPLOY_TOKEN
+   «Деплой» веб-панели. Единый приёмник:
+   POST {public}/api/deploy/status
+   - из этого контейнера (задача/агент): заголовок
+     X-Internal-Token ($INTERNAL_TOKEN);
+   - из CI/CD и внешних скриптов: заголовок
+     Authorization: Bearer $DEPLOY_TOKEN
      (или $WATCHTOWER_TOKEN — задаётся в env на сервере);
    тело: {{"project":"{project}","status":"success"|"failed",
           "data":"лог/версия"}}.
