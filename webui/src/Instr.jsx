@@ -128,13 +128,14 @@ export default function Instr({ project, open, onToggle, toast }) {
 
     <Dialog open={!!view} onClose={() => setView(null)}
             fullWidth maxWidth="sm">
-      <DialogTitle sx={{ fontSize: 16 }}>
+      <DialogTitle sx={{ fontSize: 16,
+                         p: { xs: "12px 12px 4px", md: "16px 24px" } }}>
         {view?.kind === "system" ? "Системная инструкция"
           : view?.kind === "user" ? "Пользовательская инструкция"
           : view?.kind === "project" ? "Проектная инструкция"
           : view?.name}
       </DialogTitle>
-      <DialogContent>
+      <DialogContent sx={{ p: { xs: "8px 12px", md: "20px 24px" } }}>
         {view?.body
           ? <Markdown text={view.body} />
           : <Typography variant="body2" color="text.secondary">
@@ -143,7 +144,8 @@ export default function Instr({ project, open, onToggle, toast }) {
             </Typography>}
       </DialogContent>
       <DialogActions sx={{ flexDirection: "column", alignItems: "stretch",
-                           gap: 0.5, px: 3, pb: 2 }}>
+                           gap: 0.5, px: { xs: 1.5, md: 3 },
+                           pb: { xs: 1, md: 2 } }}>
         <Box sx={{ display: "flex", alignItems: "center" }}>
           {view?.kind === "custom" && view?.mine &&
             <IconButton onClick={del} title="удалить" sx={{ mr: "auto" }}>
