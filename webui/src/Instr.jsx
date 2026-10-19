@@ -33,7 +33,13 @@ export default function Instr({ project, open, onToggle, toast }) {
       if (d.ok) setRows(d.instructions || []);
     } catch (e) {}
   };
-  useEffect(() => { setRows([]); load(); }, [project]);
+  // список подгружаем периодически — агент может создать/править
+  // инструкцию в задаче, и она должна появиться без перезагрузки
+  useEffect(() => {
+    setRows([]); load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [project]);
 
   const del = async () => {
     if (!window.confirm(`Удалить инструкцию «${view.name}»?`)) return;
