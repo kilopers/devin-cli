@@ -3,10 +3,12 @@
 // через AddProject (с выбором пространства там же).
 import { useEffect, useState } from "react";
 import {
-  AppBar, Box, Chip, CircularProgress, Dialog, IconButton,
-  ListItemButton, ListSubheader, Toolbar, Typography,
+  Accordion, AccordionDetails, AccordionSummary, AppBar, Box, Chip,
+  CircularProgress, Dialog, IconButton, ListItemButton, Toolbar,
+  Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import AddIcon from "@mui/icons-material/Add";
 import { apiJson } from "./api.js";
 

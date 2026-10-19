@@ -1,3 +1,8 @@
+## 1.0.68
+- Fix: «Обзор репозиториев» падал с ReferenceError — Accordion/
+  AccordionSummary/AccordionDetails/ExpandMoreIcon использовались,
+  но не были импортированы.
+
 ## 1.0.67
 - Системная инструкция: контроль деплоя — единый приёмник
   {public}/api/deploy/status (build.kilop.ru) вместо 127.0.0.1;
