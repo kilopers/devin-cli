@@ -1,3 +1,9 @@
+## 1.0.62
+- Фикс «коммит+пуш»: у процесса воркера нет git user.name/email —
+  задачи получали их через env devin-task, а ручной коммит падал.
+  Теперь -c user.name/user.email из настроек юзера (git.name/git.email,
+  env-фолбэк) и в /api/repo/commit, и в do_commit (подпись автора задачи).
+
 ## 1.0.61
 - Белый экран на мобильной: второй вызов TaskCard ещё ссылался на
   удалённые commitAct/askBranch → ReferenceError при рендере ленты.

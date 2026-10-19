@@ -1793,7 +1793,14 @@ def do_commit(stem: str, workdir) -> str:
         if row and row["prompt"]:
             first = row["prompt"].strip().splitlines()[0]
             msg = f"task: {first[:70]}"
-        for args in (("add", "-A"), ("commit", "-m", msg)):
+        # подпись коммита — git.name/git.email автора задачи
+        tu = (row or {}).get("user") or WEB_ADMIN_USER
+        gname = uset("git.name", tu, "GIT_USER_NAME", "") or "webdev"
+        gemail = uset("git.email", tu, "GIT_USER_EMAIL", "") \
+            or "webdev@local"
+        for args in (("add", "-A"),
+                     ("-c", f"user.name={gname}",
+                      "-c", f"user.email={gemail}", "commit", "-m", msg)):
             rc, o = _git(workdir, *args)
             out.append(o)
             if rc != 0:
@@ -3101,10 +3108,15 @@ def _api_repo_commit():
     if not (root / ".git").exists():
         return jsonify({"ok": False, "error": "нет репо"}), 400
     out = []
+    u = _current_user()
+    gname = uset("git.name", u, "GIT_USER_NAME", "") or "webdev"
+    gemail = uset("git.email", u, "GIT_USER_EMAIL", "") or "webdev@local"
     _, st = _git(root, "status", "--porcelain")
     if st:
         for args in (("add", "-A"),
-                     ("commit", "-m", "web: ручной коммит")):
+                     ("-c", f"user.name={gname}",
+                      "-c", f"user.email={gemail}",
+                      "commit", "-m", "web: ручной коммит")):
             rc, o = _git(root, *args)
             out.append(o)
             if rc != 0:
