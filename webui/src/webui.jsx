@@ -32,6 +32,7 @@ import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
@@ -200,16 +201,26 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
                                       : "вывод пока пуст"}</Typography>}
         </Collapse>
         {t.commit_offered ? (
-          <Box sx={{ mt: 1.5, display: "flex", gap: 1 }}>
-            <Button size="small" variant="contained" color="success"
-                    onClick={() => onCommit(t.stem, "commit")}>
-              ✅ закоммитить и запушить</Button>
-            <Button size="small" variant="outlined" color="success"
-                    onClick={() => onBranch(t)}>
-              🌿 новая ветка</Button>
-            <Button size="small" onClick={() => onCommit(t.stem, "skip")}>
-              ⏭ пропустить</Button>
-          </Box>) : null}
+          // мобильная: кнопки в столбик (xs=12), десктоп — в ряд
+          <Grid container spacing={1} sx={{ mt: 1.5 }}>
+            <Grid size={{ xs: 12, sm: "auto" }}>
+              <Button size="small" variant="contained" color="success"
+                      fullWidth sx={{ whiteSpace: "nowrap" }}
+                      onClick={() => onCommit(t.stem, "commit")}>
+                ✅ закоммитить и запушить</Button>
+            </Grid>
+            <Grid size={{ xs: 12, sm: "auto" }}>
+              <Button size="small" variant="outlined" color="success"
+                      fullWidth sx={{ whiteSpace: "nowrap" }}
+                      onClick={() => onBranch(t)}>
+                🌿 новая ветка</Button>
+            </Grid>
+            <Grid size={{ xs: 12, sm: "auto" }}>
+              <Button size="small" fullWidth sx={{ whiteSpace: "nowrap" }}
+                      onClick={() => onCommit(t.stem, "skip")}>
+                ⏭ пропустить</Button>
+            </Grid>
+          </Grid>) : null}
         <Box onClick={() => setOpen(o => !o)}
              sx={{ display: "flex", alignItems: "center", gap: 0.5,
                    justifyContent: "center", cursor: "pointer", mt: 0.5,
