@@ -614,8 +614,13 @@ export default function App() {
       <Panel title="Пространства" open={panels.ws}
              onToggle={() => togglePanel("ws")}
              icon={<WorkspacesIcon sx={{ fontSize: 16, ml: 0.5 }} />}
-             chip={<Chip size="small" label={wsInfo.ws.length}
-                         sx={{ ml: 1, height: 18, fontSize: 11 }} />}>
+             chip={<Box sx={{ ml: 1, width: 18, height: 18,
+                             borderRadius: "50%", bgcolor: wsColor,
+                             color: "#fff", fontSize: 11, fontWeight: 600,
+                             display: "flex", alignItems: "center",
+                             justifyContent: "center" }}>
+                     {wsInfo.ws.length}
+                   </Box>}>
         <Box>
           {wsInfo.ws.map(w =>
             <ListItemButton key={w.id} dense
@@ -815,8 +820,14 @@ export default function App() {
             <Panel title="Пространства" open={panels.ws}
                    onToggle={() => togglePanel("ws")}
                    icon={<WorkspacesIcon sx={{ fontSize: 16, ml: 0.5 }} />}
-                   chip={<Chip size="small" label={wsInfo.ws.length}
-                                     sx={{ ml: 1, height: 18, fontSize: 11 }} />}>
+                   chip={<Box sx={{ ml: 1, width: 18, height: 18,
+                                         borderRadius: "50%", bgcolor: wsColor,
+                                         color: "#fff", fontSize: 11,
+                                         fontWeight: 600, display: "flex",
+                                         alignItems: "center",
+                                         justifyContent: "center" }}>
+                                   {wsInfo.ws.length}
+                                 </Box>}>
               <Box>
                 {wsInfo.ws.map(w =>
                   <ListItemButton key={w.id} dense

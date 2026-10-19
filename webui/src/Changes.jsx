@@ -285,8 +285,10 @@ export function Webhooks({ project, open, onToggle }) {
       <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
         Вебхуки
       </Typography>
-      <Chip size="small" label={hooks.length}
-            sx={{ ml: 1, height: 18, fontSize: 11 }} />
+      {delivs.length ? (delivs[0].ok
+        ? <CheckCircleIcon sx={{ ml: 1, fontSize: 15, color: "#2e7d32" }} />
+        : <ErrorIcon sx={{ ml: 1, fontSize: 15, color: "#c62828" }} />)
+        : null}
     </ListItemButton>
     <Collapse in={open}>
       <Box>
