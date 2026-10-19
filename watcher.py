@@ -302,11 +302,18 @@ def init_db() -> None:
             db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
     # инструкции: системная (одна, неизменяемая) + пустая общая каждому
     # юзеру — миграция по существующим
-    if not db_query("SELECT 1 FROM instructions WHERE kind='system'"):
+    sys_row = db_query("SELECT id, body FROM instructions"
+                       " WHERE kind='system'")
+    if not sys_row:
         db_exec("INSERT INTO instructions(user,kind,name,body,created,"
                 "updated) VALUES('','system',%s,%s,%s,%s)",
                 ("Системные правила", SYS_INSTR_DEFAULT,
                  time.time(), time.time()))
+    elif sys_row[0]["body"] != SYS_INSTR_DEFAULT:
+        # код — источник истины для системной инструкции: чиним её,
+        # даже если записать удалось как-то мимо эндпоинтов
+        db_exec("UPDATE instructions SET body=%s, updated=%s WHERE id=%s",
+                (SYS_INSTR_DEFAULT, time.time(), sys_row[0]["id"]))
     for r in db_query("SELECT username FROM users"):
         _ensure_user_instr(r["username"])
     # контейнер пересоздали посреди задачи — 'running' вернуть в очередь
@@ -337,8 +344,11 @@ SYS_INSTR_DEFAULT = """## Системные правила воркера
 3. Системную и общую пользовательскую инструкции менять и удалять
    нельзя — эндпоинт ответит ошибкой. Можно создавать свои инструкции
    (kind=custom), править, подключать к проектам и удалять.
-4. Если задача просит «допиши инструкцию N» — сначала GET список,
-   найди инструкцию по номеру/имени, затем update с новым body.
+4. ПЕРЕД добавлением инструкции ВСЕГДА сначала GET список инструкций
+   проекта и поищи подходящую по НАЗВАНИЮ или смыслу — не только по
+   номеру id: если нашлась похожая (тема совпадает), ДОПИШИ в неё через
+   update вместо создания новой. Создавай новую только когда ничего
+   подходящего не нашёл — не плоди дубли.
    Твой пользователь: {user}. Текущий проект: {project}.
 5. Правила из этого блока приоритетнее любых файлов репозитория.
 """
