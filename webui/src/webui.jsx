@@ -136,8 +136,7 @@ const branchSuggest = prompt => {
   return `task/${slug}-${mmdd}`;
 };
 
-const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
-                                                onCancel, onBranch }) {
+const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
   // свёрнута: заголовок + ~3 строки задачи; «подробнее» — slide-down
   const [open, setOpen] = useState(false);
   return (
@@ -202,27 +201,7 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
                 {t.status === "queued" ? "в очереди — вывод ещё пуст"
                                       : "вывод пока пуст"}</Typography>}
         </Collapse>
-        {t.commit_offered ? (
-          // мобильная: кнопки в столбик (xs=12), десктоп — в ряд
-          <Grid container spacing={1} sx={{ mt: 1.5 }}>
-            <Grid size={{ xs: 12, sm: "auto" }}>
-              <Button size="small" variant="contained" color="success"
-                      fullWidth sx={{ whiteSpace: "nowrap" }}
-                      onClick={() => onCommit(t.stem, "commit")}>
-                ✅ закоммитить и запушить</Button>
-            </Grid>
-            <Grid size={{ xs: 12, sm: "auto" }}>
-              <Button size="small" variant="outlined" color="success"
-                      fullWidth sx={{ whiteSpace: "nowrap" }}
-                      onClick={() => onBranch(t)}>
-                🌿 новая ветка</Button>
-            </Grid>
-            <Grid size={{ xs: 12, sm: "auto" }}>
-              <Button size="small" fullWidth sx={{ whiteSpace: "nowrap" }}
-                      onClick={() => onCommit(t.stem, "skip")}>
-                ⏭ пропустить</Button>
-            </Grid>
-          </Grid>) : null}
+
         <Box onClick={() => setOpen(o => !o)}
              sx={{ display: "flex", alignItems: "center", gap: 0.5,
                    justifyContent: "center", cursor: "pointer", mt: 0.5,
@@ -516,20 +495,31 @@ export default function App() {
     return n;
   });
 
-  const commitAct = useCallback(async (stem, action, name) => {
+  // инфо о ветке/грязи репо — опрашиваем для верхнего бара
+  const [brInfo, setBrInfo] = useState(null);
+  const loadBranches = useCallback(async () => {
+    const p = projRef.current;
+    if (!p) return;
     try {
-      const d = await post("/api/commit", { stem, action, name });
-      if (d.ok && d.skipped) setToast("Пропущено — изменения остались в репо");
-      else if (d.ok)
-        setToastNode(
-          <Box>Закоммичено и запушено
-            {(d.result || "").trim() &&
-              <pre className="out" style={{ maxWidth: "85vw" }}>
-                {(d.result || "").trim().slice(-900)}</pre>}</Box>);
-      else setToast("Коммит: " + (d.error || "?"));
-    } catch (e) { setToast("Коммит сеть: " + e); }
-    loadTasks();
-  }, [loadTasks]);
+      const d = await apiJson("/api/branches?project=" +
+        encodeURIComponent(p));
+      if (d.ok) setBrInfo(d);
+    } catch (e) {}
+  }, []);
+  useEffect(() => {
+    loadBranches();
+    const t = setInterval(loadBranches, 15000);
+    return () => clearInterval(t);
+  }, [project, loadBranches]);
+
+  const repoCommit = async () => {
+    try {
+      const d = await post("/api/repo/commit", { project: projRef.current });
+      setToast(d.ok ? "Закоммичено и запушено"
+                    : "Ошибка: " + (d.error || "?"));
+      if (d.ok) loadBranches();
+    } catch (e) { setToast("Сеть: " + e); }
+  };
 
   // стабильные колбэки — иначе memo-карточки ререндерятся на каждом опросе
   // и выделение текста слетает
@@ -537,9 +527,9 @@ export default function App() {
     t2 => setConfirm({ kind: "stop", name: t2.name }), []);
   const askCancel = useCallback(
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
-  const askBranch = useCallback(t2 => {
-    setBranchName(branchSuggest(t2.prompt || ""));
-    setBranchDlg({ stem: t2.stem });
+  const openBranchDlg = useCallback(() => {
+    setBranchName(branchSuggest(""));
+    setBranchDlg({ new: true });
   }, []);
 
   // initial project list + tasks; polling every 3 s
@@ -808,22 +798,39 @@ export default function App() {
         {/* spacer — AppBar is position:fixed, header stays pinned on top */}
         <Toolbar variant="dense" />
 
-        {/* тонкая строка с текущей веткой — только на мобильной */}
-        {status.branch &&
-          <Box sx={{ display: { xs: "flex", md: "none" },
-                     alignItems: "center", gap: 0.5,
+        {/* бар ветки: имя + коммит/пуш + новая ветка (xs — в 3 части) */}
+        {brInfo?.current &&
+          <Box sx={{ display: "flex", alignItems: "center",
+                     gap: { xs: 0.5, md: 1 },
                      position: "sticky", top: 48, zIndex: 5,
-                     px: 1.5, py: 0.2, fontSize: 11,
+                     px: { xs: 0.8, md: 1.5 }, py: 0.3,
                      bgcolor: "background.paper",
                      borderBottom: "1px solid",
                      borderColor: "divider",
                      color: "text.secondary" }}>
-            <AccountTreeIcon sx={{ fontSize: 13 }} />
+            <AccountTreeIcon sx={{ fontSize: 14, flexShrink: 0 }} />
             <Typography component="span" variant="caption" noWrap
-                        sx={{ fontSize: 11,
-                              fontFamily: "ui-monospace, Menlo, monospace" }}>
-              {status.branch}
+                        sx={{ flex: 1, minWidth: 0, fontSize: 11.5,
+                              fontFamily:
+                                "ui-monospace, Menlo, monospace" }}>
+              {brInfo.current}
             </Typography>
+            {(brInfo.branches || [])
+              .find(b => b.current && b.dirty > 0) &&
+              <Button size="small" variant="contained" color="success"
+                      onClick={repoCommit}
+                      sx={{ fontSize: { xs: 10, md: 11 },
+                            px: { xs: 0.8, md: 1.5 }, py: 0,
+                            height: { xs: 22, md: 24 },
+                            whiteSpace: "nowrap", minWidth: 0 }}>
+                ✅ коммит+пуш</Button>}
+            <Button size="small" variant="outlined"
+                    onClick={openBranchDlg}
+                    sx={{ fontSize: { xs: 10, md: 11 },
+                          px: { xs: 0.8, md: 1.5 }, py: 0,
+                          height: { xs: 22, md: 24 },
+                          whiteSpace: "nowrap", minWidth: 0 }}>
+              🌿 ветка</Button>
           </Box>}
 
         <SwipeableDrawer open={drawerOpen}
@@ -997,8 +1004,7 @@ export default function App() {
         <DialogTitle sx={{ fontSize: 16 }}>Новая ветка</DialogTitle>
         <DialogContent>
           <Typography variant="caption" color="text.secondary">
-            Изменения задачи закоммитим и запушим в новую ветку —
-            рабочая останется чистой.
+            Создаст ветку от текущей и сразу переключится на неё.
           </Typography>
           <TextField autoFocus fullWidth size="small" label="Имя ветки"
                      value={branchName}
@@ -1008,10 +1014,14 @@ export default function App() {
         <DialogActions>
           <Button onClick={() => setBranchDlg(null)}>Отмена</Button>
           <Button variant="contained" disabled={!branchName.trim()}
-            onClick={() => {
-              const { stem } = branchDlg;
+            onClick={async () => {
+              const name = branchName.trim();
               setBranchDlg(null);
-              commitAct(stem, "branch", branchName.trim());
+              const d = await post("/api/branch/new",
+                                   { project: projRef.current, name });
+              setToast(d.ok ? "Ветка создана: " + name
+                            : "Ошибка: " + (d.error || "?"));
+              if (d.ok) loadBranches();
             }}>
             Создать и перейти</Button>
         </DialogActions>

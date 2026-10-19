@@ -3091,6 +3091,31 @@ def _stash_count(root: Path, branch: str) -> int:
                if f"auto:{branch}" in ln)
 
 
+@app.post("/api/repo/commit")
+@login_required
+def _api_repo_commit():
+    """Ручной коммит+пуш текущего состояния проекта — кнопка в баре
+    ветки. Отдельно от /api/commit (тот привязан к задаче)."""
+    proj = (_req_json().get("project") or "").strip()
+    root = _proj_root(proj)
+    if not (root / ".git").exists():
+        return jsonify({"ok": False, "error": "нет репо"}), 400
+    out = []
+    _, st = _git(root, "status", "--porcelain")
+    if st:
+        for args in (("add", "-A"),
+                     ("commit", "-m", "web: ручной коммит")):
+            rc, o = _git(root, *args)
+            out.append(o)
+            if rc != 0:
+                return jsonify({"ok": False, "error": o[:300]})
+    rc, o = _git(root, "push")
+    out.append(o)
+    return jsonify({"ok": rc == 0,
+                    "result": "\n".join(out)[-1500:],
+                    "error": None if rc == 0 else o[:300]})
+
+
 @app.get("/api/branches")
 @login_required
 def _api_branches():
