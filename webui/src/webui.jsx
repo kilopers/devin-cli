@@ -28,6 +28,8 @@ import Users from "./Users.jsx";
 import PeopleIcon from "@mui/icons-material/People";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import FlashOnIcon from "@mui/icons-material/FlashOn";
+import FlashOffIcon from "@mui/icons-material/FlashOff";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
@@ -605,6 +607,25 @@ export default function App() {
                     <WsDot color={w.color} /> {w.name}
                   </MenuItem>)}
               </Select>
+            )}
+            {multiMode && (
+              <Button size="small" variant="outlined" color="inherit"
+                disabled={!project}
+                onClick={() => post("/api/project/settings",
+                    { project, fast: fast ? "0" : "1" }).then(d => {
+                  setToast(d.ok
+                    ? (fast ? "Обычный режим" : "Быстрый режим — голос сразу в работу")
+                    : "Ошибка: " + (d.error || "?"));
+                  if (d.ok) setFast(!fast);
+                }).catch(() => setToast("Сеть: не сохранил режим"))}
+                startIcon={fast ? <FlashOnIcon /> : <FlashOffIcon />}
+                title="Быстрый: распознанный голос сразу уходит в задачу"
+                sx={{ display: { xs: "none", md: "inline-flex" },
+                      color: fast ? "#ffd54f" : "rgba(255,255,255,.75)",
+                      borderColor: "rgba(255,255,255,.35)", fontSize: 12,
+                      textTransform: "none" }}>
+                {fast ? "Быстрый" : "Обычный"}
+              </Button>
             )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
