@@ -100,8 +100,26 @@ const fmtWhen = iso => {
 };
 
 // «Сборки» — collapsible list of the last ~6 CI runs (build.runs).
-function BuildsPanel({ build, open, onToggle }) {
+function BuildsPanel({ build, open, onToggle, project }) {
   const runs = build?.runs;
+  const [jobsFor, setJobsFor] = useState(null);   // stem прогона
+  const [jobs, setJobs] = useState({});           // runId -> {loading, list, error}
+
+  const toggleJobs = async r => {
+    const rid = r.id || r.num;
+    if (jobsFor === rid) { setJobsFor(null); return; }
+    setJobsFor(rid);
+    if (jobs[rid]) return;
+    setJobs(m => ({ ...m, [rid]: { loading: true } }));
+    try {
+      const d = await apiJson("/api/build/jobs?project=" +
+        encodeURIComponent(project || "") + "&id=" + rid);
+      setJobs(m => ({ ...m, [rid]: d.ok
+        ? { list: d.jobs } : { error: d.error || "ошибка" } }));
+    } catch (e) {
+      setJobs(m => ({ ...m, [rid]: { error: String(e) } }));
+    }
+  };
   if (!runs || !runs.length) return null;
   return (
     <>
@@ -119,27 +137,80 @@ function BuildsPanel({ build, open, onToggle }) {
         <Box>
           {runs.map((r, i) => {
             const ui = BUILD_UI[r.status] || BUILD_UI.unknown;
+            const rid = r.id || r.num;
+            const openJ = jobsFor === rid;
+            const j = jobs[rid];
             return (
-              <ListItemButton key={r.url || i} dense
-                onClick={() => r.url && window.open(r.url, "_blank")}
-                sx={{ px: 1.5, py: 0.4, gap: 0.7 }}>
-                {ui.Icon
-                  ? <ui.Icon sx={{ fontSize: 15, color: ui.color,
-                                   flexShrink: 0 }} />
-                  : <CircularProgress size={11} thickness={6}
-                                      sx={{ color: ui.color,
-                                            flexShrink: 0 }} />}
-                <Typography variant="body2" noWrap sx={{
-                  flex: 1, fontSize: 12.5,
-                  fontFamily: "ui-monospace, Menlo, monospace" }}>
-                  {r.name}{r.num ? ` #${r.num}` : ""}
-                  {r.ref ? ` · ${r.ref}` : ""}
-                </Typography>
-                <Typography variant="caption" color="text.secondary"
-                            sx={{ fontSize: 10.5, flexShrink: 0 }}>
-                  {fmtWhen(r.when)}
-                </Typography>
-              </ListItemButton>
+              <Box key={r.url || i}>
+                <ListItemButton dense
+                  onClick={() => toggleJobs(r)}
+                  sx={{ px: 1.5, py: 0.4, gap: 0.7 }}>
+                  {ui.Icon
+                    ? <ui.Icon sx={{ fontSize: 15, color: ui.color,
+                                     flexShrink: 0 }} />
+                    : <CircularProgress size={11} thickness={6}
+                                        sx={{ color: ui.color,
+                                              flexShrink: 0 }} />}
+                  <Typography variant="body2" noWrap sx={{
+                    flex: 1, fontSize: 12.5,
+                    fontFamily: "ui-monospace, Menlo, monospace" }}>
+                    {r.name}{r.num ? ` #${r.num}` : ""}
+                    {r.ref ? ` · ${r.ref}` : ""}
+                  </Typography>
+                  <ExpandMoreIcon sx={{
+                    fontSize: 15, color: "#9aa0a6", flexShrink: 0,
+                    transform: openJ ? "rotate(180deg)" : "none",
+                    transition: "transform .2s" }} />
+                  <Typography variant="caption" color="text.secondary"
+                              sx={{ fontSize: 10.5, flexShrink: 0 }}>
+                    {fmtWhen(r.when)}
+                  </Typography>
+                </ListItemButton>
+                {openJ && (
+                  <Box sx={{ pl: 4.5, pr: 1.5, pb: 0.4 }}>
+                    {!j || j.loading ? (
+                      <CircularProgress size={12} thickness={6}
+                                        sx={{ my: 0.4 }} />
+                    ) : j.error ? (
+                      <Typography variant="caption" color="error">
+                        {j.error}
+                      </Typography>
+                    ) : !j.list || !j.list.length ? (
+                      <Typography variant="caption" color="text.secondary">
+                        джобов нет
+                      </Typography>
+                    ) : j.list.map((jb, k) => {
+                      const ju = BUILD_UI[jb.status] || BUILD_UI.unknown;
+                      return (
+                        <Box key={k} sx={{ display: "flex", py: 0.2,
+                                          gap: 0.7, alignItems: "center",
+                                          cursor: jb.url ? "pointer"
+                                                         : "default" }}
+                          onClick={() => jb.url &&
+                            window.open(jb.url, "_blank")}>
+                          {ju.Icon
+                            ? <ju.Icon sx={{ fontSize: 13, color: ju.color,
+                                             flexShrink: 0 }} />
+                            : <CircularProgress size={10} thickness={6}
+                                                sx={{ color: ju.color,
+                                                      flexShrink: 0 }} />}
+                          <Typography variant="caption" noWrap sx={{
+                            flex: 1, fontSize: 11.5,
+                            fontFamily: "ui-monospace, Menlo, monospace" }}>
+                            {jb.name}
+                          </Typography>
+                          <Typography variant="caption"
+                            color="text.secondary"
+                            sx={{ fontSize: 10, flexShrink: 0 }}>
+                            {jb.sec != null ? `${Math.round(jb.sec)}с` : ""}
+                            {jb.when ? " " + fmtWhen(jb.when) : ""}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                )}
+              </Box>
             );
           })}
         </Box>
@@ -346,7 +417,8 @@ export default function Changes({ project, toast, open, onToggle,
         </Box>
       </Collapse>
 
-      <BuildsPanel build={build} open={bOpen} onToggle={bToggle} />
+      <BuildsPanel build={build} open={bOpen} onToggle={bToggle}
+              project={project} />
 
       <Dialog fullScreen open={!!diff} onClose={() => setDiff(null)}>
         <AppBar position="sticky" color="primary">

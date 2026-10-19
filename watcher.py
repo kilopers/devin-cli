@@ -2989,7 +2989,7 @@ def _gha_run(r: dict) -> dict:
               "cancelled": "canceled"}.get(r.get("conclusion"), "unknown")
     return {"status": st, "name": r.get("name") or "",
             "ref": r.get("head_branch") or "",
-            "num": r.get("run_number"),
+            "num": r.get("run_number"), "id": r.get("id"),
             "url": r.get("html_url"), "when": r.get("created_at") or ""}
 
 
@@ -3044,6 +3044,7 @@ def _gitlab_status(host: str, path: str, token: str | None = None) -> dict:
                 else "unknown"
         return {"status": st, "name": f"pipeline #{p.get('id', '')}",
                 "ref": p.get("ref") or "", "num": p.get("id"),
+                "id": p.get("id"),
                 "url": p.get("web_url"),
                 "when": p.get("updated_at") or p.get("created_at") or ""}
 
@@ -3086,6 +3087,95 @@ def _api_build():
         _BUILD_CACHE[proj] = (time.time(), res)
     return jsonify(res)
 
+
+@app.get("/api/build/jobs")
+@login_required
+def _api_build_jobs():
+    """Джобы одного прогона CI — GitHub run jobs / GitLab pipeline jobs.
+    project + id (run/pipeline). Кэш 60 с."""
+    proj = (request.args.get("project") or "").strip()
+    rid = (request.args.get("id") or "").strip()
+    if not rid.isdigit():
+        return jsonify({"ok": False, "error": "нет id прогона"}), 400
+    key = f"{proj}:{rid}"
+    hit = _JOBS_CACHE.get(key)
+    if hit and time.time() - hit[0] < _BUILD_TTL:
+        return jsonify(hit[1])
+    root = _proj_root(proj)
+    res = {"ok": True, "jobs": []}
+    if (root / ".git").exists():
+        rc, url = _git(root, "remote", "get-url", "origin")
+        parsed = _parse_remote(url) if rc == 0 else None
+        if parsed:
+            host, path, token = parsed
+            token = token or _cred_get(host)
+            if host == "github.com":
+                tk = token or GITHUB_TOKEN
+                headers = {"Authorization": f"Bearer {tk}"} if tk else {}
+                d, err = _http_json(
+                    f"https://api.github.com/repos/{path}"
+                    f"/actions/runs/{rid}/jobs?per_page=30", headers)
+                if err:
+                    res = {"ok": False, "error": f"GitHub: {err}"}
+                else:
+                    res["jobs"] = [
+                        {"name": j.get("name") or "",
+                         "status": {"success": "success",
+                                    "failure": "failed",
+                                    "cancelled": "canceled"}
+                                   .get(j.get("conclusion") or "",
+                                        "running"),
+                         "url": j.get("html_url"),
+                         "when": j.get("started_at") or "",
+                         "sec": _sec_between(j.get("started_at"),
+                                             j.get("completed_at"))}
+                        for j in (d or {}).get("jobs") or []]
+            else:
+                gl_host = urllib.parse.urlparse(uset(
+                    "gitlab.base_url", _current_user(),
+                    "GITLAB_BASE_URL", "https://gitlab.com")).hostname or ""
+                if "gitlab" in host or host == gl_host:
+                    tk = token or GITLAB_TOKEN
+                    headers = {"PRIVATE-TOKEN": tk} if tk else {}
+                    enc = urllib.parse.quote(path, safe="")
+                    d, err = _http_json(
+                        f"https://{host}/api/v4/projects/{enc}"
+                        f"/pipelines/{rid}/jobs?per_page=30", headers)
+                    if err:
+                        res = {"ok": False, "error": f"GitLab: {err}"}
+                    else:
+                        res["jobs"] = [
+                            {"name": (j.get("stage") or "") + ": "
+                                     + (j.get("name") or ""),
+                             "status": {"success": "success",
+                                        "failed": "failed",
+                                        "canceled": "canceled",
+                                        "skipped": "canceled"}
+                                       .get(j.get("status") or "",
+                                            "running"),
+                             "url": j.get("web_url"),
+                             "when": j.get("started_at") or "",
+                             "sec": j.get("duration")}
+                            for j in d or []]
+    if res.get("ok"):
+        _JOBS_CACHE[key] = (time.time(), res)
+    return jsonify(res)
+
+
+def _sec_between(a: str | None, b: str | None):
+    """ISO8601 -> секунды длительности (GitHub jobs)."""
+    try:
+        from datetime import datetime, timezone
+        f = lambda s: datetime.fromisoformat(
+            (s or "").replace("Z", "+00:00"))
+        if a and b:
+            return int((f(b) - f(a)).total_seconds())
+    except Exception:
+        pass
+    return None
+
+
+_JOBS_CACHE: dict = {}
 
 _HOOK_CACHE: dict = {}   # proj -> (ts, result) — тот же TTL, что у сборок
 
