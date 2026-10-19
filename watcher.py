@@ -390,8 +390,8 @@ def _instr_block(author: str, proj: str | None) -> str:
             customs = db_query(
                 "SELECT i.name, i.body FROM instructions i"
                 " JOIN instr_attach a ON a.instr_id=i.id"
-                " WHERE a.user=%s AND a.project=%s ORDER BY i.id",
-                (author, proj))
+                " WHERE a.project=%s ORDER BY i.id",
+                (proj,))
             for r in customs:
                 b = (r["body"] or "").strip()
                 if b:
@@ -3500,11 +3500,13 @@ def _instr_rows(user: str, project: str | None = None) -> list:
         "       (a.instr_id IS NOT NULL) AS attached"
         " FROM instructions i"
         " LEFT JOIN instr_attach a ON a.instr_id=i.id"
-        "   AND a.user=%s AND a.project=%s"
+        "   AND a.project=%s"
         " WHERE i.kind='system' OR i.user=%s"
+        "    OR (i.kind='custom' AND a.instr_id IS NOT NULL)"
         " ORDER BY i.kind='system' DESC, i.kind='user' DESC, i.id",
-        (user, project or "", user))
-    return [dict(r, attached=bool(r["attached"])) for r in rows]
+        (project or "", user))
+    return [dict(r, attached=bool(r["attached"]),
+                 mine=(r["user"] == user)) for r in rows]
 
 
 @app.get("/api/internal/instr")

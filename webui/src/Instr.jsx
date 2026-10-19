@@ -110,8 +110,11 @@ export default function Instr({ project, open, onToggle, toast }) {
           <ListItemButton key={r.id} dense onClick={() => openDlg(r)}
                           sx={{ px: 1.5, py: 0.3 }}>
             <Checkbox size="small" checked={!!r.attached}
+                      disabled={!r.mine}
                       sx={{ p: 0.3, mr: 0.5 }}
-                      title="подключена к проекту"
+                      title={r.mine
+                        ? "подключена к проекту"
+                        : "инструкция владельца — нельзя править"}
                       onClick={e => e.stopPropagation()}
                       onChange={e => attach(r, e.target.checked)} />
             <Typography variant="body2" noWrap sx={{
@@ -130,7 +133,7 @@ export default function Instr({ project, open, onToggle, toast }) {
           : "Инструкция"}
       </DialogTitle>
       <DialogContent>
-        {view?.kind === "system" ? (
+        {view?.kind === "system" || !view?.mine ? (
           <Typography variant="body2" component="pre" sx={{
             whiteSpace: "pre-wrap", fontSize: 12.5,
             fontFamily: "ui-monospace, Menlo, monospace",
@@ -156,12 +159,12 @@ export default function Instr({ project, open, onToggle, toast }) {
         </>)}
       </DialogContent>
       <DialogActions>
-        {view?.kind === "custom" &&
+        {view?.kind === "custom" && view?.mine &&
           <IconButton onClick={del} title="удалить" sx={{ mr: "auto" }}>
             <DeleteIcon fontSize="small" />
           </IconButton>}
         <Button onClick={() => setView(null)}>Закрыть</Button>
-        {view && view.kind !== "system" &&
+        {view && view.kind !== "system" && view.mine &&
           <Button variant="contained" onClick={save}>Сохранить</Button>}
       </DialogActions>
     </Dialog>
