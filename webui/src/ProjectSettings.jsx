@@ -14,6 +14,7 @@ export default function ProjectSettings({ project, onClose, toast }) {
   const [mode, setMode] = useState("");
   const [autoCommit, setAutoCommit] = useState(false);
   const [mainBranch, setMainBranch] = useState("");
+  const [branches, setBranches] = useState([]);
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -24,6 +25,8 @@ export default function ProjectSettings({ project, onClose, toast }) {
                    setAutoCommit(j.auto_commit === "1");
                    setMainBranch(j.main_branch || ""); });
     get("/api/models").then(j => setModels(j.models || []));
+    get("/api/branches?project=" + encodeURIComponent(project))
+      .then(j => setBranches((j.branches || []).map(b => b.name)));
   }, [project]);
 
   const save = async () => {
@@ -64,10 +67,16 @@ export default function ProjectSettings({ project, onClose, toast }) {
             control={<Checkbox checked={autoCommit}
                      onChange={e => setAutoCommit(e.target.checked)} />}
             label="Автокоммит + push после задачи" />
-          <TextField label="Рабочая ветка" size="small" fullWidth
+          <TextField select label="Рабочая ветка" size="small" fullWidth
                      value={mainBranch}
                      onChange={e => setMainBranch(e.target.value)}
-                     helperText="куда сливать ветки кнопкой в «Ветки» — пусто: main/master" />
+                     helperText="куда сливать ветки кнопкой в «Ветки» — пусто: main/master">
+            <MenuItem value="">— по умолчанию —</MenuItem>
+            {mainBranch && !branches.includes(mainBranch) &&
+              <MenuItem value={mainBranch}>{mainBranch}</MenuItem>}
+            {branches.map(b => (
+              <MenuItem key={b} value={b}>{b}</MenuItem>))}
+          </TextField>
         </Stack>
       </DialogContent>
       <DialogActions>
