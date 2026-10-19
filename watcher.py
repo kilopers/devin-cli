@@ -314,18 +314,23 @@ def init_db() -> None:
             db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
     # инструкции: системная (одна, неизменяемая) + пустая общая каждому
     # юзеру — миграция по существующим
+    # {public}/{port} — глобальные, подставляем при хранении, чтобы в
+    # UI был виден реальный домен; {user}/{project} остаются шаблоном.
+    sys_body = (SYS_INSTR_DEFAULT
+                .replace("{public}", _public_url())
+                .replace("{port}", str(WEB_PORT)))
     sys_row = db_query("SELECT id, body FROM instructions"
                        " WHERE kind='system'")
     if not sys_row:
         db_exec("INSERT INTO instructions(user,kind,name,body,created,"
                 "updated) VALUES('','system',%s,%s,%s,%s)",
-                ("Системные правила", SYS_INSTR_DEFAULT,
+                ("Системные правила", sys_body,
                  time.time(), time.time()))
-    elif sys_row[0]["body"] != SYS_INSTR_DEFAULT:
+    elif sys_row[0]["body"] != sys_body:
         # код — источник истины для системной инструкции: чиним её,
         # даже если записать удалось как-то мимо эндпоинтов
         db_exec("UPDATE instructions SET body=%s, updated=%s WHERE id=%s",
-                (SYS_INSTR_DEFAULT, time.time(), sys_row[0]["id"]))
+                (sys_body, time.time(), sys_row[0]["id"]))
     db_exec("UPDATE instructions SET name='Пользовательская инструкция'"
             " WHERE kind='user' AND name='Общая инструкция'")
     _ensure_user_instr(WEB_ADMIN_USER)
@@ -411,6 +416,13 @@ def _ensure_project_instr(project: str) -> None:
             (project, time.time(), time.time(), project))
 
 
+def _public_url() -> str:
+    """Публичный адрес воркера: env PUBLIC_URL → kv.public_url →
+    дефолт. Используется в инструкциях и ссылках наружу."""
+    return (os.environ.get("PUBLIC_URL") or kv_get("public_url")
+            or "https://build.kilop.ru").rstrip("/")
+
+
 def _instr_block(author: str, proj: str | None) -> str:
     """Снапшот инструкций для задачи: системная + общая юзера +
     подключённые к проекту. {user}/{project} подставляются — агент знает
@@ -423,12 +435,10 @@ def _instr_block(author: str, proj: str | None) -> str:
         rows = []
     sys_body = next((r["body"] for r in rows if r["kind"] == "system"),
                     "") or SYS_INSTR_DEFAULT
-    pub = (os.environ.get("PUBLIC_URL") or kv_get("public_url")
-           or "https://build.kilop.ru").rstrip("/")
     sys_body = (sys_body.replace("{user}", author or "")
                         .replace("{project}", proj or "")
                         .replace("{port}", str(WEB_PORT))
-                        .replace("{public}", pub))
+                        .replace("{public}", _public_url()))
     out = [sys_body]
     ub = next((r["body"] for r in rows if r["kind"] == "user"), "")
     if ub.strip():

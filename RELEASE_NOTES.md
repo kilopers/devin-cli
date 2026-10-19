@@ -1,3 +1,10 @@
+## 1.0.70
+- Системная инструкция: {public} больше не остаётся сырым шаблоном —
+  реальный домен подставляется при записи в БД (init_db), значение
+  берётся из env PUBLIC_URL (→ kv.public_url → build.kilop.ru);
+  добавлен общий _public_url(); PUBLIC_URL/DEPLOY_TOKEN описаны
+  в .env.example.
+
 ## 1.0.69
 - Fix: GitLab пропадал из «Обзора репозиториев» — endpoint брал ключи
   напрямую из git_creds:<user> и не видел legacy-глобальные ключи
