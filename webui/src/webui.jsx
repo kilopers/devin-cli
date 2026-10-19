@@ -127,21 +127,21 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
                    alignItems: "center", gap: 1, flexWrap: "wrap" }}>
           <Typography variant="caption" color="text.secondary">
             {t.name} · {new Date(t.created * 1000).toLocaleString("ru-RU")}{" "}
-            <Box component="span" sx={{ border: "1px solid #cfd8dc",
+            <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
               borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
               color: "#78909c" }}>{SRC_RU[t.source] || t.source || ""}</Box>
             {t.model ? " " : null}
             {t.model &&
-              <Box component="span" sx={{ border: "1px solid #cfd8dc",
+              <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
                 borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
                 color: "#78909c" }}>{t.model}</Box>}
             {" "}
-            <Box component="span" sx={{ border: "1px solid #cfd8dc",
+            <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
               borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
               color: "#78909c" }}>
               {t.mode === "ask" ? "💬 вопрос" : "🛠 код"}</Box>
             {" "}
-            <Box component="span" sx={{ border: "1px solid #cfd8dc",
+            <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
               borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
               color: t.ac === "1" ? "#2e7d32" : "#78909c" }}>
               {t.ac === "1" ? "⚡ автокоммит" : "✋ коммит вручную"}</Box>
