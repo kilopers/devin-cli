@@ -8,6 +8,8 @@ import {
   Box, Checkbox, Chip, Collapse, Dialog, DialogActions,
   DialogContent, DialogTitle, ListItemButton, Typography, Button,
 } from "@mui/material";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
@@ -21,6 +23,8 @@ export default function Instr({ project, open, onToggle, toast }) {
   const [view, setView] = useState(null);      // открытая в модалке
   const projRef = useRef(project);
   projRef.current = project;
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const load = async () => {
     try {
@@ -126,13 +130,9 @@ export default function Instr({ project, open, onToggle, toast }) {
       </Box>
     </Collapse>
 
+    {/* на мобильной — во весь экран (PaperProps в MUI 9 игнорится) */}
     <Dialog open={!!view} onClose={() => setView(null)}
-            fullWidth maxWidth="sm"
-            PaperProps={{ sx: {
-              // на мобильной — почти во всю ширину экрана
-              m: { xs: "4px", md: "32px" },
-              width: { xs: "calc(100vw - 8px)", md: "auto" },
-              maxWidth: { xs: "calc(100vw - 8px)", md: "sm" } } }}>
+            fullScreen={isMobile} fullWidth maxWidth="sm">
       <DialogTitle sx={{ fontSize: 16,
                          p: { xs: "12px 12px 4px", md: "16px 24px" } }}>
         {view?.kind === "system" ? "Системная инструкция"
