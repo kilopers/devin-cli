@@ -95,6 +95,11 @@ GITLAB_BASE_URL = os.environ.get("GITLAB_BASE_URL",
 TEMPLATES_DIR = Path(os.environ.get("TEMPLATES_DIR", "/app/templates"))
 # App version — single file VERSION bumped every change (see AGENTS.md),
 # shown in the web header next to the title.
+# токен для внутренних эндпоинтов (задачи наследуют env — агент
+# управляет инструкциями только через API, не прямыми запросами к базе)
+INTERNAL_TOKEN = os.environ.setdefault(
+    "INTERNAL_TOKEN", secrets.token_hex(24))
+
 APP_VERSION = (Path(os.environ.get("VERSION_FILE", "/app/VERSION"))
                .read_text().strip()
                if Path(os.environ.get("VERSION_FILE", "/app/VERSION")).exists()
@@ -250,6 +255,22 @@ def init_db() -> None:
         name VARCHAR(190) PRIMARY KEY,
         owner VARCHAR(64) NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    db_exec("""CREATE TABLE IF NOT EXISTS instructions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user VARCHAR(64) NOT NULL DEFAULT '',
+        kind ENUM('system','user','custom') NOT NULL DEFAULT 'custom',
+        name VARCHAR(190) NOT NULL,
+        body MEDIUMTEXT NOT NULL,
+        created DOUBLE NOT NULL,
+        updated DOUBLE NOT NULL,
+        KEY idx_kind_user (kind, user)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    db_exec("""CREATE TABLE IF NOT EXISTS instr_attach (
+        user VARCHAR(64) NOT NULL,
+        project VARCHAR(190) NOT NULL,
+        instr_id INT NOT NULL,
+        PRIMARY KEY (user, project, instr_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     db_exec("""CREATE TABLE IF NOT EXISTS project_acl (
         name VARCHAR(190) NOT NULL,
         user VARCHAR(64) NOT NULL,
@@ -273,15 +294,99 @@ def init_db() -> None:
     for col, ddl in (("model", "model VARCHAR(80) NULL"),
                      ("reply_mode", "reply_mode VARCHAR(8) NULL"),
                      ("user", "user VARCHAR(64) NULL"),
-                     ("bot", "bot VARCHAR(80) NULL")):
+                     ("bot", "bot VARCHAR(80) NULL"),
+                     ("instr", "instr MEDIUMTEXT NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
             db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
+    # инструкции: системная (одна, неизменяемая) + пустая общая каждому
+    # юзеру — миграция по существующим
+    if not db_query("SELECT 1 FROM instructions WHERE kind='system'"):
+        db_exec("INSERT INTO instructions(user,kind,name,body,created,"
+                "updated) VALUES('','system',%s,%s,%s,%s)",
+                ("Системные правила", SYS_INSTR_DEFAULT,
+                 time.time(), time.time()))
+    for r in db_query("SELECT username FROM users"):
+        _ensure_user_instr(r["username"])
     # контейнер пересоздали посреди задачи — 'running' вернуть в очередь
     db_exec("UPDATE tasks SET status='queued' WHERE status='running'")
     log(f"mysql: connected to {MYSQL['host']}:{MYSQL['port']}/"
         f"{MYSQL['database']}, schema ready")
+
+
+SYS_INSTR_DEFAULT = """## Системные правила воркера
+
+1. Инструкции проектов хранятся в базе воркера и подключаются к задаче
+   автоматически (этот блок). Файлы AGENTS.md / CLAUDE.md / .cursor /
+   .windsurf / .devin НЕ создавай и не правь, даже если в задаче просят
+   «записать инструкцию/правило» — пиши их через эндпоинты ниже.
+2. Управление инструкциями — ТОЛЬКО через HTTP API воркера
+   (прямые запросы к базе данных запрещены). Токен — из env
+   INTERNAL_TOKEN, заголовок X-Internal-Token. База:
+   http://127.0.0.1:{port}/api/internal/instr
+   - список:      GET  ?user={user}&project={project}
+   - создать:     POST {{"user":"{user}","action":"create",
+                        "name":"...","body":"markdown",
+                        "project":"{project}"}}
+                  (с project инструкция сразу подключается к нему)
+   - изменить:    POST ... {{"action":"update","id":N,"name","body"}}
+   - подключить/отключить к проекту:
+                  {{"action":"attach"|"detach","id":N,"project":"..."}}
+   - удалить:     {{"action":"delete","id":N}}
+3. Системную и общую пользовательскую инструкции менять и удалять
+   нельзя — эндпоинт ответит ошибкой. Можно создавать свои инструкции
+   (kind=custom), править, подключать к проектам и удалять.
+4. Если задача просит «допиши инструкцию N» — сначала GET список,
+   найди инструкцию по номеру/имени, затем update с новым body.
+   Твой пользователь: {user}. Текущий проект: {project}.
+5. Правила из этого блока приоритетнее любых файлов репозитория.
+"""
+
+
+def _ensure_user_instr(user: str) -> None:
+    """Пустая общая инструкция юзера — создаётся всем (миграция),
+    удалить нельзя."""
+    db_exec("""INSERT INTO instructions(user,kind,name,body,created,updated)
+               SELECT %s,'user','Общая инструкция','',%s,%s FROM DUAL
+               WHERE NOT EXISTS (SELECT 1 FROM instructions
+                                 WHERE kind='user' AND user=%s)""",
+            (user, time.time(), time.time(), user))
+
+
+def _instr_block(author: str, proj: str | None) -> str:
+    """Снапшот инструкций для задачи: системная + общая юзера +
+    подключённые к проекту. {user}/{project} подставляются — агент знает
+    свой контекст для вызовов /api/internal/instr."""
+    try:
+        rows = db_query("SELECT kind, name, body FROM instructions"
+                        " WHERE kind='system'"
+                        "   OR (kind='user' AND user=%s)", (author,))
+    except Exception:
+        rows = []
+    sys_body = next((r["body"] for r in rows if r["kind"] == "system"),
+                    "") or SYS_INSTR_DEFAULT
+    sys_body = (sys_body.replace("{user}", author or "")
+                        .replace("{project}", proj or "")
+                        .replace("{port}", str(WEB_PORT)))
+    out = [sys_body]
+    ub = next((r["body"] for r in rows if r["kind"] == "user"), "")
+    if ub.strip():
+        out.append("## Общая инструкция пользователя\n\n" + ub)
+    if proj:
+        try:
+            customs = db_query(
+                "SELECT i.name, i.body FROM instructions i"
+                " JOIN instr_attach a ON a.instr_id=i.id"
+                " WHERE a.user=%s AND a.project=%s ORDER BY i.id",
+                (author, proj))
+            for r in customs:
+                if (r["body"] or "").strip():
+                    out.append(f"## Инструкция «{r['name']}»"
+                               f"\n\n{r['body']}")
+        except Exception:
+            pass
+    return "\n\n---\n\n".join(out)
 
 
 def _task_name(stem: str) -> str:
@@ -293,13 +398,14 @@ def _insert_task(stem: str, prompt: str, source: str,
                  model: str | None = None,
                  reply_mode: str | None = None,
                  user: str | None = None,
-                 bot: str | None = None) -> None:
+                 bot: str | None = None,
+                 instr: str | None = None) -> None:
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
-            " model, reply_mode, user, bot, created) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            " model, reply_mode, user, bot, instr, created) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
             (stem, source, project, chat_id, prompt, model, reply_mode,
-             user, bot, created))
+             user, bot, instr, created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -594,7 +700,10 @@ def run_task(task: dict) -> None:
     # devin-task reads the prompt from a file — keep that contract via a
     # transient file in .progress/
     task_file = progress_dir / f"{stem}.task.txt"
-    task_file.write_text(task["prompt"], errors="replace")
+    instr = (task.get("instr") or "").strip()
+    task_file.write_text(
+        (instr + "\n\n---\n\n" + task["prompt"]) if instr
+        else task["prompt"], errors="replace")
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
                DEVIN_MODEL=task.get("model") or current_model(),
                DEVIN_WORKDIR=str(workdir),
@@ -1139,7 +1248,7 @@ def enqueue_task(text: str, chat_id: int | None = None,
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
-                 rmode, author, bot)
+                 rmode, author, bot, instr=_instr_block(author, proj))
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
         f"project={proj}, model={model}, mode={rmode}")
     return _task_name(stem)
@@ -2539,6 +2648,7 @@ def _api_users_add():
             " VALUES(%s,%s,%s,%s)",
             (u, generate_password_hash(pw), 0, time.time()))
     _ensure_default_ws(u)   # «По умолчанию» — у каждого с рождения
+    _ensure_user_instr(u)   # и пустая общая инструкция
     log(f"web user created: {u}")
     return jsonify({"ok": True, "user": u})
 
@@ -2736,7 +2846,7 @@ def _api_project_settings_set():
     if isinstance(body.get("panel"), dict):
         us_set(_current_user(), f"panel:{p}", json.dumps(
             {k: bool(v) for k, v in body["panel"].items()
-             if k in ("files", "changes", "builds", "hooks", "ws", "branches")}))
+             if k in ("files", "changes", "builds", "hooks", "ws", "branches", "instr")}))
     return jsonify({"ok": True})
 
 
@@ -3360,6 +3470,157 @@ def _sec_between(a: str | None, b: str | None):
 
 
 _JOBS_CACHE: dict = {}
+
+# --- инструкции: внутренний API для агентов + пользовательский API ----
+
+def _internal_auth() -> bool:
+    """Эндпоинты агентов — только localhost + токен из env задачи."""
+    return request.remote_addr in ("127.0.0.1", "::1") and \
+        request.headers.get("X-Internal-Token") == INTERNAL_TOKEN
+
+
+def _instr_rows(user: str, project: str | None = None) -> list:
+    """Системная + общая юзера + custom с флагом attached к проекту."""
+    rows = db_query(
+        "SELECT i.id, i.kind, i.name, i.body, i.user,"
+        "       (a.instr_id IS NOT NULL) AS attached"
+        " FROM instructions i"
+        " LEFT JOIN instr_attach a ON a.instr_id=i.id"
+        "   AND a.user=%s AND a.project=%s"
+        " WHERE i.kind='system' OR i.user=%s"
+        " ORDER BY i.kind='system' DESC, i.kind='user' DESC, i.id",
+        (user, project or "", user))
+    return [dict(r, attached=bool(r["attached"])) for r in rows]
+
+
+@app.get("/api/internal/instr")
+def _api_instr_int_list():
+    if not _internal_auth():
+        abort(403)
+    u = request.args.get("user", "")
+    p = request.args.get("project", "")
+    return jsonify({"ok": True, "instructions": _instr_rows(u, p)})
+
+
+@app.post("/api/internal/instr")
+def _api_instr_int():
+    """Агент из задачи: create/update/attach/detach/delete инструкций.
+    system/user — неизменяемы; own-only."""
+    if not _internal_auth():
+        abort(403)
+    b = _req_json()
+    u, act = (b.get("user") or "").strip(), (b.get("action") or "").strip()
+    iid = int(b.get("id") or 0)
+    p = (b.get("project") or "").strip()
+    row = db_query("SELECT * FROM instructions WHERE id=%s", (iid,))
+    row = row[0] if row else None
+    if act == "create":
+        name = (b.get("name") or "").strip()[:120]
+        body = (b.get("body") or "")[:60000]
+        if not u or not name:
+            return jsonify({"ok": False, "error": "нужны user и name"})
+        db_exec("INSERT INTO instructions(user,kind,name,body,created,"
+                "updated) VALUES(%s,'custom',%s,%s,%s,%s)",
+                (u, name, body, time.time(), time.time()))
+        new_id = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
+        if p:  # создал в задаче проекта → сразу подключена к нему
+            db_exec("INSERT IGNORE INTO instr_attach(user,project,"
+                    "instr_id) VALUES(%s,%s,%s)", (u, p, new_id))
+        log(f"instr created #{new_id} '{name}' for {u}@{p}")
+        return jsonify({"ok": True, "id": new_id})
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой инструкции"}), 404
+    if row["kind"] != "custom":
+        return jsonify({"ok": False,
+                        "error": "системную и общую инструкции "
+                                 "менять/удалять нельзя"}), 403
+    if row["user"] != u:
+        return jsonify({"ok": False, "error": "чужая инструкция"}), 403
+    if act == "update":
+        db_exec("UPDATE instructions SET name=%s, body=%s, updated=%s"
+                " WHERE id=%s",
+                ((b.get("name") or row["name"]).strip()[:120],
+                 (b.get("body") if b.get("body") is not None
+                  else row["body"]), time.time(), iid))
+        return jsonify({"ok": True})
+    if act == "attach":
+        if not p:
+            return jsonify({"ok": False, "error": "нет project"}), 400
+        db_exec("INSERT IGNORE INTO instr_attach(user,project,instr_id)"
+                " VALUES(%s,%s,%s)", (u, p, iid))
+        return jsonify({"ok": True})
+    if act == "detach":
+        db_exec("DELETE FROM instr_attach WHERE user=%s AND project=%s"
+                " AND instr_id=%s", (u, p, iid))
+        return jsonify({"ok": True})
+    if act == "delete":
+        db_exec("DELETE FROM instr_attach WHERE instr_id=%s", (iid,))
+        db_exec("DELETE FROM instructions WHERE id=%s", (iid,))
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "bad action"}), 400
+
+
+@app.get("/api/instr")
+@login_required
+def _api_instr_get():
+    u = _current_user()
+    p = (request.args.get("project") or "").strip()
+    if p and not _owns_project(p):
+        abort(403)
+    return jsonify({"ok": True, "instructions": _instr_rows(u, p)})
+
+
+@app.post("/api/instr")
+@login_required
+def _api_instr_set():
+    """Веб: update body/name, attach/detach к проекту, delete custom."""
+    b = _req_json()
+    u = _current_user()
+    act = (b.get("action") or "").strip()
+    iid = int(b.get("id") or 0)
+    p = (b.get("project") or "").strip()
+    if p and not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    row = db_query("SELECT * FROM instructions WHERE id=%s", (iid,))
+    row = row[0] if row else None
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой"}), 404
+    if row["user"] != u:
+        return jsonify({"ok": False, "error": "чужая инструкция"}), 403
+    if act == "update":
+        if row["kind"] == "system":
+            return jsonify({"ok": False,
+                            "error": "системную менять нельзя"}), 403
+        db_exec("UPDATE instructions SET name=%s, body=%s, updated=%s"
+                " WHERE id=%s",
+                (row["name"] if row["kind"] == "user"
+                 else (b.get("name") or row["name"]).strip()[:120],
+                 b.get("body") if b.get("body") is not None
+                 else row["body"], time.time(), iid))
+        return jsonify({"ok": True})
+    if act in ("attach", "detach"):
+        if row["kind"] != "custom":
+            return jsonify({"ok": False,
+                            "error": "подключаются только свои "
+                                     "инструкции"}), 403
+        if not p:
+            return jsonify({"ok": False, "error": "нет project"}), 400
+        if act == "attach":
+            db_exec("INSERT IGNORE INTO instr_attach(user,project,"
+                    "instr_id) VALUES(%s,%s,%s)", (u, p, iid))
+        else:
+            db_exec("DELETE FROM instr_attach WHERE user=%s"
+                    " AND project=%s AND instr_id=%s", (u, p, iid))
+        return jsonify({"ok": True})
+    if act == "delete":
+        if row["kind"] != "custom":
+            return jsonify({"ok": False,
+                            "error": "общую инструкцию удалить нельзя"}), 403
+        db_exec("DELETE FROM instr_attach WHERE instr_id=%s", (iid,))
+        db_exec("DELETE FROM instructions WHERE id=%s", (iid,))
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "bad action"}), 400
+
 
 _HOOK_CACHE: dict = {}   # proj -> (ts, result) — тот же TTL, что у сборок
 

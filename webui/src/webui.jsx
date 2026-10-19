@@ -37,6 +37,7 @@ import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
 import Changes, { Webhooks, Branches } from "./Changes.jsx";
+import Instr from "./Instr.jsx";
 import FileEditor from "./FileEditor.jsx";
 import AddProject from "./AddProject.jsx";
 import Composer from "./Composer.jsx";
@@ -347,7 +348,8 @@ export default function App() {
   const [fast, setFast] = useState(false);
   const [panels, setPanels] = useState({ files: true, changes: true,
                                         builds: true, hooks: true,
-                                        ws: true, branches: true });
+                                        ws: true, branches: true,
+                                        instr: true });
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -494,7 +496,7 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     setPanels({ files: true, changes: true, builds: true,
-                hooks: true, ws: true, branches: true });
+                hooks: true, ws: true, branches: true, instr: true });
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
       .then(d => { if (d.ok && d.panel)
         setPanels(s => ({ ...s, ...d.panel })); })
@@ -629,6 +631,9 @@ export default function App() {
           (v{status.version || "…"})
         </Typography>
       </Box>
+      <Instr project={project} open={panels.instr}
+             onToggle={() => togglePanel("instr")} toast={setToast} />
+      <Divider />
       <Panel title="Файлы" open={panels.files}
              onToggle={() => togglePanel("files")}
              icon={<FolderOpenIcon sx={{ fontSize: 16, ml: 0.5 }} />}
@@ -838,6 +843,10 @@ export default function App() {
             alignSelf: "flex-start", position: "sticky", top: 72,
             maxHeight: "calc(100vh - 92px)", borderRadius: 2,
             overflowY: "auto" }}>
+            <Instr project={project} open={panels.instr}
+                   onToggle={() => togglePanel("instr")}
+                   toast={setToast} />
+            <Divider />
             <Panel title="Файлы проекта" open={panels.files}
                    onToggle={() => togglePanel("files")}
                    icon={<FolderOpenIcon sx={{ fontSize: 16, ml: 0.5 }} />}
