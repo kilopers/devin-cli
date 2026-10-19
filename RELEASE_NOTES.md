@@ -1,3 +1,14 @@
+## 1.0.64
+- «Обзор репозиториев» — fullscreen-модалка из drawer: все репо юзера
+  с GitHub и GitLab (по ключам git_creds), группировка по хосту,
+  описание; добавленные помечены чипом, остальные — кнопка «+»
+  открывает AddProject с предзаполненными URL и папкой (выбор
+  пространства — там же). /api/repos/browse.
+- Системная инструкция: контроль деплоя — 127.0.0.1 только изнутри
+  контейнера; для CI/внешних — {public}/api/deploy/status с Bearer
+  DEPLOY_TOKEN/WATCHTOWER_TOKEN ({public} = PUBLIC_URL env или
+  kv.public_url, дефолт https://build.kilop.ru).
+
 ## 1.0.63
 - «Контроль деплоя»: POST /api/deploy/status принимает {project,
   status, data} (localhost+internal token или Bearer DEPLOY_TOKEN/

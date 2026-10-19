@@ -367,11 +367,15 @@ SYS_INSTR_DEFAULT = """## Системные правила воркера
    - удалить:     {{"action":"delete","id":N}}
 
    Контроль деплоя: после любого деплоя/запуска проекта (и если задача
-   просит настроить деплой) шли
-   POST http://127.0.0.1:{port}/api/deploy/status
-   {{"project":"{project}","status":"success"|"failed","data":"лог/версия"}}
-   с тем же заголовком X-Internal-Token — статус появится в секции
-   «Деплой» веб-панели. Настраивая CI/CD проекта — встрой туда этот вызов.
+   просит настроить деплой) шли статус — статус появится в секции
+   «Деплой» веб-панели:
+   - из этого контейнера: POST http://127.0.0.1:{port}/api/deploy/status
+     с заголовком X-Internal-Token ($INTERNAL_TOKEN);
+   - из CI/CD и внешних скриптов: POST {public}/api/deploy/status
+     с заголовком Authorization: Bearer $DEPLOY_TOKEN
+     (или $WATCHTOWER_TOKEN — задаётся в env на сервере);
+   тело: {{"project":"{project}","status":"success"|"failed",
+          "data":"лог/версия"}}.
 3. Системную и пользовательскую инструкции менять и удалять
    нельзя — эндпоинт ответит ошибкой. Можно создавать свои инструкции
    (kind=custom), править, подключать к проектам и удалять.
@@ -418,9 +422,12 @@ def _instr_block(author: str, proj: str | None) -> str:
         rows = []
     sys_body = next((r["body"] for r in rows if r["kind"] == "system"),
                     "") or SYS_INSTR_DEFAULT
+    pub = (os.environ.get("PUBLIC_URL") or kv_get("public_url")
+           or "https://build.kilop.ru").rstrip("/")
     sys_body = (sys_body.replace("{user}", author or "")
                         .replace("{project}", proj or "")
-                        .replace("{port}", str(WEB_PORT)))
+                        .replace("{port}", str(WEB_PORT))
+                        .replace("{public}", pub))
     out = [sys_body]
     ub = next((r["body"] for r in rows if r["kind"] == "user"), "")
     if ub.strip():
@@ -3285,6 +3292,47 @@ def _api_branch_merge():
     log(f"merged {cur} -> {main} in {proj or 'wd'}")
     return jsonify({"ok": True, "current": main,
                     "result": "\n".join(out)[-2000:]})
+
+
+@app.get("/api/repos/browse")
+@login_required
+def _api_repos_browse():
+    """«Обзор репозиториев» — список репо со всех git-хостов юзера
+    (kv.git_creds), с отметкой added если папка уже склонирована."""
+    u = _current_user()
+    try:
+        creds = json.loads(kv_get(f"git_creds:{u}") or "{}")
+    except Exception:
+        creds = {}
+    have = set(list_projects())
+    out = []
+    for host, tok in creds.items():
+        if not tok:
+            continue
+        if host == "github.com":
+            data, err = _http_json(
+                "https://api.github.com/user/repos?per_page=100"
+                "&sort=updated&affiliation=owner,collaborator",
+                {"Authorization": f"Bearer {tok}"})
+            for r in data or []:
+                out.append({"host": host, "name": r.get("full_name"),
+                            "desc": r.get("description") or "",
+                            "url": r.get("clone_url") or "",
+                            "added": r.get("name") in have})
+        else:
+            base = host if host.startswith("http") else "https://" + host
+            data, err = _http_json(
+                f"{base}/api/v4/projects?membership=true&per_page=100"
+                "&order_by=last_activity_at",
+                {"PRIVATE-TOKEN": tok})
+            for r in data or []:
+                out.append({"host": host,
+                            "name": r.get("path_with_namespace"),
+                            "desc": r.get("description") or "",
+                            "url": r.get("http_url_to_repo") or "",
+                            "added": r.get("path") in have})
+    return jsonify({"ok": True, "repos": out,
+                    "empty": not bool(creds)})
 
 
 @app.get("/api/diff")

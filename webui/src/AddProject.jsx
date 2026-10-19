@@ -2,7 +2,7 @@
 // this dialog: folder name + repo URL (https or git@) + token, then
 // POST /api/project/add clones it and the clone output shows in the
 // dark <pre> right inside the modal.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
   MenuItem, TextField, Typography,
@@ -35,7 +35,8 @@ function previewUrl(url, token) {
 }
 
 export default function AddProject({ open, onClose, onAdded,
-                                     wsList = [], wsActive = 0 }) {
+                                     wsList = [], wsActive = 0,
+                                     preset = null }) {
   const [ws, setWs] = useState(wsActive);
   const [folder, setFolder] = useState("");
   const folderDirty = useRef(false);        // autofill until user edits
@@ -43,6 +44,16 @@ export default function AddProject({ open, onClose, onAdded,
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);   // {ok, output|error}
+
+  // предзаполнение из «Обзора репозиториев»
+  useEffect(() => {
+    if (open && preset?.url) {
+      setUrl(preset.url);
+      setFolder(preset.folder || "");
+      folderDirty.current = false;
+      setResult(null);
+    }
+  }, [open, preset]);
 
   const kind = detect(url);
   const sshNote = kind.kind === "ssh";

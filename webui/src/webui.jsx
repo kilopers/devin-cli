@@ -41,6 +41,7 @@ import Changes, { Webhooks, Branches, Deploy } from "./Changes.jsx";
 import Instr from "./Instr.jsx";
 import FileEditor from "./FileEditor.jsx";
 import AddProject from "./AddProject.jsx";
+import RepoBrowse from "./RepoBrowse.jsx";
 import Composer from "./Composer.jsx";
 import { ConnBadge, useConnStatus } from "./ConnDot.jsx";
 
@@ -339,6 +340,8 @@ export default function App() {
   const [usersOpen, setUsersOpen] = useState(false); // «Пользователи» (админ)
   const [wsOpen, setWsOpen] = useState(false);   // «Рабочее пространство»
   const [branchDlg, setBranchDlg] = useState(null); // «🌿 новая ветка»
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [addPreset, setAddPreset] = useState(null);
   const [branchName, setBranchName] = useState("");
   const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
   const [wsmap, setWsmap] = useState({});        // project -> ws id
@@ -680,6 +683,13 @@ export default function App() {
       <Deploy project={project} open={panels.deploy}
               onToggle={() => togglePanel("deploy")} />
       <Divider />
+      <ListItemButton dense onClick={() => { setDrawerOpen(false);
+                                             setBrowseOpen(true); }}
+                      sx={{ px: 1.5 }}>
+        <Typography variant="body2" sx={{ fontSize: 12.5 }}>
+          🗂 Обзор репозиториев (GitHub/GitLab)
+        </Typography>
+      </ListItemButton>
       <Box sx={{ px: 2, py: 1.5, display: "flex", flexDirection: "column",
                  gap: 1.5 }}>
         <Typography variant="caption" color="text.secondary">
@@ -973,7 +983,13 @@ export default function App() {
                   onChanged={() => { loadWs(); refreshProjects(); }} />
       <Users open={usersOpen} onClose={() => setUsersOpen(false)}
              me={status.user} />
+      <RepoBrowse open={browseOpen} onClose={() => setBrowseOpen(false)}
+        onAdd={r => { setBrowseOpen(false);
+                      setAddPreset({ url: r.url,
+                        folder: (r.name || "").split("/").pop() });
+                      setAddOpen(true); }} />
       <AddProject open={addOpen} onClose={() => setAddOpen(false)}
+                  preset={addPreset}
                   wsList={wsInfo.ws} wsActive={wsInfo.active}
                   onAdded={f => { refreshProjects()
                     .then(() => selectProject(f)); }} />
