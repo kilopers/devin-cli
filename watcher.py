@@ -3294,19 +3294,39 @@ def _api_branch_merge():
                     "result": "\n".join(out)[-2000:]})
 
 
+def _norm_repo_url(url: str) -> str:
+    """URL репо -> 'host/group/repo' (без схемы, токена и .git)."""
+    p = _parse_remote(url or "")
+    return f"{p[0]}/{p[1]}" if p else ""
+
+
 @app.get("/api/repos/browse")
 @login_required
 def _api_repos_browse():
     """«Обзор репозиториев» — список репо со всех git-хостов юзера
-    (kv.git_creds), с отметкой added если папка уже склонирована."""
+    (kv.git_creds + gitlab.base_url/env), added — по совпадению
+    remote URL, а не имени папки."""
     u = _current_user()
     try:
         creds = json.loads(kv_get(f"git_creds:{u}") or "{}")
     except Exception:
         creds = {}
-    have = set(list_projects())
+    # remote-урлы всех локальных проектов -> 'host/group/repo'
+    have = set()
+    for d in (PROJECTS_ROOT.iterdir() if PROJECTS_ROOT else []):
+        if d.is_dir() and (d / ".git").exists():
+            rc, url = _git(d, "remote", "get-url", "origin")
+            if rc == 0:
+                have.add(_norm_repo_url(url))
+    # gitlab: базовый URL из настроек + env-токен в дополнение к creds
+    gl_base = urllib.parse.urlparse(uset(
+        "gitlab.base_url", u, "GITLAB_BASE_URL",
+        "https://gitlab.com")).hostname or "gitlab.com"
+    hosts = dict(creds)
+    hosts.setdefault("github.com", os.environ.get("GITHUB_TOKEN", ""))
+    hosts.setdefault(gl_base, os.environ.get("GITLAB_TOKEN", ""))
     out = []
-    for host, tok in creds.items():
+    for host, tok in hosts.items():
         if not tok:
             continue
         if host == "github.com":
@@ -3315,10 +3335,11 @@ def _api_repos_browse():
                 "&sort=updated&affiliation=owner,collaborator",
                 {"Authorization": f"Bearer {tok}"})
             for r in data or []:
+                key = f"github.com/{r.get('full_name', '')}"
                 out.append({"host": host, "name": r.get("full_name"),
                             "desc": r.get("description") or "",
                             "url": r.get("clone_url") or "",
-                            "added": r.get("name") in have})
+                            "added": key in have})
         else:
             base = host if host.startswith("http") else "https://" + host
             data, err = _http_json(
@@ -3326,11 +3347,12 @@ def _api_repos_browse():
                 "&order_by=last_activity_at",
                 {"PRIVATE-TOKEN": tok})
             for r in data or []:
+                key = _norm_repo_url(r.get("http_url_to_repo") or "")
                 out.append({"host": host,
                             "name": r.get("path_with_namespace"),
                             "desc": r.get("description") or "",
                             "url": r.get("http_url_to_repo") or "",
-                            "added": r.get("path") in have})
+                            "added": key in have})
     return jsonify({"ok": True, "repos": out,
                     "empty": not bool(creds)})
 
