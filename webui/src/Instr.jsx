@@ -1,23 +1,24 @@
-// «Инструкции» — первая секция панели: системная (только чтение),
-// общая пользовательская (пустая у всех, не удаляется), custom —
-// создаются агентом через /api/internal/instr, здесь правятся,
-// подключаются галочкой к текущему проекту и удаляются.
+// «Инструкции» — первая секция панели: системная (read-only),
+// пользовательская, проектная, custom — подключаются галочкой.
+// Тело показывается отрендеренным Markdown-читалкой; меняются
+// инструкции только агентом (задачей). Удалить можно только свою
+// custom-инструкцию — с подтверждением.
 import { useEffect, useRef, useState } from "react";
 import {
   Box, Checkbox, Chip, Collapse, Dialog, DialogActions,
-  DialogContent, DialogTitle, IconButton, ListItemButton,
-  TextField, Typography, Button,
+  DialogContent, DialogTitle, ListItemButton, Typography, Button,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import DeleteIcon from "@mui/icons-material/Delete";
+import IconButton from "@mui/material/IconButton";
 import { apiJson, post } from "./api.js";
+import Markdown from "./Markdown.jsx";
 
 export default function Instr({ project, open, onToggle, toast }) {
   const [rows, setRows] = useState([]);
   const [view, setView] = useState(null);      // открытая в модалке
-  const [draft, setDraft] = useState({ name: "", body: "" });
   const projRef = useRef(project);
   projRef.current = project;
 
@@ -30,21 +31,8 @@ export default function Instr({ project, open, onToggle, toast }) {
   };
   useEffect(() => { setRows([]); load(); }, [project]);
 
-  const openDlg = r => {
-    setDraft({ name: r.name, body: r.body });
-    setView(r);
-  };
-
-  const save = async () => {
-    const d = await post("/api/instr", {
-      action: "update", id: view.id, project: projRef.current,
-      name: draft.name, body: draft.body });
-    toast?.(d.ok ? "Инструкция сохранена"
-                : "Ошибка: " + (d.error || "?"));
-    if (d.ok) { setView(null); load(); }
-  };
-
   const del = async () => {
+    if (!window.confirm(`Удалить инструкцию «${view.name}»?`)) return;
     const d = await post("/api/instr", {
       action: "delete", id: view.id, project: projRef.current });
     toast?.(d.ok ? "Инструкция удалена"
@@ -81,7 +69,7 @@ export default function Instr({ project, open, onToggle, toast }) {
     <Collapse in={open}>
       <Box>
         {system && (
-          <ListItemButton dense onClick={() => openDlg(system)}
+          <ListItemButton dense onClick={() => setView(system)}
                           sx={{ px: 1.5, py: 0.3 }}>
             <Checkbox size="small" checked disabled
                       sx={{ p: 0.3, mr: 0.5 }} />
@@ -91,38 +79,36 @@ export default function Instr({ project, open, onToggle, toast }) {
               {system.name}
             </Typography>
             <Chip size="small" label="системная" color="primary"
-                  variant="outlined"
-                  sx={{ height: 16, fontSize: 10 }} />
+                  variant="outlined" sx={{ height: 16, fontSize: 10 }} />
           </ListItemButton>)}
         {common && (
-          <ListItemButton dense onClick={() => openDlg(common)}
+          <ListItemButton dense onClick={() => setView(common)}
                           sx={{ px: 1.5, py: 0.3 }}>
             <Checkbox size="small" checked disabled
                       sx={{ p: 0.3, mr: 0.5 }}
                       title="подключается ко всем проектам" />
-            <Typography variant="body2" noWrap sx={{
-              flex: 1, fontSize: 12.5 }}>
+            <Typography variant="body2" noWrap
+                        sx={{ flex: 1, fontSize: 12.5 }}>
               {common.name}
             </Typography>
             <Chip size="small" label="моя" variant="outlined"
                   sx={{ height: 16, fontSize: 10 }} />
           </ListItemButton>)}
         {projInstr && (
-          <ListItemButton dense onClick={() => openDlg(projInstr)}
+          <ListItemButton dense onClick={() => setView(projInstr)}
                           sx={{ px: 1.5, py: 0.3 }}>
             <Checkbox size="small" checked disabled
                       sx={{ p: 0.3, mr: 0.5 }}
                       title="проектная — отцепить нельзя" />
-            <Typography variant="body2" noWrap sx={{
-              flex: 1, fontSize: 12.5 }}>
+            <Typography variant="body2" noWrap
+                        sx={{ flex: 1, fontSize: 12.5 }}>
               {projInstr.name}
             </Typography>
             <Chip size="small" label="проектная" variant="outlined"
-                  color="secondary"
-                  sx={{ height: 16, fontSize: 10 }} />
+                  color="secondary" sx={{ height: 16, fontSize: 10 }} />
           </ListItemButton>)}
         {customs.map(r => (
-          <ListItemButton key={r.id} dense onClick={() => openDlg(r)}
+          <ListItemButton key={r.id} dense onClick={() => setView(r)}
                           sx={{ px: 1.5, py: 0.3 }}>
             <Checkbox size="small" checked={!!r.attached}
                       disabled={!r.mine}
@@ -132,8 +118,8 @@ export default function Instr({ project, open, onToggle, toast }) {
                         : "инструкция владельца — нельзя править"}
                       onClick={e => e.stopPropagation()}
                       onChange={e => attach(r, e.target.checked)} />
-            <Typography variant="body2" noWrap sx={{
-              flex: 1, fontSize: 12.5 }}>
+            <Typography variant="body2" noWrap
+                        sx={{ flex: 1, fontSize: 12.5 }}>
               {r.name}
             </Typography>
           </ListItemButton>))}
@@ -146,49 +132,31 @@ export default function Instr({ project, open, onToggle, toast }) {
         {view?.kind === "system" ? "Системная инструкция"
           : view?.kind === "user" ? "Пользовательская инструкция"
           : view?.kind === "project" ? "Проектная инструкция"
-          : "Инструкция"}
+          : view?.name}
       </DialogTitle>
       <DialogContent>
-        {view?.kind === "system" ||
-         (view?.kind === "custom" && !view?.mine) ? (
-          <Typography variant="body2" component="pre" sx={{
-            whiteSpace: "pre-wrap", fontSize: 12.5,
-            fontFamily: "ui-monospace, Menlo, monospace",
-            bgcolor: "#f5f5f5", p: 1.5, borderRadius: 1 }}>
-            {draft.body || "—"}
-          </Typography>
-        ) : (<>
-          {view?.kind === "custom" &&
-            <TextField fullWidth size="small" label="Название"
-                       value={draft.name}
-                       onChange={e => setDraft(d =>
-                         ({ ...d, name: e.target.value }))}
-                       sx={{ mb: 1.5 }} />}
-          <TextField fullWidth multiline minRows={8} size="small"
-                     label="Текст (markdown)"
-                     value={draft.body}
-                     onChange={e => setDraft(d =>
-                       ({ ...d, body: e.target.value }))} />
-          {view?.kind === "user" &&
-            <Typography variant="caption" color="text.secondary">
-              Подключается к каждой твоей задаче во всех проектах.
+        {view?.body
+          ? <Markdown text={view.body} />
+          : <Typography variant="body2" color="text.secondary">
+              пусто — агент заполнит её задачей «допиши инструкцию»,
+              или открой голосом
             </Typography>}
-          {view?.kind === "project" &&
-            <Typography variant="caption" color="text.secondary">
-              Подключается к каждой задаче этого проекта у всех
-              пользователей. Удалить и отцепить нельзя.
-            </Typography>}
-        </>)}
       </DialogContent>
-      <DialogActions>
-        {view?.kind === "custom" && view?.mine &&
-          <IconButton onClick={del} title="удалить" sx={{ mr: "auto" }}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>}
-        <Button onClick={() => setView(null)}>Закрыть</Button>
-        {view && view.kind !== "system" &&
-         (view.kind === "project" || view.mine) &&
-          <Button variant="contained" onClick={save}>Сохранить</Button>}
+      <DialogActions sx={{ flexDirection: "column", alignItems: "stretch",
+                           gap: 0.5, px: 3, pb: 2 }}>
+        <Box sx={{ display: "flex", alignItems: "center" }}>
+          {view?.kind === "custom" && view?.mine &&
+            <IconButton onClick={del} title="удалить" sx={{ mr: "auto" }}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>}
+          <Box sx={{ ml: "auto" }}>
+            <Button onClick={() => setView(null)}>Закрыть</Button>
+          </Box>
+        </Box>
+        <Typography variant="caption" color="text.secondary"
+                    sx={{ fontSize: 10.5, textAlign: "center" }}>
+          инструкции изменяются только агентом (задачей)
+        </Typography>
       </DialogActions>
     </Dialog>
   </>);

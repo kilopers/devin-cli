@@ -824,7 +824,8 @@ export default function App() {
             ? <ModelsPage accent={wsColor} toast={setToast}
                           onClose={() => setView("feed")} />
           : <>
-          <Box sx={{ flex: 1, minWidth: 0, p: "16px 12px 150px" }}>
+          <Box sx={{ flex: 1, minWidth: 0,
+                     p: { xs: "8px 2px 150px", md: "16px 12px 150px" } }}>
             {loadingOlder &&
               <Typography align="center" color="text.secondary" sx={{ py: 1 }}>
                 загружаю ранние…</Typography>}
