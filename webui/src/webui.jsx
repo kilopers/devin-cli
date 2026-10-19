@@ -37,7 +37,7 @@ import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
-import Changes, { Webhooks, Branches } from "./Changes.jsx";
+import Changes, { Webhooks, Branches, Deploy } from "./Changes.jsx";
 import Instr from "./Instr.jsx";
 import FileEditor from "./FileEditor.jsx";
 import AddProject from "./AddProject.jsx";
@@ -329,7 +329,7 @@ export default function App() {
   const [panels, setPanels] = useState({ files: true, changes: true,
                                         builds: true, hooks: true,
                                         ws: true, branches: true,
-                                        instr: true });
+                                        instr: true, deploy: true });
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -476,7 +476,7 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     setPanels({ files: true, changes: true, builds: true,
-                hooks: true, ws: true, branches: true, instr: true });
+                hooks: true, ws: true, branches: true, instr: true, deploy: true });
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
       .then(d => { if (d.ok && d.panel)
         setPanels(s => ({ ...s, ...d.panel })); })
@@ -676,6 +676,9 @@ export default function App() {
       <Divider />
       <Webhooks project={project} open={panels.hooks}
                 onToggle={() => togglePanel("hooks")} />
+      <Divider />
+      <Deploy project={project} open={panels.deploy}
+              onToggle={() => togglePanel("deploy")} />
       <Divider />
       <Box sx={{ px: 2, py: 1.5, display: "flex", flexDirection: "column",
                  gap: 1.5 }}>
@@ -926,6 +929,9 @@ export default function App() {
       <Divider />
             <Webhooks project={project} open={panels.hooks}
                       onToggle={() => togglePanel("hooks")} />
+            <Divider />
+            <Deploy project={project} open={panels.deploy}
+                    onToggle={() => togglePanel("deploy")} />
           </Paper>
           </>}
         </Box>

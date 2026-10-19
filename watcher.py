@@ -365,6 +365,13 @@ SYS_INSTR_DEFAULT = """## Системные правила воркера
    - подключить/отключить к проекту:
                   {{"action":"attach"|"detach","id":N,"project":"..."}}
    - удалить:     {{"action":"delete","id":N}}
+
+   Контроль деплоя: после любого деплоя/запуска проекта (и если задача
+   просит настроить деплой) шли
+   POST http://127.0.0.1:{port}/api/deploy/status
+   {{"project":"{project}","status":"success"|"failed","data":"лог/версия"}}
+   с тем же заголовком X-Internal-Token — статус появится в секции
+   «Деплой» веб-панели. Настраивая CI/CD проекта — встрой туда этот вызов.
 3. Системную и пользовательскую инструкции менять и удалять
    нельзя — эндпоинт ответит ошибкой. Можно создавать свои инструкции
    (kind=custom), править, подключать к проектам и удалять.
@@ -2918,7 +2925,7 @@ def _api_project_settings_set():
     if isinstance(body.get("panel"), dict):
         us_set(_current_user(), f"panel:{p}", json.dumps(
             {k: bool(v) for k, v in body["panel"].items()
-             if k in ("files", "changes", "builds", "hooks", "ws", "branches", "instr")}))
+             if k in ("files", "changes", "builds", "hooks", "ws", "branches", "instr", "deploy")}))
     return jsonify({"ok": True})
 
 
@@ -3739,6 +3746,57 @@ def _api_instr_set():
         db_exec("DELETE FROM instructions WHERE id=%s", (iid,))
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
+
+
+def _deploy_auth() -> bool:
+    """POST статусов деплоя: localhost+internal token (агенты из задач)
+    или Bearer DEPLOY_TOKEN/WATCHTOWER_TOKEN (внешние скрипты/CI)."""
+    if _internal_auth():
+        return True
+    tok = request.headers.get("Authorization", "")
+    tok = tok.removeprefix("Bearer ").strip()
+    return bool(tok) and tok in (
+        os.environ.get("DEPLOY_TOKEN", ""),
+        os.environ.get("WATCHTOWER_TOKEN", ""))
+
+
+@app.post("/api/deploy/status")
+def _api_deploy_status_post():
+    """Приёмник статусов деплоев: {project,status,data?} -> kv.deploy:<p>
+    + история (последние 10) в kv.deploy_hist:<p>."""
+    if not _deploy_auth():
+        abort(403)
+    b = _req_json()
+    p = (b.get("project") or "").strip()
+    st = (b.get("status") or "").strip()
+    if not p or st not in ("success", "failed", "running"):
+        return jsonify({"ok": False, "error": "project/status?"}), 400
+    rec = {"status": st, "ts": b.get("ts") or time.time(),
+           "data": (b.get("data") or "")[:4000]}
+    kv_set(f"deploy:{p}", json.dumps(rec, ensure_ascii=False))
+    try:
+        hist = json.loads(kv_get(f"deploy_hist:{p}") or "[]")
+    except Exception:
+        hist = []
+    hist.append(rec)
+    kv_set(f"deploy_hist:{p}", json.dumps(hist[-10:], ensure_ascii=False))
+    log(f"deploy status {p}: {st}")
+    return jsonify({"ok": True})
+
+
+@app.get("/api/deploy/status")
+@login_required
+def _api_deploy_status_get():
+    """Секция «Контроль деплоя»: последний статус + история проекта."""
+    p = (request.args.get("project") or "").strip()
+    if p and not _owns_project(p):
+        abort(403)
+    try:
+        last = json.loads(kv_get(f"deploy:{p}") or "null")
+        hist = json.loads(kv_get(f"deploy_hist:{p}") or "[]")
+    except Exception:
+        last, hist = None, []
+    return jsonify({"ok": True, "last": last, "items": hist[::-1]})
 
 
 _HOOK_CACHE: dict = {}   # proj -> (ts, result) — тот же TTL, что у сборок

@@ -21,6 +21,7 @@ import CallMergeIcon from "@mui/icons-material/CallMerge";
 import DifferenceIcon from "@mui/icons-material/Difference";
 import BuildCircleIcon from "@mui/icons-material/BuildCircle";
 import WebhookIcon from "@mui/icons-material/Webhook";
+import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import CircularProgress from "@mui/material/CircularProgress";
 import Popover from "@mui/material/Popover";
 import Tooltip from "@mui/material/Tooltip";
@@ -437,6 +438,74 @@ export function Branches({ project, open, onToggle, toast }) {
                                          color: "#9aa0a6" }} />
                 </IconButton>}
           </ListItemButton>))}
+      </Box>
+    </Collapse>
+  </>);
+}
+
+
+// «Деплой» — последний статус деплоя проекта (агенты шлют в
+// /api/deploy/status). Нет записей — подсказка настроить через задачу.
+export function Deploy({ project, open, onToggle }) {
+  const [data, setData] = useState(null);
+  const projRef = useRef(project);
+  projRef.current = project;
+
+  useEffect(() => {
+    setData(null);
+    let live = true;
+    const load = async () => {
+      try {
+        const d = await apiJson("/api/deploy/status?project=" +
+          encodeURIComponent(projRef.current || ""));
+        if (live) setData(d);
+      } catch (e) {}
+    };
+    load();
+    const t = setInterval(load, 15000);
+    return () => { live = false; clearInterval(t); };
+  }, [project]);
+
+  const last = data?.last;
+  const items = data?.items || [];
+  const Icon = last ? (last.status === "success" ? CheckCircleIcon
+                                               : ErrorIcon)
+                    : null;
+  return (<>
+    <ListItemButton dense onClick={onToggle} sx={{ px: 1.5, py: 0.5 }}>
+      {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
+            : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+      <RocketLaunchIcon sx={{ fontSize: 16, ml: 0.5 }} />
+      <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
+        Деплой
+      </Typography>
+      {Icon &&
+        <Icon sx={{ ml: 1, fontSize: 15,
+                    color: last.status === "success" ? "#2e7d32"
+                                                     : "#c62828" }} />}
+    </ListItemButton>
+    <Collapse in={open}>
+      <Box sx={{ px: 1.5, py: 0.3 }}>
+        {!last ? (
+          <Typography variant="caption" color="text.secondary">
+            не настроено — скажи агенту в задаче настроить контроль
+            деплоя (см. системную инструкцию)
+          </Typography>
+        ) : items.map((d, i) => (
+          <Box key={i} sx={{ display: "flex", gap: 0.7, py: 0.2,
+                            alignItems: "baseline" }}>
+            {d.status === "success"
+              ? <CheckCircleIcon sx={{ fontSize: 12, color: "#2e7d32",
+                                       position: "relative", top: 1 }} />
+              : <ErrorIcon sx={{ fontSize: 12, color: "#c62828",
+                                 position: "relative", top: 1 }} />}
+            <Typography variant="caption" sx={{ fontSize: 11,
+              fontFamily: "ui-monospace, Menlo, monospace" }}>
+              {fmtWhen(d.ts ? new Date(d.ts * 1000).toISOString() : "")}
+              {d.data ? " · " + String(d.data).slice(0, 60) : ""}
+            </Typography>
+          </Box>
+        ))}
       </Box>
     </Collapse>
   </>);
