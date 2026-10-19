@@ -383,6 +383,7 @@ def _instr_block(author: str, proj: str | None) -> str:
     out = [sys_body]
     ub = next((r["body"] for r in rows if r["kind"] == "user"), "")
     if ub.strip():
+        ub = re.sub(r"^\s*##[^\n]*\n*", "", ub.strip())
         out.append("## Общая инструкция пользователя\n\n" + ub)
     if proj:
         try:
@@ -392,9 +393,11 @@ def _instr_block(author: str, proj: str | None) -> str:
                 " WHERE a.user=%s AND a.project=%s ORDER BY i.id",
                 (author, proj))
             for r in customs:
-                if (r["body"] or "").strip():
+                b = (r["body"] or "").strip()
+                if b:
+                    b = re.sub(r"^\s*##[^\n]*\n*", "", b)
                     out.append(f"## Инструкция «{r['name']}»"
-                               f"\n\n{r['body']}")
+                               f"\n\n{b}")
         except Exception:
             pass
     return "\n\n---\n\n".join(out)

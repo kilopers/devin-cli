@@ -63,7 +63,8 @@ export default function Instr({ project, open, onToggle, toast }) {
   const system = rows.find(r => r.kind === "system");
   const common = rows.find(r => r.kind === "user");
   const customs = rows.filter(r => r.kind === "custom");
-  const count = 2 + customs.filter(c => c.attached).length;
+  const count = rows.filter(
+    r => r.kind !== "custom" || r.attached).length;
 
   return (<>
     <ListItemButton dense onClick={onToggle} sx={{ px: 1.5, py: 0.5 }}>
