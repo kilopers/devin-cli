@@ -857,10 +857,8 @@ export default function App() {
                 загружаю ранние…</Typography>}
             {items.length
               ? items.map(t => <TaskCard key={t.stem} t={t}
-                    onCommit={commitAct}
                     onStop={askStop}
-                    onCancel={askCancel}
-                    onBranch={askBranch} />)
+                    onCancel={askCancel} />)
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
           </Box>
