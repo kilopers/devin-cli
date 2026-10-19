@@ -14,15 +14,17 @@ import { apiJson } from "./api.js";
 
 export default function RepoBrowse({ open, onClose, onAdd }) {
   const [repos, setRepos] = useState(null);
+  const [errors, setErrors] = useState({});
   useEffect(() => {
     if (!open) return;
-    setRepos(null);
+    setRepos(null); setErrors({});
     apiJson("/api/repos/browse")
-      .then(d => setRepos(d.repos || []))
+      .then(d => { setRepos(d.repos || []); setErrors(d.errors || {}); })
       .catch(() => setRepos([]));
   }, [open]);
 
-  const hosts = [...new Set((repos || []).map(r => r.host))];
+  const hosts = [...new Set([...(repos || []).map(r => r.host),
+                             ...Object.keys(errors)])];
   return (
     <Dialog open={open} onClose={onClose} fullScreen>
       <AppBar position="sticky" color="primary">
@@ -35,7 +37,7 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
       {repos === null ? (
         <Box sx={{ display: "flex", justifyContent: "center", mt: 6 }}>
           <CircularProgress /></Box>
-      ) : repos.length === 0 ? (
+      ) : hosts.length === 0 ? (
         <Typography color="text.secondary" sx={{ p: 3 }}>
           Репозитории не найдены — проверь ключи в «Ключи репозиториев».
         </Typography>
@@ -56,6 +58,15 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
               sx={{ height: 20 }} />
           </AccordionSummary>
           <AccordionDetails sx={{ p: 0 }}>
+          {errors[h] &&
+            <Typography color="error" variant="caption" sx={{ px: 2 }}>
+              {errors[h]}
+            </Typography>}
+          {!errors[h] && rs.length === 0 &&
+            <Typography color="text.secondary" variant="caption"
+                        sx={{ px: 2 }}>
+              репозитории не найдены
+            </Typography>}
           {rs.map(r => (
             <ListItemButton key={h + r.name} dense
               disabled={r.added}

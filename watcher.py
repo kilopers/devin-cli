@@ -3308,10 +3308,7 @@ def _api_repos_browse():
     (kv.git_creds + gitlab.base_url/env), added — по совпадению
     remote URL, а не имени папки."""
     u = _current_user()
-    try:
-        creds = json.loads(kv_get(f"git_creds:{u}") or "{}")
-    except Exception:
-        creds = {}
+    creds = _creds()  # с учётом legacy-глобальных ключей админа
     # remote-урлы всех локальных проектов -> 'host/group/repo'
     have = set()
     for d in (PROJECTS_ROOT.iterdir() if PROJECTS_ROOT else []):
@@ -3326,7 +3323,7 @@ def _api_repos_browse():
     hosts = dict(creds)
     hosts.setdefault("github.com", os.environ.get("GITHUB_TOKEN", ""))
     hosts.setdefault(gl_base, os.environ.get("GITLAB_TOKEN", ""))
-    out = []
+    out, errors = [], {}
     for host, tok in hosts.items():
         if not tok:
             continue
@@ -3343,10 +3340,16 @@ def _api_repos_browse():
                             "added": key in have})
         else:
             base = host if host.startswith("http") else "https://" + host
-            data, err = _http_json(
-                f"{base}/api/v4/projects?membership=true&per_page=100"
-                "&order_by=last_activity_at",
-                {"PRIVATE-TOKEN": tok})
+            # membership=true, если пусто — owned, если и тут пусто —
+            # просто видимые проекты (self-hosted/админ-токены)
+            data = err = None
+            for q in ("membership=true&", "owned=true&", ""):
+                data, err = _http_json(
+                    f"{base}/api/v4/projects?{q}per_page=100"
+                    "&order_by=last_activity_at",
+                    {"PRIVATE-TOKEN": tok})
+                if data:
+                    break
             for r in data or []:
                 key = _norm_repo_url(r.get("http_url_to_repo") or "")
                 out.append({"host": host,
@@ -3354,7 +3357,9 @@ def _api_repos_browse():
                             "desc": r.get("description") or "",
                             "url": r.get("http_url_to_repo") or "",
                             "added": key in have})
-    return jsonify({"ok": True, "repos": out,
+        if err and not any(r["host"] == host for r in out):
+            errors[host] = err
+    return jsonify({"ok": True, "repos": out, "errors": errors,
                     "empty": not bool(creds)})
 
 

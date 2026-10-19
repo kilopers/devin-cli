@@ -1,3 +1,10 @@
+## 1.0.69
+- Fix: GitLab пропадал из «Обзора репозиториев» — endpoint брал ключи
+  напрямую из git_creds:<user> и не видел legacy-глобальные ключи
+  админа (теперь _creds()); ошибки API глотались — теперь возвращаются
+  в errors и показываются под заголовком хоста; GitLab делает
+  fallback-запросы membership→owned→все видимые проекты.
+
 ## 1.0.68
 - Fix: «Обзор репозиториев» падал с ReferenceError — Accordion/
   AccordionSummary/AccordionDetails/ExpandMoreIcon использовались,
