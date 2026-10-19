@@ -13,6 +13,7 @@ export default function ProjectSettings({ project, onClose, toast }) {
   const [model, setModel] = useState("");
   const [mode, setMode] = useState("");
   const [autoCommit, setAutoCommit] = useState(false);
+  const [mainBranch, setMainBranch] = useState("");
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -20,7 +21,8 @@ export default function ProjectSettings({ project, onClose, toast }) {
     if (!project) return;
     get("/api/project/settings?project=" + encodeURIComponent(project))
       .then(j => { setModel(j.model || ""); setMode(j.reply_mode || "");
-                   setAutoCommit(j.auto_commit === "1"); });
+                   setAutoCommit(j.auto_commit === "1");
+                   setMainBranch(j.main_branch || ""); });
     get("/api/models").then(j => setModels(j.models || []));
   }, [project]);
 
@@ -28,7 +30,8 @@ export default function ProjectSettings({ project, onClose, toast }) {
     setBusy(true);
     const j = await post("/api/project/settings", {
       project, model, reply_mode: mode,
-      auto_commit: autoCommit ? "1" : "0" });
+      auto_commit: autoCommit ? "1" : "0",
+      main_branch: mainBranch.trim() });
     setBusy(false);
     if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(); }
   };
@@ -61,6 +64,10 @@ export default function ProjectSettings({ project, onClose, toast }) {
             control={<Checkbox checked={autoCommit}
                      onChange={e => setAutoCommit(e.target.checked)} />}
             label="Автокоммит + push после задачи" />
+          <TextField label="Рабочая ветка" size="small" fullWidth
+                     value={mainBranch}
+                     onChange={e => setMainBranch(e.target.value)}
+                     helperText="куда сливать ветки кнопкой в «Ветки» — пусто: main/master" />
         </Stack>
       </DialogContent>
       <DialogActions>

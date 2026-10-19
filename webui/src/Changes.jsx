@@ -14,6 +14,10 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
 import CancelIcon from "@mui/icons-material/Cancel";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import CloudDoneIcon from "@mui/icons-material/CloudDone";
+import CallMergeIcon from "@mui/icons-material/CallMerge";
 import CircularProgress from "@mui/material/CircularProgress";
 import Popover from "@mui/material/Popover";
 import Tooltip from "@mui/material/Tooltip";
@@ -321,6 +325,113 @@ export function Webhooks({ project, open, onToggle }) {
             </Typography>
           </Box>
         ))}
+      </Box>
+    </Collapse>
+  </>);
+}
+
+
+// «Ветки» — локальные ветки репо: переключение с автостэшем грязи,
+// значки: нет на remote (→ кнопка push), автостэши (жёлтый кружок),
+// ↑ahead/↓behind; в шапке — кнопка «слить в рабочую ветку».
+export function Branches({ project, open, onToggle, toast }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const projRef = useRef(project);
+  projRef.current = project;
+
+  const load = async () => {
+    try {
+      const d = await apiJson("/api/branches?project=" +
+        encodeURIComponent(projRef.current || ""));
+      setData(d);
+    } catch (e) {}
+  };
+  useEffect(() => {
+    setData(null);
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, [project]);
+
+  const act = async (url, body, msg) => {
+    setBusy(true);
+    try {
+      const d = await apiJson(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: projRef.current, ...body }) });
+      toast?.(d.ok ? (msg || "Готово")
+                  : "Ошибка: " + (d.error || "?"));
+      if (d.ok) load();
+    } catch (e) { toast?.("Сеть: " + e); }
+    setBusy(false);
+  };
+
+  const branches = (data && data.branches) || [];
+  if (data && !branches.length) return null;
+  const onMain = data && data.current === data.main;
+
+  return (<>
+    <ListItemButton dense onClick={onToggle} sx={{ px: 1.5, py: 0.5 }}>
+      {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
+            : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+      <AccountTreeIcon sx={{ fontSize: 16, ml: 0.5 }} />
+      <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
+        Ветки
+      </Typography>
+      <Chip size="small" label={branches.length}
+            sx={{ ml: 1, height: 18, fontSize: 11 }} />
+      {data && !onMain &&
+        <IconButton size="small" sx={{ ml: "auto" }}
+          title={"слить " + data.current + " в " + data.main}
+          disabled={busy}
+          onClick={e => { e.stopPropagation();
+            act("/api/branch/merge", {},
+                "Слито в " + data.main); }}>
+          <CallMergeIcon sx={{ fontSize: 16 }} />
+        </IconButton>}
+    </ListItemButton>
+    <Collapse in={open}>
+      <Box>
+        {branches.map(b => (
+          <ListItemButton key={b.name} dense selected={b.current}
+            disabled={busy || b.current}
+            onClick={() => act("/api/branch/switch",
+                               { branch: b.name },
+                               "Ветка: " + b.name)}
+            sx={{ px: 1.5, py: 0.3 }}>
+            <Typography variant="body2" noWrap sx={{
+              flex: 1, fontSize: 12.5,
+              fontFamily: "ui-monospace, Menlo, monospace" }}>
+              {b.name}
+            </Typography>
+            {b.dirty > 0 &&
+              <Chip size="small" label={b.dirty + " изм."}
+                    sx={{ height: 16, fontSize: 10, mr: 0.5 }} />}
+            {b.stash > 0 &&
+              <Chip size="small" label={"📦" + b.stash}
+                    title={"автостэшей: " + b.stash}
+                    sx={{ height: 16, fontSize: 10, mr: 0.5 }} />}
+            {(b.ahead > 0 || b.behind > 0) &&
+              <Typography variant="caption" color="text.secondary"
+                          sx={{ fontSize: 10, mr: 0.5 }}>
+                {b.ahead ? "↑" + b.ahead : ""}
+                {b.behind ? "↓" + b.behind : ""}
+              </Typography>}
+            {b.remote
+              ? <CloudDoneIcon sx={{ fontSize: 14, color: "#2e7d32",
+                                     flexShrink: 0 }}
+                               titleAccess="на remote" />
+              : <IconButton size="small" disabled={busy}
+                    title={"отправить " + b.name + " на remote"}
+                    onClick={e => { e.stopPropagation();
+                      act("/api/branch/push", { branch: b.name },
+                          "Запушено: " + b.name); }}>
+                  <CloudUploadIcon sx={{ fontSize: 14,
+                                         color: "#9aa0a6" }} />
+                </IconButton>}
+          </ListItemButton>))}
       </Box>
     </Collapse>
   </>);

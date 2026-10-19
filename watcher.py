@@ -2711,6 +2711,7 @@ def _api_project_settings_get():
                     "reply_mode": pj_get(p, "reply_mode"),
                     "auto_commit": pj_get(p, "auto_commit"),
                     "fast": pj_get(p, "fast"),
+                    "main_branch": pj_get(p, "main_branch"),
                     "panel": panel})
 
 
@@ -2724,7 +2725,8 @@ def _api_project_settings_set():
     for k, ok in (("model", None),
                   ("reply_mode", ("", "ask", "code")),
                   ("auto_commit", ("", "0", "1")),
-                  ("fast", ("", "0", "1"))):
+                  ("fast", ("", "0", "1")),
+                  ("main_branch", None)):
         if k not in body:
             continue  # частичное обновление — не трогаем пропущенные ключи
         v = (body.get(k) or "").strip()
@@ -2734,7 +2736,7 @@ def _api_project_settings_set():
     if isinstance(body.get("panel"), dict):
         us_set(_current_user(), f"panel:{p}", json.dumps(
             {k: bool(v) for k, v in body["panel"].items()
-             if k in ("files", "changes", "builds", "hooks", "ws")}))
+             if k in ("files", "changes", "builds", "hooks", "ws", "branches")}))
     return jsonify({"ok": True})
 
 
@@ -2885,6 +2887,185 @@ def _proj_root(proj: str) -> Path:
             abort(403)
         return PROJECTS_ROOT / proj
     return WORKDIR
+
+
+def _main_branch(root: Path, proj: str) -> str:
+    """Рабочая ветка проекта: pj:<proj>.main_branch, иначе remote HEAD,
+    иначе main/master/первая."""
+    mb = pj_get(proj, "main_branch") if proj else ""
+    if mb:
+        return mb
+    rc, out = _git(root, "symbolic-ref", "--short",
+                   "refs/remotes/origin/HEAD")
+    if rc == 0 and out.strip():
+        return out.strip().split("/", 1)[-1]
+    for cand in ("main", "master", "develop"):
+        rc, _ = _git(root, "rev-parse", "--verify", f"refs/heads/{cand}")
+        if rc == 0:
+            return cand
+    rc, out = _git(root, "branch", "--show-current")
+    return out.strip() or "main"
+
+
+def _stash_count(root: Path, branch: str) -> int:
+    """Автостэши воркера для ветки — маркер 'auto:<branch>' в stash list."""
+    rc, out = _git(root, "stash", "list")
+    if rc != 0:
+        return 0
+    return sum(1 for ln in out.splitlines()
+               if f"auto:{branch}" in ln)
+
+
+@app.get("/api/branches")
+@login_required
+def _api_branches():
+    """Секция «Ветки»: локальные ветки + признаки remote/ahead/behind/
+    автостэшей/грязи текущей."""
+    proj = (request.args.get("project") or "").strip()
+    root = _proj_root(proj)
+    res = {"ok": True, "branches": [], "main": "", "current": ""}
+    if not (root / ".git").exists():
+        return jsonify(res)
+    rc, cur = _git(root, "branch", "--show-current")
+    cur = cur.strip()
+    rc, remotes = _git(root, "for-each-ref",
+                       "--format=%(refname:short)", "refs/remotes/origin")
+    remote_set = {ln.split("/", 1)[-1] for ln in remotes.splitlines()}
+    rc, out = _git(root, "for-each-ref",
+                   "--format=%(refname:short)|%(upstream:track)",
+                   "refs/heads")
+    rc2, dirty = _git(root, "status", "--porcelain")
+    branches = []
+    for ln in out.splitlines():
+        name, _, track = ln.partition("|")
+        ahead = behind = 0
+        m = re.search(r"ahead (\d+)", track)
+        if m:
+            ahead = int(m.group(1))
+        m = re.search(r"behind (\d+)", track)
+        if m:
+            behind = int(m.group(1))
+        branches.append({
+            "name": name, "current": name == cur,
+            "remote": name in remote_set,
+            "ahead": ahead, "behind": behind,
+            "stash": _stash_count(root, name),
+            "dirty": len(dirty.splitlines()) if name == cur else 0})
+    res.update({"branches": branches, "current": cur,
+                "main": _main_branch(root, proj)})
+    return jsonify(res)
+
+
+@app.post("/api/branch/switch")
+@login_required
+def _api_branch_switch():
+    """Переключение ветки с автостэшем: грязное дерево уходит в
+    'auto:<ветка>' stash, на целевой ветке её stash достаётся обратно."""
+    body = _req_json()
+    proj = (body.get("project") or "").strip()
+    br = (body.get("branch") or "").strip()
+    root = _proj_root(proj)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,80}", br):
+        return jsonify({"ok": False, "error": "bad branch"}), 400
+    if not (root / ".git").exists():
+        return jsonify({"ok": False, "error": "нет репо"}), 400
+    _, cur = _git(root, "branch", "--show-current")
+    cur = cur.strip()
+    _, dirty = _git(root, "status", "--porcelain")
+    stashed = popped = False
+    if dirty:
+        rc, o = _git(root, "stash", "push", "-u",
+                     "-m", f"auto:{cur}")
+        if rc != 0:
+            return jsonify({"ok": False, "error": f"stash: {o[:300]}"})
+        stashed = True
+    rc, o = _git(root, "checkout", br)
+    if rc != 0:
+        # откат: достаём стэш обратно
+        if stashed:
+            _git(root, "stash", "pop")
+        return jsonify({"ok": False, "error": f"checkout: {o[:300]}"})
+    # достаём автостэш целевой ветки
+    _, lst = _git(root, "stash", "list")
+    for i, ln in enumerate(lst.splitlines()):
+        if f"auto:{br}" in ln:
+            rc2, o2 = _git(root, "stash", "pop", f"stash@{{{i}}}")
+            popped = rc2 == 0
+            break
+    log(f"branch switch {cur} -> {br} in {proj or 'wd'} "
+        f"(stashed={stashed} popped={popped})")
+    return jsonify({"ok": True, "current": br,
+                    "stashed": stashed, "popped": popped})
+
+
+@app.post("/api/branch/new")
+@login_required
+def _api_branch_new():
+    """Создать ветку от текущей и сразу на неё перейти."""
+    body = _req_json()
+    proj = (body.get("project") or "").strip()
+    br = (body.get("name") or "").strip()
+    root = _proj_root(proj)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,80}", br):
+        return jsonify({"ok": False, "error": "bad name"}), 400
+    rc, o = _git(root, "checkout", "-b", br)
+    if rc != 0:
+        return jsonify({"ok": False, "error": o[:300]})
+    log(f"branch new {br} in {proj or 'wd'}")
+    return jsonify({"ok": True, "current": br})
+
+
+@app.post("/api/branch/push")
+@login_required
+def _api_branch_push():
+    """Запушить ветку в origin (ветки нет на репо)."""
+    body = _req_json()
+    proj = (body.get("project") or "").strip()
+    br = (body.get("branch") or "").strip()
+    root = _proj_root(proj)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,80}", br):
+        return jsonify({"ok": False, "error": "bad branch"}), 400
+    rc, o = _git(root, "push", "-u", "origin", br)
+    if rc != 0:
+        return jsonify({"ok": False, "error": o[:400]})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/branch/merge")
+@login_required
+def _api_branch_merge():
+    """Слить текущую ветку в рабочую (pj.main_branch): checkout main ->
+    merge -> push; при конфликте — abort и назад."""
+    body = _req_json()
+    proj = (body.get("project") or "").strip()
+    root = _proj_root(proj)
+    main = _main_branch(root, proj)
+    _, cur = _git(root, "branch", "--show-current")
+    cur = cur.strip()
+    if cur == main:
+        return jsonify({"ok": False, "error": "уже на рабочей ветке"})
+    _, dirty = _git(root, "status", "--porcelain")
+    if dirty:
+        return jsonify({"ok": False,
+                        "error": "сначала закоммить или стэшнуть "
+                                 "незакоммиченные изменения"})
+    out = []
+    rc, o = _git(root, "checkout", main)
+    out.append(o)
+    if rc != 0:
+        return jsonify({"ok": False, "error": o[:300]})
+    rc, o = _git(root, "merge", "--no-edit", cur)
+    out.append(o)
+    if rc != 0:
+        _git(root, "merge", "--abort")
+        _git(root, "checkout", cur)
+        return jsonify({"ok": False,
+                        "error": f"конфликт слияния: {o[:300]}"})
+    rc, o = _git(root, "push")
+    out.append(o)
+    log(f"merged {cur} -> {main} in {proj or 'wd'}")
+    return jsonify({"ok": True, "current": main,
+                    "result": "\n".join(out)[-2000:]})
 
 
 @app.get("/api/diff")
@@ -3422,6 +3603,17 @@ def _api_commit():
     cworkdir = (PROJECTS_ROOT / proj) \
         if (proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir()) \
         else WORKDIR
+    if action == "branch":
+        name = re.sub(r"[^A-Za-z0-9._/-]+", "-",
+                      (body.get("name") or "").strip())[:60].strip("-.")
+        if not name:
+            return jsonify({"ok": False, "error": "пустое имя ветки"})
+        rc, o = _git(cworkdir, "checkout", "-b", name)
+        if rc != 0:
+            return jsonify({"ok": False, "error": o[:300]})
+        result = do_commit(stem, cworkdir)
+        log(f"web commit on new branch {name} for {stem}")
+        return jsonify({"ok": True, "result": result, "branch": name})
     if action == "commit":
         result = do_commit(stem, cworkdir)
         log(f"web commit accepted for {stem}")

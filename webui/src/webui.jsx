@@ -35,7 +35,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
-import Changes, { Webhooks } from "./Changes.jsx";
+import Changes, { Webhooks, Branches } from "./Changes.jsx";
 import FileEditor from "./FileEditor.jsx";
 import AddProject from "./AddProject.jsx";
 import Composer from "./Composer.jsx";
@@ -116,8 +116,25 @@ function StatusChip({ t }) {
       : undefined} />;
 }
 
+const TRANSLIT = { "а":"a","б":"b","в":"v","г":"g","д":"d","е":"e","ё":"e",
+  "ж":"zh","з":"z","и":"i","й":"y","к":"k","л":"l","м":"m","н":"n","о":"o",
+  "п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f","х":"h","ц":"c","ч":"ch",
+  "ш":"sh","щ":"sch","ъ":"","ы":"y","ь":"","э":"e","ю":"yu","я":"ya" };
+const branchSlug = s => s.toLowerCase().split("")
+  .map(ch => TRANSLIT[ch] !== undefined ? TRANSLIT[ch]
+           : /[a-z0-9]/.test(ch) ? ch : "-").join("")
+  .replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+const branchSuggest = prompt => {
+  const first = (prompt || "").trim().split("\n")[0] || "";
+  const slug = branchSlug(first) || "changes";
+  const d = new Date();
+  const mmdd = String(d.getMonth() + 1).padStart(2, "0")
+             + String(d.getDate()).padStart(2, "0");
+  return `task/${slug}-${mmdd}`;
+};
+
 const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
-                                                onCancel }) {
+                                                onCancel, onBranch }) {
   // свёрнута: заголовок + ~3 строки задачи; «подробнее» — slide-down
   const [open, setOpen] = useState(false);
   return (
@@ -187,6 +204,9 @@ const TaskCard = React.memo(function TaskCard({ t, onCommit, onStop,
             <Button size="small" variant="contained" color="success"
                     onClick={() => onCommit(t.stem, "commit")}>
               ✅ закоммитить и запушить</Button>
+            <Button size="small" variant="outlined" color="success"
+                    onClick={() => onBranch(t)}>
+              🌿 новая ветка</Button>
             <Button size="small" onClick={() => onCommit(t.stem, "skip")}>
               ⏭ пропустить</Button>
           </Box>) : null}
@@ -316,7 +336,7 @@ export default function App() {
   const [fast, setFast] = useState(false);
   const [panels, setPanels] = useState({ files: true, changes: true,
                                         builds: true, hooks: true,
-                                        ws: true });
+                                        ws: true, branches: true });
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -325,6 +345,8 @@ export default function App() {
   const [setOpen, setSetOpen] = useState(false);   // «Настройки»
   const [usersOpen, setUsersOpen] = useState(false); // «Пользователи» (админ)
   const [wsOpen, setWsOpen] = useState(false);   // «Рабочее пространство»
+  const [branchDlg, setBranchDlg] = useState(null); // «🌿 новая ветка»
+  const [branchName, setBranchName] = useState("");
   const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
   const [wsmap, setWsmap] = useState({});        // project -> ws id
   const [view, setView] = useState("feed");      // feed | models
@@ -461,7 +483,7 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     setPanels({ files: true, changes: true, builds: true,
-                hooks: true, ws: true });
+                hooks: true, ws: true, branches: true });
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
       .then(d => { if (d.ok && d.panel)
         setPanels(s => ({ ...s, ...d.panel })); })
@@ -480,9 +502,9 @@ export default function App() {
     return n;
   });
 
-  const commitAct = useCallback(async (stem, action) => {
+  const commitAct = useCallback(async (stem, action, name) => {
     try {
-      const d = await post("/api/commit", { stem, action });
+      const d = await post("/api/commit", { stem, action, name });
       if (d.ok && d.skipped) setToast("Пропущено — изменения остались в репо");
       else if (d.ok)
         setToastNode(
@@ -501,6 +523,10 @@ export default function App() {
     t2 => setConfirm({ kind: "stop", name: t2.name }), []);
   const askCancel = useCallback(
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
+  const askBranch = useCallback(t2 => {
+    setBranchName(branchSuggest(t2.prompt || ""));
+    setBranchDlg({ stem: t2.stem });
+  }, []);
 
   // initial project list + tasks; polling every 3 s
   useEffect(() => {
@@ -610,6 +636,10 @@ export default function App() {
       <Changes project={project} toast={setToast}
                open={panels.changes} onToggle={() => togglePanel("changes")}
                bOpen={panels.builds} onToggleB={() => togglePanel("builds")} />
+      <Divider />
+      <Branches project={project} open={panels.branches}
+                onToggle={() => togglePanel("branches")}
+                toast={setToast} />
       <Divider />
       <Panel title="Пространства" open={panels.ws}
              onToggle={() => togglePanel("ws")}
@@ -786,7 +816,8 @@ export default function App() {
               ? items.map(t => <TaskCard key={t.stem} t={t}
                     onCommit={commitAct}
                     onStop={askStop}
-                    onCancel={askCancel} />)
+                    onCancel={askCancel}
+                    onBranch={askBranch} />)
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
           </Box>
@@ -816,6 +847,10 @@ export default function App() {
                      onToggle={() => togglePanel("changes")}
                      bOpen={panels.builds}
                      onToggleB={() => togglePanel("builds")} />
+            <Divider />
+            <Branches project={project} open={panels.branches}
+                      onToggle={() => togglePanel("branches")}
+                      toast={setToast} />
             <Divider />
             <Panel title="Пространства" open={panels.ws}
                    onToggle={() => togglePanel("ws")}
@@ -914,6 +949,31 @@ export default function App() {
           <Button color="error" variant="contained" onClick={confirmAct}>
             {confirm?.kind === "stop" ? "Остановить" : "Удалить"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!branchDlg} onClose={() => setBranchDlg(null)}
+              fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontSize: 16 }}>Новая ветка</DialogTitle>
+        <DialogContent>
+          <Typography variant="caption" color="text.secondary">
+            Изменения задачи закоммитим и запушим в новую ветку —
+            рабочая останется чистой.
+          </Typography>
+          <TextField autoFocus fullWidth size="small" label="Имя ветки"
+                     value={branchName}
+                     onChange={e => setBranchName(e.target.value)}
+                     sx={{ mt: 1.5 }} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBranchDlg(null)}>Отмена</Button>
+          <Button variant="contained" disabled={!branchName.trim()}
+            onClick={() => {
+              const { stem } = branchDlg;
+              setBranchDlg(null);
+              commitAct(stem, "branch", branchName.trim());
+            }}>
+            Создать и перейти</Button>
         </DialogActions>
       </Dialog>
 
