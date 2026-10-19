@@ -1770,13 +1770,43 @@ def send_task_stats(chat_id, since: float) -> None:
     tg_send(chat_id, "📊 Статистика задачи:\n" + "\n".join(lines))
 
 
+def _git_clean_locks(workdir, min_age: int = 60) -> int:
+    """Удаляет протухшие *.lock в .git (упавший/убитый git оставляет
+    index.lock — без него любая git-операция падает). Свежие локи
+    (< min_age сек) не трогаем — вдруг git реально работает."""
+    gd = Path(workdir) / ".git"
+    n = 0
+    try:
+        for f in gd.glob("*.lock") + gd.glob("**/*.lock"):
+            try:
+                if time.time() - f.stat().st_mtime > min_age:
+                    f.unlink()
+                    n += 1
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return n
+
+
 def _git(workdir, *args) -> tuple:
-    """git in workdir, direct connection (proxy vars stripped)."""
+    """git in workdir, direct connection (proxy vars stripped).
+    Протухшие *.lock чистим и повторяем один раз."""
     env = {k: v for k, v in os.environ.items()
            if k.lower() not in ("http_proxy", "https_proxy", "no_proxy")}
-    res = subprocess.run(["git", "-C", str(workdir), *args],
-                         capture_output=True, text=True, timeout=120, env=env)
-    return res.returncode, (res.stdout + res.stderr).strip()
+
+    def run():
+        res = subprocess.run(["git", "-C", str(workdir), *args],
+                             capture_output=True, text=True,
+                             timeout=120, env=env)
+        return res.returncode, (res.stdout + res.stderr).strip()
+
+    rc, out = run()
+    if rc != 0 and "index.lock" in out or (rc != 0 and ".lock" in out):
+        if _git_clean_locks(workdir):
+            log(f"removed stale git lock(s) in {workdir}; retrying")
+            rc, out = run()
+    return rc, out
 
 
 def offer_commit(task: dict, chat_id, workdir) -> None:
