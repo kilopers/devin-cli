@@ -314,6 +314,7 @@ def init_db() -> None:
         # даже если записать удалось как-то мимо эндпоинтов
         db_exec("UPDATE instructions SET body=%s, updated=%s WHERE id=%s",
                 (SYS_INSTR_DEFAULT, time.time(), sys_row[0]["id"]))
+    _ensure_user_instr(WEB_ADMIN_USER)
     for r in db_query("SELECT username FROM users"):
         _ensure_user_instr(r["username"])
     # контейнер пересоздали посреди задачи — 'running' вернуть в очередь
