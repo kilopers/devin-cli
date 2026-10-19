@@ -2198,8 +2198,18 @@ def _git_head() -> str:
 # --- web UI / JSON API -------------------------------------------------------
 
 def api_status() -> dict:
+    # текущая ветка веб-проекта — тонкая строка под шапкой на мобильной
+    branch = ""
+    try:
+        p = _web_current(_current_user())
+        if p and PROJECTS_ROOT and (PROJECTS_ROOT / p / ".git").exists():
+            rc, b = _git(PROJECTS_ROOT / p, "branch", "--show-current")
+            branch = b.strip() if rc == 0 else ""
+    except Exception:
+        pass
     return {
         "uptime": int(time.time() - _started_at),
+        "branch": branch,
         "queue": db_query(
             "SELECT COUNT(*) AS n FROM tasks WHERE status='queued'")[0]["n"],
         "current_task": STATE["current_task"],

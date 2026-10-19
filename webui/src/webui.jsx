@@ -32,6 +32,7 @@ import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
@@ -806,6 +807,24 @@ export default function App() {
         </AppBar>
         {/* spacer — AppBar is position:fixed, header stays pinned on top */}
         <Toolbar variant="dense" />
+
+        {/* тонкая строка с текущей веткой — только на мобильной */}
+        {status.branch &&
+          <Box sx={{ display: { xs: "flex", md: "none" },
+                     alignItems: "center", gap: 0.5,
+                     position: "sticky", top: 48, zIndex: 5,
+                     px: 1.5, py: 0.2, fontSize: 11,
+                     bgcolor: "background.paper",
+                     borderBottom: "1px solid",
+                     borderColor: "divider",
+                     color: "text.secondary" }}>
+            <AccountTreeIcon sx={{ fontSize: 13 }} />
+            <Typography component="span" variant="caption" noWrap
+                        sx={{ fontSize: 11,
+                              fontFamily: "ui-monospace, Menlo, monospace" }}>
+              {status.branch}
+            </Typography>
+          </Box>}
 
         <SwipeableDrawer open={drawerOpen}
                 onOpen={() => setDrawerOpen(true)}
