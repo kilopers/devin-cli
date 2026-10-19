@@ -314,6 +314,8 @@ def init_db() -> None:
         # даже если записать удалось как-то мимо эндпоинтов
         db_exec("UPDATE instructions SET body=%s, updated=%s WHERE id=%s",
                 (SYS_INSTR_DEFAULT, time.time(), sys_row[0]["id"]))
+    db_exec("UPDATE instructions SET name='Пользовательская инструкция'"
+            " WHERE kind='user' AND name='Общая инструкция'")
     _ensure_user_instr(WEB_ADMIN_USER)
     for r in db_query("SELECT username FROM users"):
         _ensure_user_instr(r["username"])
@@ -342,7 +344,7 @@ SYS_INSTR_DEFAULT = """## Системные правила воркера
    - подключить/отключить к проекту:
                   {{"action":"attach"|"detach","id":N,"project":"..."}}
    - удалить:     {{"action":"delete","id":N}}
-3. Системную и общую пользовательскую инструкции менять и удалять
+3. Системную и пользовательскую инструкции менять и удалять
    нельзя — эндпоинт ответит ошибкой. Можно создавать свои инструкции
    (kind=custom), править, подключать к проектам и удалять.
 4. ПЕРЕД добавлением инструкции ВСЕГДА сначала GET список инструкций
@@ -359,7 +361,7 @@ def _ensure_user_instr(user: str) -> None:
     """Пустая общая инструкция юзера — создаётся всем (миграция),
     удалить нельзя."""
     db_exec("""INSERT INTO instructions(user,kind,name,body,created,updated)
-               SELECT %s,'user','Общая инструкция','',%s,%s FROM DUAL
+               SELECT %s,'user','Пользовательская инструкция','',%s,%s FROM DUAL
                WHERE NOT EXISTS (SELECT 1 FROM instructions
                                  WHERE kind='user' AND user=%s)""",
             (user, time.time(), time.time(), user))
@@ -384,7 +386,7 @@ def _instr_block(author: str, proj: str | None) -> str:
     ub = next((r["body"] for r in rows if r["kind"] == "user"), "")
     if ub.strip():
         ub = re.sub(r"^\s*##[^\n]*\n*", "", ub.strip())
-        out.append("## Общая инструкция пользователя\n\n" + ub)
+        out.append("## Пользовательская инструкция\n\n" + ub)
     if proj:
         try:
             customs = db_query(

@@ -103,7 +103,7 @@ export default function Instr({ project, open, onToggle, toast }) {
               flex: 1, fontSize: 12.5 }}>
               {common.name}
             </Typography>
-            <Chip size="small" label="общая" variant="outlined"
+            <Chip size="small" label="моя" variant="outlined"
                   sx={{ height: 16, fontSize: 10 }} />
           </ListItemButton>)}
         {customs.map(r => (
@@ -129,7 +129,7 @@ export default function Instr({ project, open, onToggle, toast }) {
             fullWidth maxWidth="sm">
       <DialogTitle sx={{ fontSize: 16 }}>
         {view?.kind === "system" ? "Системная инструкция"
-          : view?.kind === "user" ? "Общая инструкция"
+          : view?.kind === "user" ? "Пользовательская инструкция"
           : "Инструкция"}
       </DialogTitle>
       <DialogContent>
