@@ -37,12 +37,24 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
         <Typography color="text.secondary" sx={{ p: 3 }}>
           Репозитории не найдены — проверь ключи в «Ключи репозиториев».
         </Typography>
-      ) : hosts.map(h => (
-        <Box key={h}>
-          <ListSubheader>
-            {h === "github.com" ? "GitHub" : "GitLab"} · {h}
-          </ListSubheader>
-          {repos.filter(r => r.host === h).map(r => (
+      ) : hosts.map(h => {
+        const rs = repos.filter(r => r.host === h);
+        return (
+        <Accordion key={h} defaultExpanded disableGutters
+          sx={{ "&:before": { display: "none" }, boxShadow: "none",
+               bgcolor: "transparent" }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}
+            sx={{ minHeight: 42, px: 2,
+                 "& .MuiAccordionSummary-content": { my: 0.5,
+                 alignItems: "center", gap: 1 } }}>
+            <Typography fontWeight={600} fontSize={14} sx={{ flex: 1 }}>
+              {(h === "github.com" ? "GitHub" : "GitLab") + " · " + h}
+            </Typography>
+            <Chip size="small" label={rs.length} variant="outlined"
+              sx={{ height: 20 }} />
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: 0 }}>
+          {rs.map(r => (
             <ListItemButton key={h + r.name} dense
               disabled={r.added}
               onClick={() => !r.added && onAdd(r)}
@@ -65,8 +77,10 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
                               title="клонировать">
                     <AddIcon fontSize="small" /></IconButton>}
             </ListItemButton>))}
-        </Box>
-      ))}
+          </AccordionDetails>
+        </Accordion>
+        );
+      })}
     </Dialog>
   );
 }
