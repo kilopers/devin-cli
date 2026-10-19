@@ -2683,11 +2683,16 @@ def _api_project_settings_get():
     p = (request.args.get("project") or "").strip()
     if not p or not _owns_project(p):
         return jsonify({"ok": False, "error": "нет доступа"}), 403
+    try:
+        panel = json.loads(us_get(_current_user(), f"panel:{p}") or "{}")
+    except Exception:
+        panel = {}
     return jsonify({"ok": True,
                     "model": pj_get(p, "model"),
                     "reply_mode": pj_get(p, "reply_mode"),
                     "auto_commit": pj_get(p, "auto_commit"),
-                    "fast": pj_get(p, "fast")})
+                    "fast": pj_get(p, "fast"),
+                    "panel": panel})
 
 
 @app.post("/api/project/settings")
@@ -2706,6 +2711,11 @@ def _api_project_settings_set():
         v = (body.get(k) or "").strip()
         if ok is None or v in ok:
             pj_set(p, k, v)
+    # раскрытые секции боковой панели — настройка юзера+проекта
+    if isinstance(body.get("panel"), dict):
+        us_set(_current_user(), f"panel:{p}", json.dumps(
+            {k: bool(v) for k, v in body["panel"].items()
+             if k in ("files", "changes", "builds")}))
     return jsonify({"ok": True})
 
 

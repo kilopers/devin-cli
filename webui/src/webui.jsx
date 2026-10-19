@@ -8,7 +8,7 @@ import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
   Alert, AppBar, Box, Button, Card, CardContent, Chip, Collapse,
   CssBaseline, Dialog, DialogActions, DialogContent, DialogTitle,
-  Divider, GlobalStyles, IconButton,
+  Divider, GlobalStyles, IconButton, ListItemButton,
   ListSubheader, Menu, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
   TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
@@ -31,6 +31,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
@@ -278,6 +279,29 @@ function ModeSelect({ mode, onChange, sx }) {
   );
 }
 
+// Секция боковой панели — единый раскрывающийся список (шеврон + заголовок
+// + чип/действия справа). Раскрытие хранится в настройках юзера+проекта
+// (us:<uid>.panel:<проект> через /api/project/settings), скроллит вся
+// панель целиком, а не каждая секция.
+function Panel({ icon, title, chip, right, open, onToggle, children }) {
+  return (<>
+    <ListItemButton dense onClick={onToggle} sx={{ px: 1.5, py: 0.5 }}>
+      {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
+            : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
+      {icon}
+      <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
+        {title}
+      </Typography>
+      {chip}
+      <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}
+           onClick={e => e.stopPropagation()}>
+        {right}
+      </Box>
+    </ListItemButton>
+    <Collapse in={open}>{children}</Collapse>
+  </>);
+}
+
 export default function App() {
   const [projects, setProjects] = useState([]);
   const [multiMode, setMultiMode] = useState(false);
@@ -290,6 +314,8 @@ export default function App() {
   const [models, setModels] = useState({ models: [], current: "" });
   const [mode, setMode] = useState("code");
   const [fast, setFast] = useState(false);
+  const [panels, setPanels] = useState({ files: true, changes: true,
+                                        builds: true });
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -427,6 +453,23 @@ export default function App() {
     loadTasks();
   }, [multiMode, loadTasks]);
 
+  // раскрытые секции панели — per-user+project, подгружаем при смене проекта
+  useEffect(() => {
+    if (!project) return;
+    setPanels({ files: true, changes: true, builds: true });
+    apiJson("/api/project/settings?project=" + encodeURIComponent(project))
+      .then(d => { if (d.ok && d.panel)
+        setPanels(s => ({ ...s, ...d.panel })); })
+      .catch(() => {});
+  }, [project]);
+
+  const togglePanel = k => setPanels(s => {
+    const n = { ...s, [k]: !s[k] };
+    post("/api/project/settings",
+         { project: projRef.current, panel: n }).catch(() => {});
+    return n;
+  });
+
   const commitAct = useCallback(async (stem, action) => {
     try {
       const d = await post("/api/commit", { stem, action });
@@ -539,14 +582,24 @@ export default function App() {
           (v{status.version || "…"})
         </Typography>
       </Box>
-      <ListSubheader>Файлы</ListSubheader>
-      <Box sx={{ maxHeight: "40vh", overflow: "auto", px: 1 }}>
-        <FileTree key={project + ":" + treeVer}
-                  project={project} onError={setToast}
-                  onOpenFile={setEditPath} />
-      </Box>
+      <Panel title="Файлы" open={panels.files}
+             onToggle={() => togglePanel("files")}
+             icon={<FolderOpenIcon sx={{ fontSize: 16, ml: 0.5 }} />}
+             right={
+               <IconButton size="small" title="обновить"
+                           onClick={() => setTreeVer(v => v + 1)}>
+                 <RefreshIcon sx={{ fontSize: 16 }} />
+               </IconButton>}>
+        <Box sx={{ px: 1 }}>
+          <FileTree key={project + ":" + treeVer}
+                    project={project} onError={setToast}
+                    onOpenFile={setEditPath} />
+        </Box>
+      </Panel>
       <Divider />
-      <Changes project={project} toast={setToast} />
+      <Changes project={project} toast={setToast}
+               open={panels.changes} onToggle={() => togglePanel("changes")}
+               bOpen={panels.builds} onToggleB={() => togglePanel("builds")} />
       <Divider />
       <Box sx={{ px: 2, py: 1.5, display: "flex", flexDirection: "column",
                  gap: 1.5 }}>
@@ -721,24 +774,27 @@ export default function App() {
             display: { xs: "none", md: "flex" }, flexDirection: "column",
             alignSelf: "flex-start", position: "sticky", top: 72,
             maxHeight: "calc(100vh - 92px)", borderRadius: 2,
-            overflow: "hidden" }}>
-            <Box sx={{ px: 1.5, py: 1, fontWeight: 500, fontSize: 13,
-                       borderBottom: "1px solid #eee", display: "flex",
-                       alignItems: "center", gap: 0.8 }}>
-              <FolderOpenIcon sx={{ fontSize: 18 }} /> Файлы проекта
-              <IconButton size="small" sx={{ ml: "auto" }} title="обновить"
-                          onClick={() => setTreeVer(v => v + 1)}>
-                <RefreshIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Box>
-            <Box sx={{ maxHeight: "60vh", display: "flex",
-                       flexDirection: "column", minHeight: 0 }}>
-              <FileTree key={project + ":" + treeVer}
-                        project={project} onError={setToast}
-                        onOpenFile={setEditPath} />
-            </Box>
+            overflowY: "auto" }}>
+            <Panel title="Файлы проекта" open={panels.files}
+                   onToggle={() => togglePanel("files")}
+                   icon={<FolderOpenIcon sx={{ fontSize: 16, ml: 0.5 }} />}
+                   right={
+                     <IconButton size="small" title="обновить"
+                                 onClick={() => setTreeVer(v => v + 1)}>
+                       <RefreshIcon sx={{ fontSize: 16 }} />
+                     </IconButton>}>
+              <Box sx={{ px: 1 }}>
+                <FileTree key={project + ":" + treeVer}
+                          project={project} onError={setToast}
+                          onOpenFile={setEditPath} />
+              </Box>
+            </Panel>
             <Divider />
-            <Changes project={project} toast={setToast} />
+            <Changes project={project} toast={setToast}
+                     open={panels.changes}
+                     onToggle={() => togglePanel("changes")}
+                     bOpen={panels.builds}
+                     onToggleB={() => togglePanel("builds")} />
           </Paper>
           </>}
         </Box>

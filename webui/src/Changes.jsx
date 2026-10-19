@@ -100,13 +100,12 @@ const fmtWhen = iso => {
 };
 
 // «Сборки» — collapsible list of the last ~6 CI runs (build.runs).
-function BuildsPanel({ build }) {
-  const [open, setOpen] = useState(true);
+function BuildsPanel({ build, open, onToggle }) {
   const runs = build?.runs;
   if (!runs || !runs.length) return null;
   return (
     <>
-      <ListItemButton dense onClick={() => setOpen(o => !o)}
+      <ListItemButton dense onClick={onToggle}
                       sx={{ px: 1.5, py: 0.5 }}>
         {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
                : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
@@ -116,10 +115,8 @@ function BuildsPanel({ build }) {
         <Chip size="small" label={runs.length}
               sx={{ ml: 1, height: 18, fontSize: 11 }} />
       </ListItemButton>
-      <Collapse in={open}
-                sx={{ flex: "0 1 auto", minHeight: 0,
-                       overflowY: "auto" }}>
-        <Box sx={{ overflow: "auto" }}>
+      <Collapse in={open}>
+        <Box>
           {runs.map((r, i) => {
             const ui = BUILD_UI[r.status] || BUILD_UI.unknown;
             return (
@@ -175,8 +172,8 @@ function DiffView({ text }) {
   );
 }
 
-export default function Changes({ project, toast }) {
-  const [open, setOpen] = useState(true);
+export default function Changes({ project, toast, open, onToggle,
+                                  bOpen, bToggle }) {
   const [entries, setEntries] = useState([]);
   const [err, setErr] = useState(null);
   const [diff, setDiff] = useState(null);  // {path, diff?, error?}
@@ -224,7 +221,7 @@ export default function Changes({ project, toast }) {
 
   return (
     <>
-      <ListItemButton dense onClick={() => setOpen(o => !o)}
+      <ListItemButton dense onClick={onToggle}
                       sx={{ px: 1.5, py: 0.5 }}>
         {open ? <ExpandLessIcon sx={{ fontSize: 18 }} />
                : <ExpandMoreIcon sx={{ fontSize: 18 }} />}
@@ -237,10 +234,8 @@ export default function Changes({ project, toast }) {
           <BuildIcon build={build} />
         </Box>
       </ListItemButton>
-      <Collapse in={open}
-                sx={{ flex: "0 1 auto", minHeight: 0,
-                       overflowY: "auto" }}>
-        <Box sx={{ overflow: "auto" }}>
+      <Collapse in={open}>
+        <Box>
           {err ? (
             <Typography variant="caption" color="error"
                         sx={{ px: 2, py: 0.5, display: "block" }}>
@@ -270,7 +265,7 @@ export default function Changes({ project, toast }) {
         </Box>
       </Collapse>
 
-      <BuildsPanel build={build} />
+      <BuildsPanel build={build} open={bOpen} onToggle={bToggle} />
 
       <Dialog fullScreen open={!!diff} onClose={() => setDiff(null)}>
         <AppBar position="sticky" color="primary">
