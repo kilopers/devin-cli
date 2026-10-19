@@ -258,12 +258,15 @@ def init_db() -> None:
     db_exec("""CREATE TABLE IF NOT EXISTS instructions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user VARCHAR(64) NOT NULL DEFAULT '',
-        kind ENUM('system','user','custom') NOT NULL DEFAULT 'custom',
+        kind ENUM('system','user','custom','project')
+            NOT NULL DEFAULT 'custom',
         name VARCHAR(190) NOT NULL,
         body MEDIUMTEXT NOT NULL,
+        project VARCHAR(190) NULL,
         created DOUBLE NOT NULL,
         updated DOUBLE NOT NULL,
-        KEY idx_kind_user (kind, user)
+        KEY idx_kind_user (kind, user),
+        KEY idx_kind_project (kind, project)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     db_exec("""CREATE TABLE IF NOT EXISTS instr_attach (
         user VARCHAR(64) NOT NULL,
@@ -291,6 +294,15 @@ def init_db() -> None:
         ws_id INT NOT NULL,
         PRIMARY KEY (user, name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    if not db_query("SELECT 1 FROM information_schema.COLUMNS"
+                    " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='instructions'"
+                    " AND COLUMN_NAME='project'", (MYSQL["database"],)):
+        db_exec("ALTER TABLE instructions ADD COLUMN"
+                " project VARCHAR(190) NULL,"
+                " ADD KEY idx_kind_project (kind, project)")
+    db_exec("ALTER TABLE instructions MODIFY kind"
+            " ENUM('system','user','custom','project')"
+            " NOT NULL DEFAULT 'custom'")
     for col, ddl in (("model", "model VARCHAR(80) NULL"),
                      ("reply_mode", "reply_mode VARCHAR(8) NULL"),
                      ("user", "user VARCHAR(64) NULL"),
@@ -367,6 +379,17 @@ def _ensure_user_instr(user: str) -> None:
             (user, time.time(), time.time(), user))
 
 
+def _ensure_project_instr(project: str) -> None:
+    """Проектная инструкция — одна на проект, лениво создаётся при первом
+    показе/задаче; удалить и отцепить нельзя."""
+    db_exec("""INSERT INTO instructions(user,kind,name,body,project,
+                                       created,updated)
+               SELECT '','project','Проектная','',%s,%s,%s FROM DUAL
+               WHERE NOT EXISTS (SELECT 1 FROM instructions
+                                 WHERE kind='project' AND project=%s)""",
+            (project, time.time(), time.time(), project))
+
+
 def _instr_block(author: str, proj: str | None) -> str:
     """Снапшот инструкций для задачи: системная + общая юзера +
     подключённые к проекту. {user}/{project} подставляются — агент знает
@@ -389,6 +412,13 @@ def _instr_block(author: str, proj: str | None) -> str:
         out.append("## Пользовательская инструкция\n\n" + ub)
     if proj:
         try:
+            _ensure_project_instr(proj)
+            pi = db_query("SELECT body FROM instructions"
+                          " WHERE kind='project' AND project=%s", (proj,))
+            pb = (pi[0]["body"] if pi else "") or ""
+            if pb.strip():
+                pb = re.sub(r"^\s*##[^\n]*\n*", "", pb.strip())
+                out.append("## Проектная инструкция\n\n" + pb)
             customs = db_query(
                 "SELECT i.name, i.body FROM instructions i"
                 " JOIN instr_attach a ON a.instr_id=i.id"
@@ -3504,9 +3534,11 @@ def _instr_rows(user: str, project: str | None = None) -> list:
         " LEFT JOIN instr_attach a ON a.instr_id=i.id"
         "   AND a.project=%s"
         " WHERE i.kind='system' OR i.user=%s"
+        "    OR (i.kind='project' AND i.project=%s)"
         "    OR (i.kind='custom' AND a.instr_id IS NOT NULL)"
-        " ORDER BY i.kind='system' DESC, i.kind='user' DESC, i.id",
-        (project or "", user))
+        " ORDER BY i.kind='system' DESC, i.kind='user' DESC,"
+        "         i.kind='project' DESC, i.id",
+        (project or "", user, project or ""))
     return [dict(r, attached=bool(r["attached"]),
                  mine=(r["user"] == user)) for r in rows]
 
@@ -3517,6 +3549,8 @@ def _api_instr_int_list():
         abort(403)
     u = request.args.get("user", "")
     p = request.args.get("project", "")
+    if p:
+        _ensure_project_instr(p)
     return jsonify({"ok": True, "instructions": _instr_rows(u, p)})
 
 
@@ -3548,19 +3582,26 @@ def _api_instr_int():
         return jsonify({"ok": True, "id": new_id})
     if not row:
         return jsonify({"ok": False, "error": "нет такой инструкции"}), 404
-    if row["kind"] != "custom":
+    if row["kind"] in ("system", "user"):
         return jsonify({"ok": False,
                         "error": "системную и общую инструкции "
                                  "менять/удалять нельзя"}), 403
-    if row["user"] != u:
+    if row["kind"] == "custom" and row["user"] != u:
         return jsonify({"ok": False, "error": "чужая инструкция"}), 403
     if act == "update":
+        # проектную можно дописывать — имя фиксированное, delete/attach
+        # всё равно ниже не пройдут для kind != custom
         db_exec("UPDATE instructions SET name=%s, body=%s, updated=%s"
                 " WHERE id=%s",
-                ((b.get("name") or row["name"]).strip()[:120],
+                (row["name"] if row["kind"] == "project"
+                 else (b.get("name") or row["name"]).strip()[:120],
                  (b.get("body") if b.get("body") is not None
                   else row["body"]), time.time(), iid))
         return jsonify({"ok": True})
+    if row["kind"] != "custom":
+        return jsonify({"ok": False,
+                        "error": "проектную инструкцию удалять и "
+                                 "отцеплять нельзя"}), 403
     if act == "attach":
         if not p:
             return jsonify({"ok": False, "error": "нет project"}), 400
@@ -3585,6 +3626,8 @@ def _api_instr_get():
     p = (request.args.get("project") or "").strip()
     if p and not _owns_project(p):
         abort(403)
+    if p:
+        _ensure_project_instr(p)
     return jsonify({"ok": True, "instructions": _instr_rows(u, p)})
 
 
@@ -3603,7 +3646,10 @@ def _api_instr_set():
     row = row[0] if row else None
     if not row:
         return jsonify({"ok": False, "error": "нет такой"}), 404
-    if row["user"] != u:
+    if row["kind"] == "project":
+        if not _owns_project(row["project"] or ""):
+            return jsonify({"ok": False, "error": "нет доступа"}), 403
+    elif row["user"] != u:
         return jsonify({"ok": False, "error": "чужая инструкция"}), 403
     if act == "update":
         if row["kind"] == "system":
@@ -3611,7 +3657,7 @@ def _api_instr_set():
                             "error": "системную менять нельзя"}), 403
         db_exec("UPDATE instructions SET name=%s, body=%s, updated=%s"
                 " WHERE id=%s",
-                (row["name"] if row["kind"] == "user"
+                (row["name"] if row["kind"] in ("user", "project")
                  else (b.get("name") or row["name"]).strip()[:120],
                  b.get("body") if b.get("body") is not None
                  else row["body"], time.time(), iid))

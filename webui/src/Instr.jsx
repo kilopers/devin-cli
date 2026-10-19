@@ -62,6 +62,7 @@ export default function Instr({ project, open, onToggle, toast }) {
 
   const system = rows.find(r => r.kind === "system");
   const common = rows.find(r => r.kind === "user");
+  const projInstr = rows.find(r => r.kind === "project");
   const customs = rows.filter(r => r.kind === "custom");
   const count = rows.filter(
     r => r.kind !== "custom" || r.attached).length;
@@ -106,6 +107,20 @@ export default function Instr({ project, open, onToggle, toast }) {
             <Chip size="small" label="моя" variant="outlined"
                   sx={{ height: 16, fontSize: 10 }} />
           </ListItemButton>)}
+        {projInstr && (
+          <ListItemButton dense onClick={() => openDlg(projInstr)}
+                          sx={{ px: 1.5, py: 0.3 }}>
+            <Checkbox size="small" checked disabled
+                      sx={{ p: 0.3, mr: 0.5 }}
+                      title="проектная — отцепить нельзя" />
+            <Typography variant="body2" noWrap sx={{
+              flex: 1, fontSize: 12.5 }}>
+              {projInstr.name}
+            </Typography>
+            <Chip size="small" label="проектная" variant="outlined"
+                  color="secondary"
+                  sx={{ height: 16, fontSize: 10 }} />
+          </ListItemButton>)}
         {customs.map(r => (
           <ListItemButton key={r.id} dense onClick={() => openDlg(r)}
                           sx={{ px: 1.5, py: 0.3 }}>
@@ -130,10 +145,12 @@ export default function Instr({ project, open, onToggle, toast }) {
       <DialogTitle sx={{ fontSize: 16 }}>
         {view?.kind === "system" ? "Системная инструкция"
           : view?.kind === "user" ? "Пользовательская инструкция"
+          : view?.kind === "project" ? "Проектная инструкция"
           : "Инструкция"}
       </DialogTitle>
       <DialogContent>
-        {view?.kind === "system" || !view?.mine ? (
+        {view?.kind === "system" ||
+         (view?.kind === "custom" && !view?.mine) ? (
           <Typography variant="body2" component="pre" sx={{
             whiteSpace: "pre-wrap", fontSize: 12.5,
             fontFamily: "ui-monospace, Menlo, monospace",
@@ -156,6 +173,11 @@ export default function Instr({ project, open, onToggle, toast }) {
             <Typography variant="caption" color="text.secondary">
               Подключается к каждой твоей задаче во всех проектах.
             </Typography>}
+          {view?.kind === "project" &&
+            <Typography variant="caption" color="text.secondary">
+              Подключается к каждой задаче этого проекта у всех
+              пользователей. Удалить и отцепить нельзя.
+            </Typography>}
         </>)}
       </DialogContent>
       <DialogActions>
@@ -164,7 +186,8 @@ export default function Instr({ project, open, onToggle, toast }) {
             <DeleteIcon fontSize="small" />
           </IconButton>}
         <Button onClick={() => setView(null)}>Закрыть</Button>
-        {view && view.kind !== "system" && view.mine &&
+        {view && view.kind !== "system" &&
+         (view.kind === "project" || view.mine) &&
           <Button variant="contained" onClick={save}>Сохранить</Button>}
       </DialogActions>
     </Dialog>
