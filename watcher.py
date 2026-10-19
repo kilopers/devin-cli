@@ -2070,9 +2070,12 @@ def api_projects() -> dict:
     # только проекты активного пространства; wsmap — цвета точек в селекте
     mine = [p for p in visible if _project_ws(u, p) == wid]
     cur = _web_current(u)
+    # при смене ws поднимаем последний открытый в нём проект юзера
+    last = us_get(u, f"ws_proj:{wid}")
+    cur = cur if cur in mine else         (last if last in mine else (mine[0] if mine else None))
     return {"projects": mine,
             "wsmap": {p: _project_ws(u, p) for p in visible},
-            "current": cur if cur in mine else (mine[0] if mine else None),
+            "current": cur,
             "multi": multi_mode()}
 
 
@@ -3377,6 +3380,10 @@ def _api_project():
     if p not in list_projects():
         return jsonify({"ok": False, "error": "unknown project"}), 400
     set_project(p, "web")
+    u = _current_user()
+    # последний открытый проект этого пространства — его поднимем
+    # при следующем переключении ws
+    us_set(u, f"ws_proj:{_project_ws(u, p)}", p)
     return jsonify({"ok": True, "project": p})
 
 
