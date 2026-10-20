@@ -512,7 +512,7 @@ export function Deploy({ project, open, onToggle }) {
 }
 
 export default function Changes({ project, toast, open, onToggle,
-                                  bOpen, bToggle }) {
+                                  bOpen, onToggleB }) {
   const [entries, setEntries] = useState([]);
   const [err, setErr] = useState(null);
   const [diff, setDiff] = useState(null);  // {path, diff?, error?}
@@ -605,7 +605,7 @@ export default function Changes({ project, toast, open, onToggle,
         </Box>
       </Collapse>
 
-      <BuildsPanel build={build} open={bOpen} onToggle={bToggle}
+      <BuildsPanel build={build} open={bOpen} onToggle={onToggleB}
               project={project} />
 
       <Dialog fullScreen open={!!diff} onClose={() => setDiff(null)}>
