@@ -833,6 +833,7 @@ export default function App() {
           <Box sx={{ display: "flex", alignItems: "center",
                      gap: { xs: 0.5, md: 1 },
                      position: "sticky", top: 48, zIndex: 5,
+                     height: 32, boxSizing: "border-box",
                      px: { xs: 0.8, md: 1.5 }, py: 0.3,
                      bgcolor: "background.paper",
                      borderBottom: "1px solid",
