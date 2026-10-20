@@ -4,8 +4,8 @@
 import { useEffect, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, AppBar, Box, Chip,
-  CircularProgress, Dialog, IconButton, ListItemButton, Toolbar,
-  Typography,
+  CircularProgress, Dialog, IconButton, ListItemButton, TextField,
+  Toolbar, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -15,6 +15,7 @@ import { apiJson } from "./api.js";
 export default function RepoBrowse({ open, onClose, onAdd }) {
   const [repos, setRepos] = useState(null);
   const [errors, setErrors] = useState({});
+  const [q, setQ] = useState("");
   useEffect(() => {
     if (!open) return;
     setRepos(null); setErrors({});
@@ -23,7 +24,11 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
       .catch(() => setRepos([]));
   }, [open]);
 
-  const hosts = [...new Set([...(repos || []).map(r => r.host),
+  const ql = q.trim().toLowerCase();
+  const filtered = (repos || []).filter(r => !ql ||
+    (r.name || "").toLowerCase().includes(ql) ||
+    (r.desc || "").toLowerCase().includes(ql));
+  const hosts = [...new Set([...filtered.map(r => r.host),
                              ...Object.keys(errors)])];
   return (
     <Dialog open={open} onClose={onClose} fullScreen>
@@ -31,6 +36,13 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
         <Toolbar variant="dense">
           <Typography sx={{ flex: 1, fontWeight: 600 }}>
             Обзор репозиториев</Typography>
+          <TextField size="small" placeholder="поиск…" value={q}
+            onChange={e => setQ(e.target.value)}
+            sx={{ mr: 1, width: 180,
+                  "& .MuiInputBase-root": { color: "#fff", height: 32,
+                    bgcolor: "rgba(255,255,255,.15)", fontSize: 13 },
+                  "& input::placeholder": { color: "rgba(255,255,255,.7)",
+                    opacity: 1 } }} />
           <IconButton color="inherit" onClick={onClose}><CloseIcon /></IconButton>
         </Toolbar>
       </AppBar>
@@ -42,7 +54,7 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
           Репозитории не найдены — проверь ключи в «Ключи репозиториев».
         </Typography>
       ) : hosts.map(h => {
-        const rs = repos.filter(r => r.host === h);
+        const rs = filtered.filter(r => r.host === h);
         return (
         <Accordion key={h} defaultExpanded disableGutters
           sx={{ "&:before": { display: "none" }, boxShadow: "none",

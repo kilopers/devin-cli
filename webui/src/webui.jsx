@@ -976,6 +976,13 @@ export default function App() {
                       onToggle={() => togglePanel("hooks")} />
             <Deploy project={project} open={panels.deploy}
                     onToggle={() => togglePanel("deploy")} />
+            <Divider />
+            <ListItemButton dense onClick={() => setBrowseOpen(true)}
+                            sx={{ px: 1.5 }}>
+              <Typography variant="body2" sx={{ fontSize: 12.5 }}>
+                🗂 Обзор репозиториев (GitHub/GitLab)
+              </Typography>
+            </ListItemButton>
           </Paper>
           </>}
         </Box>
