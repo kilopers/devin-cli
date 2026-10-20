@@ -129,7 +129,9 @@ function BuildsPanel({ build, open, onToggle, project }) {
       setJobs(m => ({ ...m, [rid]: { error: String(e) } }));
     }
   };
-  if (!runs || !runs.length) return null;
+  // хедер виден и при загрузке (спиннер справа), и при ошибке;
+  // скрываем секцию только когда данных точно нет
+  if (build && !build.error && (!runs || !runs.length)) return null;
   return (
     <>
       <ListItemButton dense onClick={onToggle}
@@ -140,12 +142,30 @@ function BuildsPanel({ build, open, onToggle, project }) {
         <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
           Сборки
         </Typography>
-        <Chip size="small" label={runs.length}
-              sx={{ ml: "auto", height: 18, fontSize: 11 }} />
+        <Box sx={{ ml: "auto", display: "flex", alignItems: "center",
+                   gap: 0.5 }}
+             onClick={e => e.stopPropagation()}>
+          {build ? <>
+            <Chip size="small" label={(runs || []).length}
+                  sx={{ height: 18, fontSize: 11 }} />
+            <BuildIcon build={build} />
+          </> : <CircularProgress size={12} thickness={6} />}
+        </Box>
       </ListItemButton>
       <Collapse in={open}>
         <Box>
-          {runs.map((r, i) => {
+          {!build
+            ? <Typography variant="caption" color="text.secondary"
+                          sx={{ px: 2, py: 0.5, display: "block" }}>
+                загрузка…
+              </Typography>
+            : build.error
+              ? <Typography variant="caption" color="error"
+                            sx={{ px: 2, py: 0.5, display: "block" }}>
+                  {build.error}
+                </Typography>
+              : null}
+          {(runs || []).map((r, i) => {
             const ui = BUILD_UI[r.status] || BUILD_UI.unknown;
             const rid = r.id || r.num;
             const openJ = jobsFor === rid;
@@ -575,7 +595,6 @@ export default function Changes({ project, toast, open, onToggle,
                    gap: 0.5 }}>
           <Chip size="small" label={entries.length}
                 sx={{ height: 18, fontSize: 11 }} />
-          <BuildIcon build={build} />
         </Box>
       </ListItemButton>
       <Collapse in={open}>
