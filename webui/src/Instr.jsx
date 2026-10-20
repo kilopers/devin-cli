@@ -74,7 +74,7 @@ export default function Instr({ project, open, onToggle, toast }) {
         Инструкции
       </Typography>
       <Chip size="small" label={count}
-            sx={{ ml: 1, height: 18, fontSize: 11 }} />
+            sx={{ ml: "auto", height: 18, fontSize: 11 }} />
     </ListItemButton>
     <Collapse in={open}>
       <Box>

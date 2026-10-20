@@ -317,9 +317,10 @@ function Panel({ icon, title, chip, right, open, onToggle, children }) {
       <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
         {title}
       </Typography>
-      {chip}
-      <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}
+      <Box sx={{ ml: "auto", display: "flex", alignItems: "center",
+                 gap: 0.5 }}
            onClick={e => e.stopPropagation()}>
+        {chip}
         {right}
       </Box>
     </ListItemButton>

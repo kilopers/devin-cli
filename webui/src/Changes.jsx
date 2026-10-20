@@ -141,7 +141,7 @@ function BuildsPanel({ build, open, onToggle, project }) {
           Сборки
         </Typography>
         <Chip size="small" label={runs.length}
-              sx={{ ml: 1, height: 18, fontSize: 11 }} />
+              sx={{ ml: "auto", height: 18, fontSize: 11 }} />
       </ListItemButton>
       <Collapse in={open}>
         <Box>
@@ -297,8 +297,10 @@ export function Webhooks({ project, open, onToggle }) {
         Вебхуки
       </Typography>
       {delivs.length ? (delivs[0].ok
-        ? <CheckCircleIcon sx={{ ml: 1, fontSize: 15, color: "#2e7d32" }} />
-        : <ErrorIcon sx={{ ml: 1, fontSize: 15, color: "#c62828" }} />)
+        ? <CheckCircleIcon sx={{ ml: "auto", fontSize: 15,
+                                 color: "#2e7d32" }} />
+        : <ErrorIcon sx={{ ml: "auto", fontSize: 15,
+                           color: "#c62828" }} />)
         : null}
     </ListItemButton>
     <Collapse in={open}>
@@ -388,7 +390,7 @@ export function Branches({ project, open, onToggle, toast }) {
         Ветки
       </Typography>
       <Chip size="small" label={branches.length}
-            sx={{ ml: 1, height: 18, fontSize: 11 }} />
+            sx={{ ml: "auto", height: 18, fontSize: 11 }} />
       {data && !onMain &&
         <IconButton size="small" sx={{ ml: "auto" }}
           title={"слить " + data.current + " в " + data.main}
@@ -481,7 +483,7 @@ export function Deploy({ project, open, onToggle }) {
         Деплой
       </Typography>
       {Icon &&
-        <Icon sx={{ ml: 1, fontSize: 15,
+        <Icon sx={{ ml: "auto", fontSize: 15,
                     color: last.status === "success" ? "#2e7d32"
                                                      : "#c62828" }} />}
     </ListItemButton>
@@ -569,9 +571,10 @@ export default function Changes({ project, toast, open, onToggle,
         <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
           Изменения
         </Typography>
-        <Chip size="small" label={entries.length}
-              sx={{ ml: 1, height: 18, fontSize: 11 }} />
-        <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>
+        <Box sx={{ ml: "auto", display: "flex", alignItems: "center",
+                   gap: 0.5 }}>
+          <Chip size="small" label={entries.length}
+                sx={{ height: 18, fontSize: 11 }} />
           <BuildIcon build={build} />
         </Box>
       </ListItemButton>
