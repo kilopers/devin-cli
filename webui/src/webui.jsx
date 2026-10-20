@@ -71,6 +71,8 @@ const SRC_RU = { telegram: "telegram", web: "web", file: "файл" };
 
 const mdStyles = {
   body: { background: "#f5f7fb" },
+  // два подряд разделителя (секция вернула null) — показываем один
+  ".MuiDivider-root + .MuiDivider-root": { display: "none" },
   ".md": { fontSize: 14, lineHeight: 1.6, wordBreak: "break-word",
     maxHeight: 600, overflowY: "auto",
     "& > :first-child": { mt: 0 },
