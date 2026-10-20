@@ -389,7 +389,7 @@ export default function App() {
     if (!p) return;
     try {
       const d = await apiJson("/api/tasks?project=" +
-        encodeURIComponent(p) + "&limit=5");
+        encodeURIComponent(p) + "&limit=20");
       setFeed(m => {
         // выкидываем задачи чужих проектов — ответ опроса за старый
         // проект мог прилететь уже после переключения ws и висеть вечно
@@ -415,7 +415,7 @@ export default function App() {
     try {
       const prevH = document.body.scrollHeight, prevY = window.scrollY;
       const d = await apiJson("/api/tasks?project=" + encodeURIComponent(p) +
-        "&limit=5&before=" + encodeURIComponent(oldestStem));
+        "&limit=20&before=" + encodeURIComponent(oldestStem));
       setFeed(m => {
         const n = new Map(m);
         let got = false;
@@ -574,10 +574,8 @@ export default function App() {
   useEffect(() => {
     loadStatus(); loadModels();
     const t = setInterval(() => { loadStatus(); loadTasks(); loadModels(); }, 3000);
-    const onScroll = () => { if (window.scrollY < 200) loadOlder(); };
-    window.addEventListener("scroll", onScroll);
-    return () => { clearInterval(t); window.removeEventListener("scroll", onScroll); };
-  }, [loadStatus, loadTasks, loadModels, loadOlder]);
+    return () => clearInterval(t);
+  }, [loadStatus, loadTasks, loadModels]);
 
   // stick to bottom when new output lands and we're already near it
   const sig = items.map(t => t.stem + t.status + (t.output || "").length).join();
@@ -883,9 +881,16 @@ export default function App() {
           : <>
           <Box sx={{ flex: 1, minWidth: 0,
                      p: { xs: "8px 2px 150px", md: "16px 12px 150px" } }}>
-            {loadingOlder &&
-              <Typography align="center" color="text.secondary" sx={{ py: 1 }}>
-                загружаю ранние…</Typography>}
+            {hasMore &&
+              <Box sx={{ display: "flex", justifyContent: "center",
+                         py: 0.5 }}>
+                <Button size="small" variant="text"
+                        disabled={loadingOlder}
+                        onClick={loadOlder}
+                        sx={{ fontSize: 11, textTransform: "none" }}>
+                  {loadingOlder ? "загружаю…" : "загрузить ещё"}
+                </Button>
+              </Box>}
             {items.length
               ? items.map(t => <TaskCard key={t.stem} t={t}
                     onStop={askStop}
