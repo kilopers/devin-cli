@@ -2414,6 +2414,20 @@ def api_tasks(project: str | None = None, limit: int = 5,
 # blocking urllib/subprocess/PyMySQL code inside is unchanged.
 
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
+
+
+@app.errorhandler(Exception)
+def _api_errors(e):
+    """API всегда отвечает JSON — фронт парсит ответ как JSON, а дефолтная
+    HTML-страница Flask на 500/404 ломала её («Unexpected token '<'»)."""
+    from werkzeug.exceptions import HTTPException
+    code = e.code if isinstance(e, HTTPException) else 500
+    if request.path.startswith("/api/"):
+        msg = getattr(e, "description", None) or f"{type(e).__name__}: {e}"
+        if code >= 500:
+            log(f"API {request.path} {code}: {e!r}")
+        return jsonify({"ok": False, "error": str(msg)[:400]}), code
+    return e
 app.config.update(SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE="Lax")
 
