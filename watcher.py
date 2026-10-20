@@ -2306,6 +2306,11 @@ def api_projects() -> dict:
     # all_projects=1 показывает все его проекты со всех пространств
     allp = us_get(u, "all_projects") == "1"
     mine = list(visible) if allp else         [p for p in visible if _project_ws(u, p) == wid]
+    if allp:
+        # группировка по пространствам (порядок ws), внутри — по имени
+        order = {w["id"]: i for i, w in enumerate(_user_ws(u))}
+        mine.sort(key=lambda p: (order.get(_project_ws(u, p), 999),
+                                 p.lower()))
     cur = _web_current(u)
     # при смене ws поднимаем последний открытый в нём проект юзера
     last = us_get(u, f"ws_proj:{wid}")
@@ -4613,12 +4618,31 @@ def start_bot() -> None:
     _bot_proc = subprocess.Popen([sys.executable, "-u", BOT_SCRIPT])
 
 
+def _self_deploy_report() -> None:
+    """Раз за запуск: пишем в «Деплой» devin-cli запущенную версию —
+    видно, что выкатилось (watchtower пересоздаёт контейнер)."""
+    p, data = "devin-cli", f"запущена v{APP_VERSION}"
+    try:
+        last = json.loads(kv_get(f"deploy:{p}") or "{}")
+        if last.get("data") == data:
+            return   # рестарт без смены версии — историю не засоряем
+        rec = {"status": "success", "ts": time.time(), "data": data}
+        kv_set(f"deploy:{p}", json.dumps(rec, ensure_ascii=False))
+        hist = json.loads(kv_get(f"deploy_hist:{p}") or "[]")
+        hist.append(rec)
+        kv_set(f"deploy_hist:{p}", json.dumps(hist[-10:],
+                                            ensure_ascii=False))
+    except Exception as e:
+        log(f"self deploy report: {e}")
+
+
 def main() -> int:
     global _bot_proc, _mihomo_proc
     for d in (INBOX, DONE, OUTBOX):
         d.mkdir(parents=True, exist_ok=True)
 
     init_db()
+    _self_deploy_report()
     migrate_files_to_db()
     migrate_env_secrets()
     _migrate_workspaces()

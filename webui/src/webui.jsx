@@ -227,6 +227,7 @@ function ProjectSelect({ projects, current, onChange, onAdd,
     const w = (wsList || []).find(w => w.id === (wsmap || {})[p]);
     return w ? w.color : "#999";
   };
+  let lastWid = -1;
   return (<>
     <Select size="small" value={current || ""} displayEmpty
             renderValue={v => v || ""}
@@ -235,7 +236,17 @@ function ProjectSelect({ projects, current, onChange, onAdd,
             sx={{ color: "#fff", height: 32, fontSize: 13, maxWidth: 200,
                   bgcolor: "rgba(255,255,255,.15)",
                   "& .MuiSelect-icon": { color: "rgba(255,255,255,.8)" } }}>
-      {projects.map(p => (
+      {projects.map(p => {
+        const wid = (wsmap || {})[p];
+        const hdr = wid !== lastWid
+          ? (lastWid = wid,
+             <ListSubheader key={"wsh" + wid} sx={{ lineHeight: "28px" }}>
+               {((wsList || []).find(w => w.id === wid) || {}).name ||
+                "без пространства"}
+             </ListSubheader>)
+          : null;
+        return [
+          hdr,
         <MenuItem key={p} value={p}
                   sx={{ display: "flex", alignItems: "center" }}>
           <WsDot color={wsColor(p)} />
@@ -252,7 +263,8 @@ function ProjectSelect({ projects, current, onChange, onAdd,
             sx={{ p: 0.2 }}>
             <TuneIcon sx={{ fontSize: 15 }} />
           </IconButton>
-        </MenuItem>))}
+        </MenuItem>];
+      })}
       <MenuItem value="__add__" sx={{ color: "#1565c0", fontSize: 13 }}>
         ➕ Добавить проект…
       </MenuItem>

@@ -7,7 +7,7 @@ import {
   Stack, Typography, TextField, Alert, IconButton, Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
-import { FormControlLabel, Checkbox } from "@mui/material";
+import { FormControlLabel, Checkbox, Divider } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
 export default function Settings({ open, onClose, onChanged }) {
@@ -28,6 +28,7 @@ export default function Settings({ open, onClose, onChanged }) {
     const j = await post("/api/settings", edit);
     setBusy(false);
     if (!j.ok) return setMsg({ ok: false, text: j.error });
+    if ("all_projects" in edit) onChanged?.();
     setEdit({}); onClose();
   };
 
@@ -46,16 +47,13 @@ export default function Settings({ open, onClose, onChanged }) {
         </Typography>
         {msg && <Alert severity={msg.ok ? "success" : "error"}
                         sx={{ mt: 1 }}>{msg.text}</Alert>}
-        <FormControlLabel sx={{ mt: 1.5 }}
+        <Divider sx={{ mt: 1.5 }} />
+        <FormControlLabel sx={{ display: "block", mt: 1 }}
           control={
             <Checkbox size="small"
-              checked={(vals.all_projects || "") === "1"}
-              onChange={e => {
-                const v = e.target.checked ? "1" : "0";
-                post("/api/settings", { all_projects: v })
-                  .then(() => { setVals(x => ({ ...x, all_projects: v }));
-                                onChanged?.(); });
-              }} />}
+              checked={(edit.all_projects ?? vals.all_projects) === "1"}
+              onChange={e => setEdit({ ...edit,
+                all_projects: e.target.checked ? "1" : "0" })} />}
           label="Показывать все проекты (из всех пространств)" />
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
           {(fields || []).map(f => (
@@ -79,7 +77,9 @@ export default function Settings({ open, onClose, onChanged }) {
       <DialogActions>
         <Button onClick={onClose}>Закрыть</Button>
         <Button variant="contained" onClick={save}
-                disabled={busy || !Object.values(edit).some(v => v)}>
+                disabled={busy || !(Object.values(edit).some(v => v)
+                  || ("all_projects" in edit
+                      && edit.all_projects !== (vals.all_projects || "")))}>
           Сохранить
         </Button>
       </DialogActions>
