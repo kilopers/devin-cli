@@ -875,12 +875,15 @@ export default function App() {
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
           </Box>
+          {/* сайдбар жёстко прижат: от хедера до низа экрана, скроллит
+              внутри один общий список; block-layout — секции не сжимаются
+              и не наезжают друг на друга при длинных списках */}
           <Paper elevation={1} sx={{
-            width: 290, flexShrink: 0, m: "16px 12px 150px 4px",
-            display: { xs: "none", md: "flex" }, flexDirection: "column",
-            alignSelf: "flex-start", position: "sticky", top: 72,
-            maxHeight: "calc(100vh - 92px)", borderRadius: 2,
-            overflowY: "auto" }}>
+            width: 290, flexShrink: 0, m: "0 12px 0 4px",
+            display: { xs: "none", md: "block" },
+            alignSelf: "flex-start", position: "sticky", top: 48,
+            height: "calc(100vh - 48px)", borderRadius: "0 0 8px 8px",
+            overflowY: "auto", overflowX: "hidden" }}>
             <Instr project={project} open={panels.instr}
                    onToggle={() => togglePanel("instr")}
                    toast={setToast} />
