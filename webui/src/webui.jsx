@@ -482,10 +482,16 @@ export default function App() {
       post("/api/project", { project: p })
         .then(d => { if (!d.ok) setToast("Проект: " + (d.error || "?")); })
         .catch(() => {});
+    // проект из другого пространства → переключаем и его (цвет, списки)
+    const pws = wsmap[p];
+    if (pws && pws !== wsInfo.active)
+      post("/api/ws/active", { id: pws })
+        .then(() => { loadWs(); refreshProjects(); })
+        .catch(() => {});
     setFeed(new Map()); setHasMore(false); firstLoad.current = true;
     setDrawerOpen(false);
     loadTasks();
-  }, [multiMode, loadTasks]);
+  }, [multiMode, loadTasks, wsmap, wsInfo]);
 
   // раскрытые секции панели — per-user+project, подгружаем при смене проекта
   useEffect(() => {
@@ -893,8 +899,8 @@ export default function App() {
           <Paper elevation={1} sx={{
             width: 290, flexShrink: 0, m: "0 12px 0 4px",
             display: { xs: "none", md: "block" },
-            alignSelf: "flex-start", position: "sticky", top: 48,
-            height: "calc(100vh - 48px)", borderRadius: "0 0 8px 8px",
+            alignSelf: "flex-start", position: "sticky", top: 80,
+            height: "calc(100vh - 80px)", borderRadius: "0 0 8px 8px",
             overflowY: "auto", overflowX: "hidden" }}>
             <Instr project={project} open={panels.instr}
                    onToggle={() => togglePanel("instr")}
