@@ -90,7 +90,13 @@ export default function Composer({ project, sttStatus, toast, onSent,
     } catch (e) { toast("Сеть: " + e); }
     setBusy(false);
   };
-  const send = () => sendText(textRef.current);
+  // во время записи «В работу» = стоп+распознать: обычный режим —
+  // текст в поле (второе нажатие отправит), быстрый — уходит сразу
+  const send = () => {
+    const r = recRef.current;
+    if (r) { stopRec(r); return; }
+    sendText(textRef.current);
+  };
 
   const stopRec = async r => {
     recRef.current = null;
