@@ -975,7 +975,8 @@ export default function App() {
 
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
-      <Settings open={setOpen} onClose={() => setSetOpen(false)} />
+      <Settings open={setOpen} onClose={() => setSetOpen(false)}
+                onChanged={refreshProjects} />
       <RepoKeys open={keysOpen}
                 onClose={() => { setKeysOpen(false);
                                  if (!multiMode) setAddOpen(true); }} />

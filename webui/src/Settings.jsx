@@ -7,9 +7,10 @@ import {
   Stack, Typography, TextField, Alert, IconButton, Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import { FormControlLabel, Checkbox } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
-export default function Settings({ open, onClose }) {
+export default function Settings({ open, onClose, onChanged }) {
   const [fields, setFields] = useState(null);
   const [vals, setVals] = useState({});     // текущие маски
   const [edit, setEdit] = useState({});     // введённые новые значения
@@ -45,7 +46,18 @@ export default function Settings({ open, onClose }) {
         </Typography>
         {msg && <Alert severity={msg.ok ? "success" : "error"}
                         sx={{ mt: 1 }}>{msg.text}</Alert>}
-        <Stack spacing={1.5} sx={{ mt: 1.5 }}>
+        <FormControlLabel sx={{ mt: 1.5 }}
+          control={
+            <Checkbox size="small"
+              checked={(vals.all_projects || "") === "1"}
+              onChange={e => {
+                const v = e.target.checked ? "1" : "0";
+                post("/api/settings", { all_projects: v })
+                  .then(() => { setVals(x => ({ ...x, all_projects: v }));
+                                onChanged?.(); });
+              }} />}
+          label="Показывать все проекты (из всех пространств)" />
+        <Stack spacing={1.5} sx={{ mt: 0.5 }}>
           {(fields || []).map(f => (
             <TextField key={f.key} size="small" fullWidth
               label={f.label}

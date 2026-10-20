@@ -2291,7 +2291,9 @@ def _web_current(user: str) -> str | None:
     """Проект, реально показанный выбранным в вебе: сохранённый, если он в
     активном пространстве, иначе первый из списка (как в api_projects)."""
     wid = _active_ws(user)
-    mine = [p for p in _user_projects(user) if _project_ws(user, p) == wid]
+    allp = us_get(user, "all_projects") == "1"
+    visible = _user_projects(user)
+    mine = list(visible) if allp else         [p for p in visible if _project_ws(user, p) == wid]
     cur = current_project("web")[0]
     return cur if cur in mine else (mine[0] if mine else None)
 
@@ -2300,8 +2302,10 @@ def api_projects() -> dict:
     u = _current_user()
     visible = _user_projects(u)
     wid = _active_ws(u)
-    # только проекты активного пространства; wsmap — цвета точек в селекте
-    mine = [p for p in visible if _project_ws(u, p) == wid]
+    # по умолчанию — проекты активного пространства; опция юзера
+    # all_projects=1 показывает все его проекты со всех пространств
+    allp = us_get(u, "all_projects") == "1"
+    mine = list(visible) if allp else         [p for p in visible if _project_ws(u, p) == wid]
     cur = _web_current(u)
     # при смене ws поднимаем последний открытый в нём проект юзера
     last = us_get(u, f"ws_proj:{wid}")
@@ -3004,6 +3008,9 @@ def _api_settings_set():
     clear: [key…]."""
     body = _req_json()
     u = _current_user()
+    if "all_projects" in body:   # чекбокс «все проекты» — сразу 0/1
+        us_set(u, "all_projects",
+               "1" if str(body["all_projects"]) in ("1", "true") else "0")
     old_tg = us_get(u, "telegram.bot_token")
     for k in body.get("clear") or []:
         us_set(u, k, "")
