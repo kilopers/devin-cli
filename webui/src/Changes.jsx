@@ -4,7 +4,8 @@
 // (additions green, deletions red — same palette as github-dark).
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert, AppBar, Box, Chip, Collapse, Dialog, IconButton, ListItemButton,
+  Alert, AppBar, Box, Chip, Collapse, Dialog, Divider, IconButton,
+  ListItemButton,
   Toolbar, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
@@ -605,6 +606,7 @@ export default function Changes({ project, toast, open, onToggle,
         </Box>
       </Collapse>
 
+      <Divider />
       <BuildsPanel build={build} open={bOpen} onToggle={onToggleB}
               project={project} />
 
