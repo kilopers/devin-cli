@@ -167,6 +167,12 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
               borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
               color: t.ac === "1" ? "#2e7d32" : "#78909c" }}>
               {t.ac === "1" ? "⚡ автокоммит" : "✋ коммит вручную"}</Box>
+            {t.tag ? " " : null}
+            {t.tag &&
+              <Box component="span" sx={{ border: "1px solid #90caf9",
+                whiteSpace: "nowrap", borderRadius: "10px", px: "8px",
+                py: "1px", fontSize: 11, color: "#1565c0",
+                bgcolor: "#e3f2fd" }}>{t.tag}</Box>}
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
             {t.status === "running" && onStop && (
@@ -698,7 +704,6 @@ export default function App() {
       <Divider />
       <Webhooks project={project} open={panels.hooks}
                 onToggle={() => togglePanel("hooks")} />
-      <Divider />
       <Deploy project={project} open={panels.deploy}
               onToggle={() => togglePanel("deploy")} />
       <Divider />
@@ -969,7 +974,6 @@ export default function App() {
       <Divider />
             <Webhooks project={project} open={panels.hooks}
                       onToggle={() => togglePanel("hooks")} />
-            <Divider />
             <Deploy project={project} open={panels.deploy}
                     onToggle={() => togglePanel("deploy")} />
           </Paper>

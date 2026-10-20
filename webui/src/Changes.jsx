@@ -356,6 +356,7 @@ export function Webhooks({ project, open, onToggle }) {
         ))}
       </Box>
     </Collapse>
+    <Divider />
   </>);
 }
 

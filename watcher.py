@@ -379,6 +379,13 @@ SYS_INSTR_DEFAULT = """## Системные правила воркера
           "data":"лог/версия"}}.
    Слать можно из CI/CD, deploy-скриптов на проде, отсюда — откуда
    угодно. Встрой вызов в деплой-пайплайн/скрипт проекта.
+
+   Тег задачи: в любой момент можешь показать на карточке СВОЕЙ задачи
+   короткий бейдж с произвольной инфой (версия, прогресс, что делаешь) —
+   POST http://127.0.0.1:{port}/api/task/tag
+   {{"tag":"…"}}  (заголовок X-Internal-Token; поле "stem" не нужно —
+   подставится текущая задача, свой id есть в $TASK_STEM).
+   Обновляй тег по ходу работы — он сразу виден в веб-ленте.
 3. Системную и пользовательскую инструкции менять и удалять
    нельзя — эндпоинт ответит ошибкой. Можно создавать свои инструкции
    (kind=custom), править, подключать к проектам и удалять.
@@ -782,6 +789,7 @@ def run_task(task: dict) -> None:
         (instr + "\n\n---\n\n" + task["prompt"]) if instr
         else task["prompt"], errors="replace")
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
+               TASK_STEM=stem,
                DEVIN_MODEL=task.get("model") or current_model(),
                DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE="true" if continue_mode() else "false",
@@ -2379,6 +2387,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "status": st,
             "task_status": r["task_status"] or "",
             "commit_offered": bool(r["commit_offered"]),
+            "tag": kv_get(f"tag:{stem}"),
             "created": int(r["created"]),
             "prompt": (r["prompt"] or "")[:2000],
             "output": out,
@@ -3729,6 +3738,22 @@ def _instr_rows(user: str, project: str | None = None) -> list:
         (project or "", user, project or ""))
     return [dict(r, attached=bool(r["attached"]),
                  mine=(r["user"] == user)) for r in rows]
+
+
+@app.post("/api/task/tag")
+def _api_task_tag():
+    """«Тег задачи» — агент шлёт произвольную инфу (версия, прогресс,
+    что делает), она рисуется бейджем на карточке задачи в веб-фиде.
+    kv.tag:<stem>; stem — свой ($TASK_STEM) или текущая running."""
+    if not _internal_auth():
+        abort(403)
+    b = _req_json()
+    stem = (b.get("stem") or "").strip() or (
+        Path(STATE["current_task"]).stem if STATE["current_task"] else "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", stem):
+        return jsonify({"ok": False, "error": "bad stem"}), 400
+    kv_set(f"tag:{stem}", (b.get("tag") or "")[:200])
+    return jsonify({"ok": True})
 
 
 @app.get("/api/internal/instr")
