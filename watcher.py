@@ -1308,7 +1308,7 @@ def _load_json(path: Path) -> dict:
 
 def enqueue_task(text: str, chat_id: int | None = None,
                  project: str | None = None, prefix: str = "tg",
-                 reply_mode: str | None = None) -> str:
+                 override_mode: str | None = None) -> str:
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
     scope = source if source in ("web", "telegram") else ""
     proj = project or (current_project(scope)[0] if multi_mode() else None)
@@ -1331,8 +1331,8 @@ def enqueue_task(text: str, chat_id: int | None = None,
     else:
         # телеграм: /mode — явный выбор юзера, важнее дефолта проекта
         rmode = us_get(author, "reply_mode") or             (pj_get(proj, "reply_mode") if proj else "")             or reply_mode(scope)
-    if reply_mode in ("ask", "code"):
-        rmode = reply_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
+    if override_mode in ("ask", "code"):
+        rmode = override_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
@@ -2051,7 +2051,7 @@ def handle_callback(cb: dict) -> None:
 
     if action in ("ok", "cd", "ask"):
         rmode = {"cd": "code", "ask": "ask"}.get(action)
-        name = enqueue_task(entry["text"], chat_id, reply_mode=rmode)
+        name = enqueue_task(entry["text"], chat_id, override_mode=rmode)
         tag = {"cd": " — режим кода", "ask": " — вопрос"}.get(action, "")
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                text=f"{entry['text']}\n\n✅ Задача {name} в очереди{tag}.",

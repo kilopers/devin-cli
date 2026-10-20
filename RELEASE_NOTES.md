@@ -1,3 +1,8 @@
+## 1.1.14
+- Fix: отправка задач падала с «'NoneType' object is not callable» —
+  параметр reply_mode в enqueue_task перекрывал одноимённую функцию
+  reply_mode(); переименован в override_mode.
+
 ## 1.1.13
 - API всегда отвечает JSON: глобальный errorhandler — 500/404/405 под
   /api/* отдают {"ok":false,"error":…} вместо HTML-страницы Flask,
