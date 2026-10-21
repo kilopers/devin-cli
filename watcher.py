@@ -22,6 +22,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import socket
@@ -4427,6 +4428,118 @@ def _api_creds_del():
         del d[host]
         _creds_save(d)
     return jsonify({"ok": True})
+
+
+# --- MCP servers (user scope) -------------------------------------------
+# Конфиг Devin CLI: ~/.config/devin/mcp_config.json, секция mcpServers.
+# Диалог «MCP серверы» в веб-панели читает/пишет этот файл напрямую.
+
+_MCP_CFG = os.path.expanduser("~/.config/devin/mcp_config.json")
+
+
+def _mcp_cfg_read() -> dict:
+    try:
+        with open(_MCP_CFG, encoding="utf-8") as f:
+            return json.load(f) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _mcp_cfg_write(cfg: dict) -> None:
+    os.makedirs(os.path.dirname(_MCP_CFG), exist_ok=True)
+    tmp = _MCP_CFG + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _MCP_CFG)
+
+
+def _kv_dict(v):
+    """env/headers из формы: dict либо мультистрока 'KEY=VALUE'."""
+    if isinstance(v, dict):
+        return {str(k): str(val) for k, val in v.items() if str(k).strip()}
+    out = {}
+    for line in str(v or "").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, val = line.split("=", 1)
+            out[k.strip()] = val
+    return out
+
+
+@app.get("/api/mcp/servers")
+@login_required
+def _api_mcp_list():
+    cfg = _mcp_cfg_read()
+    out = []
+    for name, s in sorted((cfg.get("mcpServers") or {}).items()):
+        out.append({"name": name,
+                    "kind": "http" if s.get("url") else "stdio",
+                    "command": s.get("command") or "",
+                    "args": " ".join(s.get("args") or []),
+                    "url": s.get("url") or "",
+                    "transport": s.get("transport") or "",
+                    "env": s.get("env") or {},
+                    "headers": s.get("headers") or {},
+                    "disabled": bool(s.get("disabled"))})
+    return jsonify({"ok": True, "servers": out, "file": _MCP_CFG})
+
+
+@app.post("/api/mcp/servers")
+@login_required
+def _api_mcp_save():
+    body = _req_json()
+    action = (body.get("action") or "save").strip()
+    name = (body.get("name") or "").strip()
+    cfg = _mcp_cfg_read()
+    srvs = cfg.setdefault("mcpServers", {})
+
+    if action == "delete":
+        if srvs.pop(name, None) is not None:
+            _mcp_cfg_write(cfg)
+        return jsonify({"ok": True})
+
+    if action == "toggle":
+        s = srvs.get(name)
+        if s is None:
+            return jsonify({"ok": False, "error": "нет такого сервера"}), 404
+        s["disabled"] = not bool(s.get("disabled"))
+        _mcp_cfg_write(cfg)
+        return jsonify({"ok": True, "disabled": s["disabled"]})
+
+    # action == "save"
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        return jsonify({"ok": False,
+                        "error": "имя: только a-z, 0-9, _ и -"}), 400
+    s = body.get("server") or {}
+    entry = {}
+    if s.get("kind") == "http":
+        url = (s.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            return jsonify({"ok": False,
+                            "error": "url должен начинаться с http(s)://"}), 400
+        entry["url"] = url
+        if s.get("transport") in ("http", "sse"):
+            entry["transport"] = s["transport"]
+        hdrs = _kv_dict(s.get("headers"))
+        if hdrs:
+            entry["headers"] = hdrs
+    else:
+        cmd = (s.get("command") or "").strip()
+        if not cmd:
+            return jsonify({"ok": False, "error": "укажи command"}), 400
+        entry["command"] = cmd
+        args = (s.get("args") or "").strip()
+        if args:
+            entry["args"] = shlex.split(args)
+        env = _kv_dict(s.get("env"))
+        if env:
+            entry["env"] = env
+    if s.get("disabled"):
+        entry["disabled"] = True
+    srvs[name] = entry
+    _mcp_cfg_write(cfg)
+    log(f"web saved mcp server {name}")
+    return jsonify({"ok": True, "name": name})
 
 
 @app.post("/api/tasks")

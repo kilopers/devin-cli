@@ -42,6 +42,8 @@ import Instr from "./Instr.jsx";
 import FileEditor from "./FileEditor.jsx";
 import AddProject from "./AddProject.jsx";
 import RepoBrowse from "./RepoBrowse.jsx";
+import McpServers from "./McpServers.jsx";
+import ExtensionIcon from "@mui/icons-material/Extension";
 import Composer from "./Composer.jsx";
 import { ConnBadge, useConnStatus } from "./ConnDot.jsx";
 
@@ -362,6 +364,7 @@ export default function App() {
   const [wsOpen, setWsOpen] = useState(false);   // «Рабочее пространство»
   const [branchDlg, setBranchDlg] = useState(null); // «🌿 новая ветка»
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [addPreset, setAddPreset] = useState(null);
   const [branchName, setBranchName] = useState("");
   const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
@@ -714,6 +717,13 @@ export default function App() {
           🗂 Обзор репозиториев (GitHub/GitLab)
         </Typography>
       </ListItemButton>
+      <ListItemButton dense onClick={() => { setDrawerOpen(false);
+                                             setMcpOpen(true); }}
+                      sx={{ px: 1.5 }}>
+        <Typography variant="body2" sx={{ fontSize: 12.5 }}>
+          🔌 MCP серверы
+        </Typography>
+      </ListItemButton>
       <Box sx={{ px: 2, py: 1.5, display: "flex", flexDirection: "column",
                  gap: 1.5 }}>
         <Typography variant="caption" color="text.secondary">
@@ -814,6 +824,11 @@ export default function App() {
                                          setKeysOpen(true); }}>
                 <KeyIcon fontSize="small" sx={{ mr: 1 }} />
                 Ключи репозиториев
+              </MenuItem>
+              <MenuItem onClick={() => { setProfMenu(null);
+                                         setMcpOpen(true); }}>
+                <ExtensionIcon fontSize="small" sx={{ mr: 1 }} />
+                MCP серверы
               </MenuItem>
               <MenuItem onClick={() => { setProfMenu(null);
                                          setSetOpen(true); }}>
@@ -983,6 +998,12 @@ export default function App() {
                 🗂 Обзор репозиториев (GitHub/GitLab)
               </Typography>
             </ListItemButton>
+            <ListItemButton dense onClick={() => setMcpOpen(true)}
+                            sx={{ px: 1.5 }}>
+              <Typography variant="body2" sx={{ fontSize: 12.5 }}>
+                🔌 MCP серверы
+              </Typography>
+            </ListItemButton>
           </Paper>
           </>}
         </Box>
@@ -1015,6 +1036,7 @@ export default function App() {
                   onClose={() => setEditPath(null)} toast={setToast} />
       <Settings open={setOpen} onClose={() => setSetOpen(false)}
                 onChanged={refreshProjects} />
+      <McpServers open={mcpOpen} onClose={() => setMcpOpen(false)} />
       <RepoKeys open={keysOpen}
                 onClose={() => { setKeysOpen(false);
                                  if (!multiMode) setAddOpen(true); }} />
