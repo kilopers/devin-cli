@@ -798,6 +798,11 @@ def run_task(task: dict) -> None:
                DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE="true" if continue_mode() else "false",
                REPLY_MODE=task.get("reply_mode") or reply_mode(),
+               # спросить = только читать и отвечать — жёстко read-only,
+               # иначе bypass-права всё равно дают править код
+               DEVIN_PERMISSION_MODE=(
+                   "auto" if (task.get("reply_mode")
+                              or reply_mode()) == "ask" else "bypass"),
                DEVIN_EXPORT_FILE=str(export_path),
                GIT_AUTO_COMMIT=("true" if pj_get(tproj, "auto_commit")
                                         == "1" else "false"),
