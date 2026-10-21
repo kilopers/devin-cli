@@ -844,30 +844,34 @@ def run_task(task: dict) -> None:
         finally:
             _task_proc = None
 
-    status, body = _run_once(env)
+    mcp_restore = _mcp_apply(tproj)
+    try:
+        status, body = _run_once(env)
 
-    # Ключ devin.api_key юзера может быть протухшим/обрезанным — CLI тогда
-    # падает на загрузке team settings («Invalid token»). Повторяем один
-    # раз с дефолтным ключом (env → credentials.toml), чтобы задача не
-    # умирала из-за чужого креда.
-    user_key = us_get(task_user, "devin.api_key")
-    default_key = os.environ.get("WINDSURF_API_KEY", "")
-    auth_bad = ("Invalid token" in body
-                or "failed to get primary API key" in body
-                or "failed to validate Devin token" in body)
-    if auth_bad and user_key and user_key != default_key:
-        log(f"{name}: devin.api_key юзера {task_user} отклонён, "
-            "повторяю с дефолтным ключом")
-        env2 = dict(env)
-        if default_key:
-            env2["WINDSURF_API_KEY"] = default_key
-        else:
-            env2.pop("WINDSURF_API_KEY", None)  # credentials.toml
-        note = (f"⚠️ devin.api_key юзера {task_user} не прошёл валидацию "
-                "(Invalid token) — задача перезапущена с ключом "
-                "по умолчанию. Обнови ключ в «Настройках».\n\n")
-        status, body = _run_once(env2)
-        body = note + body
+        # Ключ devin.api_key юзера может быть протухшим/обрезанным — CLI тогда
+        # падает на загрузке team settings («Invalid token»). Повторяем один
+        # раз с дефолтным ключом (env → credentials.toml), чтобы задача не
+        # умирала из-за чужого креда.
+        user_key = us_get(task_user, "devin.api_key")
+        default_key = os.environ.get("WINDSURF_API_KEY", "")
+        auth_bad = ("Invalid token" in body
+                    or "failed to get primary API key" in body
+                    or "failed to validate Devin token" in body)
+        if auth_bad and user_key and user_key != default_key:
+            log(f"{name}: devin.api_key юзера {task_user} отклонён, "
+                "повторяю с дефолтным ключом")
+            env2 = dict(env)
+            if default_key:
+                env2["WINDSURF_API_KEY"] = default_key
+            else:
+                env2.pop("WINDSURF_API_KEY", None)  # credentials.toml
+            note = (f"⚠️ devin.api_key юзера {task_user} не прошёл валидацию "
+                    "(Invalid token) — задача перезапущена с ключом "
+                    "по умолчанию. Обнови ключ в «Настройках».\n\n")
+            status, body = _run_once(env2)
+            body = note + body
+    finally:
+        mcp_restore()
 
     db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
             " finished=%s WHERE stem=%s", (body, status, time.time(), stem))
@@ -2982,6 +2986,7 @@ def _api_project_settings_get():
                     "auto_commit": pj_get(p, "auto_commit"),
                     "fast": pj_get(p, "fast"),
                     "main_branch": pj_get(p, "main_branch"),
+                    "mcp": pj_get(p, "mcp"),
                     "panel": panel})
 
 
@@ -3002,6 +3007,15 @@ def _api_project_settings_set():
         v = (body.get(k) or "").strip()
         if ok is None or v in ok:
             pj_set(p, k, v)
+    if "mcp" in body:
+        v = (body.get("mcp") or "").strip()
+        try:  # JSON-объект name → def либо пусто
+            if v and not isinstance(json.loads(v), dict):
+                raise ValueError
+            pj_set(p, "mcp", v)
+        except ValueError:
+            return jsonify({"ok": False,
+                            "error": "mcp должен быть JSON-объектом"}), 400
     # раскрытые секции боковой панели — настройка юзера+проекта
     if isinstance(body.get("panel"), dict):
         us_set(_current_user(), f"panel:{p}", json.dumps(
@@ -4451,6 +4465,34 @@ def _mcp_cfg_write(cfg: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     os.replace(tmp, _MCP_CFG)
+
+
+def _mcp_apply(proj: str):
+    """Подмешать проектные MCP-серверы (pj:<proj>.mcp, JSON-объект
+    name → def, формат как в mcp_config.json) в mcpServers на время
+    задачи. Возвращает restore(), откатывающий конфиг."""
+    if not proj:
+        return lambda: None
+    try:
+        extra = json.loads(pj_get(proj, "mcp") or "{}")
+    except ValueError:
+        log(f"{proj}: pj.mcp — битый JSON, пропускаю")
+        extra = {}
+    if not isinstance(extra, dict) or not extra:
+        return lambda: None
+    cfg = _mcp_cfg_read()
+    backup = json.dumps(cfg, ensure_ascii=False)
+    srvs = cfg.setdefault("mcpServers", {})
+    srvs.update(extra)
+    _mcp_cfg_write(cfg)
+    log(f"{proj}: применено {len(extra)} проектных MCP-сервер(а)")
+
+    def restore():
+        try:
+            _mcp_cfg_write(json.loads(backup))
+        except Exception as e:
+            log(f"{proj}: не смог откатить mcp_config: {e}")
+    return restore
 
 
 def _kv_dict(v):

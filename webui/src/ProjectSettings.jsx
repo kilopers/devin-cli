@@ -17,13 +17,15 @@ export default function ProjectSettings({ project, onClose, toast }) {
   const [branches, setBranches] = useState([]);
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [mcp, setMcp] = useState("");
 
   useEffect(() => {
     if (!project) return;
     get("/api/project/settings?project=" + encodeURIComponent(project))
       .then(j => { setModel(j.model || ""); setMode(j.reply_mode || "");
                    setAutoCommit(j.auto_commit === "1");
-                   setMainBranch(j.main_branch || ""); });
+                   setMainBranch(j.main_branch || "");
+                   setMcp(j.mcp || ""); });
     get("/api/models").then(j => setModels(j.models || []));
     get("/api/branches?project=" + encodeURIComponent(project))
       .then(j => setBranches((j.branches || []).map(b => b.name)));
@@ -34,7 +36,7 @@ export default function ProjectSettings({ project, onClose, toast }) {
     const j = await post("/api/project/settings", {
       project, model, reply_mode: mode,
       auto_commit: autoCommit ? "1" : "0",
-      main_branch: mainBranch.trim() });
+      main_branch: mainBranch.trim(), mcp: mcp.trim() });
     setBusy(false);
     if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(); }
   };
@@ -77,6 +79,13 @@ export default function ProjectSettings({ project, onClose, toast }) {
             {branches.map(b => (
               <MenuItem key={b} value={b}>{b}</MenuItem>))}
           </TextField>
+          <TextField label="MCP серверы проекта" size="small" fullWidth
+                     multiline minRows={2} maxRows={8}
+                     value={mcp}
+                     onChange={e => setMcp(e.target.value)}
+                     helperText='JSON-объект name → def (как mcpServers); применяются только к задачам этого проекта'
+                     InputProps={{ sx: { fontFamily: "monospace" } }}
+                     placeholder='{"my-db": {"command": "mcp-server", "args": ["--db", "x"]}}' />
         </Stack>
       </DialogContent>
       <DialogActions>
