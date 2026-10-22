@@ -23,20 +23,24 @@ export default function Instr({ project, open, onToggle, toast }) {
   const [view, setView] = useState(null);      // открытая в модалке
   const projRef = useRef(project);
   projRef.current = project;
-  const viewRef = useRef(null);
-  viewRef.current = view;
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const load = async () => {
-    if (viewRef.current) return;  // модалка открыта — не дёргаем,
-                                  // иначе сбрасывается выделение текста
     try {
       const d = await apiJson("/api/instr?project=" +
         encodeURIComponent(projRef.current || ""));
-      if (d.ok) setRows(prev => {
-        const n = d.instructions || [];
-        return JSON.stringify(prev) === JSON.stringify(n) ? prev : n;
+      if (!d.ok) return;
+      const n = d.instructions || [];
+      // state трогаем только при реальном изменении — иначе модалка
+      // моргает и выделение текста сбрасывается на каждом полле
+      setRows(prev =>
+        JSON.stringify(prev) === JSON.stringify(n) ? prev : n);
+      // если открытая инструкция изменилась — подменяем тело модалки
+      setView(v => {
+        if (!v) return v;
+        const fresh = n.find(r => r.id === v.id);
+        return (fresh && fresh.body !== v.body) ? fresh : v;
       });
     } catch (e) {}
   };
