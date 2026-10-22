@@ -3232,6 +3232,12 @@ def _api_repo_commit():
             if rc != 0:
                 return jsonify({"ok": False, "error": o[:300]})
     rc, o = _git(root, "push")
+    if rc != 0 and "no upstream branch" in o:
+        # у feature-ветки нет upstream — пушим с установкой -u
+        _, br = _git(root, "branch", "--show-current")
+        br = br.strip()
+        if br:
+            rc, o = _git(root, "push", "-u", "origin", br)
     out.append(o)
     return jsonify({"ok": rc == 0,
                     "result": "\n".join(out)[-1500:],
