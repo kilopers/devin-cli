@@ -248,6 +248,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
     <Paper elevation={6} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
+      {chips}
       <Box sx={{ px: 1, pt: 0.8, pb: "5px",
                  display: "flex", alignItems: "flex-end", gap: 0.5 }}>
         {modeBtn}
@@ -272,7 +273,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
           </Typography>
         )}
       </Box>
-      {chips}
       <BottomNavigation showLabels sx={{
         height: 52, bgcolor: accent || "primary.main",
         "& .MuiBottomNavigationAction-root": {
@@ -319,6 +319,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
     <Paper elevation={4} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
+      {chips}
       <Grid container spacing={1} sx={{
         maxWidth: 1280, mx: "auto", p: 1.5, alignItems: "flex-end" }}>
         <Grid size={{ xs: 12, sm: "grow" }}>
@@ -341,7 +342,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
             }}
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
           </Box>
-          {chips}
         </Grid>
         <Grid size={{ xs: 12, sm: "auto" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,
