@@ -81,6 +81,7 @@ RUN mkdir -p /root/.config/devin \
 
 COPY entrypoint.sh /usr/local/bin/devin-task
 COPY watcher.py /app/watcher.py
+COPY watcher_parts/ /app/watcher_parts/
 COPY VERSION /app/VERSION
 COPY RELEASE_NOTES.md /app/RELEASE_NOTES.md
 COPY templates/ /app/templates/
