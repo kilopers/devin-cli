@@ -305,7 +305,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
     <Paper elevation={4} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
-      {chips}
+      <Box sx={{ maxWidth: 1280, mx: "auto", px: 1.5 }}>{chips}</Box>
       <Grid container spacing={1} sx={{
         maxWidth: 1280, mx: "auto", p: 1.5, alignItems: "flex-end" }}>
         <Grid size={{ xs: 12, sm: "grow" }}>
