@@ -23,14 +23,21 @@ export default function Instr({ project, open, onToggle, toast }) {
   const [view, setView] = useState(null);      // открытая в модалке
   const projRef = useRef(project);
   projRef.current = project;
+  const viewRef = useRef(null);
+  viewRef.current = view;
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const load = async () => {
+    if (viewRef.current) return;  // модалка открыта — не дёргаем,
+                                  // иначе сбрасывается выделение текста
     try {
       const d = await apiJson("/api/instr?project=" +
         encodeURIComponent(projRef.current || ""));
-      if (d.ok) setRows(d.instructions || []);
+      if (d.ok) setRows(prev => {
+        const n = d.instructions || [];
+        return JSON.stringify(prev) === JSON.stringify(n) ? prev : n;
+      });
     } catch (e) {}
   };
   // список подгружаем периодически — агент может создать/править
