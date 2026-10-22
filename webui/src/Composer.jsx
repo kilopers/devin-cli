@@ -19,8 +19,6 @@ import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
-import CodeIcon from "@mui/icons-material/Code";
-import QuestionAnswerIcon from "@mui/icons-material/QuestionAnswer";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -233,17 +231,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
 
-  const modeBtn = (
-    <IconButton size="small" disabled={!project} onClick={() =>
-                    onMode && onMode(mode === "ask" ? "code" : "ask")}
-                title={mode === "ask" ? "Режим: вопрос — нажми для кода"
-                                      : "Режим: код — нажми для вопроса"}
-                sx={{ flexShrink: 0, alignSelf: "center" }}>
-      {mode === "ask" ? <QuestionAnswerIcon fontSize="small" />
-                      : <CodeIcon fontSize="small" />}
-    </IconButton>
-  );
-
   if (mobile) return (
     <Paper elevation={6} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
@@ -251,7 +238,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
       {chips}
       <Box sx={{ px: 1, pt: 0.8, pb: "5px",
                  display: "flex", alignItems: "flex-end", gap: 0.5 }}>
-        {modeBtn}
         <TextField
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
@@ -324,8 +310,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         maxWidth: 1280, mx: "auto", p: 1.5, alignItems: "flex-end" }}>
         <Grid size={{ xs: 12, sm: "grow" }}>
           <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.5 }}>
-          {modeBtn}
-          <TextField
+            <TextField
             multiline minRows={1} maxRows={50} fullWidth size="small"
             sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                             overflowY: "auto" } }}
