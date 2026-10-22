@@ -4659,7 +4659,11 @@ def _api_task_new():
     if mode:
         o["mode"] = mode
     if o:
-        kv_set(f"opts:{name.removesuffix('.txt')}", json.dumps(o))
+        stem = name.removesuffix(".txt")
+        kv_set(f"opts:{stem}", json.dumps(o))
+        if o.get("model"):  # карточка показывает реальную модель задачи
+            db_exec("UPDATE tasks SET model=%s WHERE stem=%s",
+                    (o["model"], stem))
     return jsonify({"ok": True, "name": name}), 201
 
 
