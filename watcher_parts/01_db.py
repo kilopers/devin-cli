@@ -746,13 +746,22 @@ def run_task(task: dict) -> None:
                  last_status=status, tasks_done=STATE["tasks_done"] + 1)
     log(f"done {name} ({status}), output -> mysql")
     if ext and ext.get("hook"):
+        payload = {"ok": True, "name": name,
+                   "project": ext.get("label") or "",
+                   "status": status, "output": body}
+        # инструкциями вызова задан свой формат — шлём последний
+        # json-объект из ответа агента; не нашли — фолбэк на дефолт
+        if ext.get("hook_json"):
+            custom = _tail_json(body)
+            if custom is not None:
+                payload = custom
+            else:
+                log(f"{name}: ext-hook — json-объект не найден, "
+                    "шлю дефолтный payload")
         try:
             req = urllib.request.Request(
                 ext["hook"], method="POST",
-                data=json.dumps({"ok": True, "name": name,
-                                 "project": ext.get("label") or "",
-                                 "status": status, "output": body},
-                                ensure_ascii=False).encode(),
+                data=json.dumps(payload, ensure_ascii=False).encode(),
                 headers={"Content-Type": "application/json"})
             urllib.request.urlopen(req, timeout=15)
         except Exception as e:
@@ -762,6 +771,25 @@ def run_task(task: dict) -> None:
         notify_chat(stem, f"{name}\n{status}\n\n{body[-3500:]}")
         if chat_id:
             send_task_stats(chat_id, started_ts)
+
+
+def _tail_json(text: str):
+    """Последний топ-левел JSON-объект в конце текста (игнорируя
+    закрывающий ```-фенс). Первая '{', чей декод достаёт до конца
+    хвоста — это внешний объект последнего блока; вложенные '{' у
+    него внутри до конца не доходят. Ничего нет — None."""
+    tail = text.rstrip()
+    if tail.endswith("```"):
+        tail = tail[:-3].rstrip()
+    dec = json.JSONDecoder()
+    for m in re.finditer(r"\{", tail):
+        try:
+            obj, end = dec.raw_decode(tail, m.start())
+        except ValueError:
+            continue
+        if not tail[end:].strip():
+            return obj
+    return None
 
 
 def ensure_repo() -> None:

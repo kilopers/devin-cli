@@ -350,14 +350,26 @@ def _api_ext_task():
     if hook and not hook.startswith(("http://", "https://")):
         return jsonify({"ok": False, "error": "hook: только http(s)"}), 400
     instr_extra = (b.get("instructions") or "").strip()
+    # В instructions описан формат ответа для вебхука → агент выводит
+    # итог последним ```json-блоком, вотчер шлёт его на hook вместо
+    # стандартного {"ok","name","project","status","output"}.
+    hook_json = bool(hook and instr_extra and
+                     re.search(r"hook|веб.?хук", instr_extra, re.I))
     stem = (f"ext-{label}-{re.sub(r'[^a-z0-9_-]+', '-', uid.lower())}-"
             f"{time.strftime('%m%d-%H%M%S')}")
     instr = _instr_block(uid, None)
     if instr_extra:
         instr += "\n\n## Инструкции вызова\n" + instr_extra
+    if hook_json:
+        instr += ("\n\n## Формат ответа для вебхука\n"
+                  "Заверши ответ блоком ```json — одним JSON-объектом "
+                  "строго по формату из «Инструкций вызова»: именно он "
+                  "уйдёт телом POST на webhook внешнего приложения. "
+                  "После блока ничего не пиши.")
     _insert_task(stem, text, "ext", None, None, time.time(),
                  reply_mode=mode, user=uid, instr=instr)
-    kv_set(f"ext:{stem}", json.dumps({"label": label, "hook": hook},
+    kv_set(f"ext:{stem}", json.dumps({"label": label, "hook": hook,
+                                      "hook_json": hook_json},
                                      ensure_ascii=False))
     name = _task_name(stem)
     log(f"ext task {name} queued, label={label}, user={uid}, mode={mode}")
