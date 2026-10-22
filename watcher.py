@@ -814,7 +814,9 @@ def run_task(task: dict) -> None:
                DEVIN_MODEL=(opts.get("model") or task.get("model")
                             or current_model()),
                DEVIN_WORKDIR=str(workdir),
-               DEVIN_CONTINUE=("true" if ext or continue_mode()
+               # оверрайд модели → новая сессия: resume игнорит --model
+               DEVIN_CONTINUE=("true" if (ext or continue_mode())
+                                    and not opts.get("model")
                                else "false"),
                REPLY_MODE=(opts.get("mode") or task.get("reply_mode")
                            or reply_mode()),
