@@ -915,7 +915,10 @@ export default function App() {
             display: { xs: "none", md: "block" },
             alignSelf: "flex-start", position: "sticky", top: 80,
             height: "calc(100vh - 80px)", borderRadius: "0 0 8px 8px",
-            overflowY: "auto", overflowX: "hidden" }}>
+            overflowY: "auto", overflowX: "hidden",
+            // pb как у ленты: нижние пункты докручиваются выше
+            // фиксированного композера (иначе уходят под него)
+            pb: "150px" }}>
             <Instr project={project} open={panels.instr}
                    onToggle={() => togglePanel("instr")}
                    toast={setToast} />
