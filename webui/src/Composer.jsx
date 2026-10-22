@@ -1,6 +1,6 @@
 // Bottom composer: task input + voice dictation (AudioContext → PCM16 WAV
 // @16kHz → POST /api/stt) + send button. Ctrl+Enter sends too.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BottomNavigation from "@mui/material/BottomNavigation";
 import BottomNavigationAction from "@mui/material/BottomNavigationAction";
 import Box from "@mui/material/Box";
@@ -9,6 +9,9 @@ import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
+import Chip from "@mui/material/Chip";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
 import Typography from "@mui/material/Typography";
 import MicIcon from "@mui/icons-material/Mic";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -21,7 +24,7 @@ import QuestionAnswerIcon from "@mui/icons-material/QuestionAnswer";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { api, post } from "./api.js";
+import { api, apiJson as get, post } from "./api.js";
 
 const STT_RATE = 16000;
 const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
@@ -78,14 +81,73 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const textRef = useRef("");
   textRef.current = text;
 
+  // чипы параметров следующей задачи: проектные дефолты + разовые
+  // оверрайды (действуют только на ближайшую отправку)
+  const [eff, setEff] = useState({ model: "", mode: "code", ac: "0" });
+  const [ov, setOv] = useState({});       // {mode?, ac?, model?}
+  const [models, setModels] = useState([]);
+  const [mAnchor, setMAnchor] = useState(null);
+  useEffect(() => {
+    if (!project || project === "workspace") return;
+    get("/api/project/settings?project=" + encodeURIComponent(project))
+      .then(j => setEff({ model: j.eff_model || "",
+                          mode: j.eff_mode || "code",
+                          ac: j.auto_commit || "0" }))
+      .catch(() => {});
+    get("/api/models").then(j => setModels(j.models || [])).catch(()=>{});
+    setOv({});
+  }, [project]);
+
+  const curMode = ov.mode ?? eff.mode;
+  const curAc = ov.ac ?? eff.ac;
+  const curModel = ov.model ?? eff.model;
+
+  const chips = (
+    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", px: 0.5,
+               pt: 0.3 }}>
+      <Chip size="small" clickable
+        label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
+        color={ov.mode ? "primary" : "default"}
+        variant={ov.mode ? "filled" : "outlined"}
+        onClick={() => setOv({ ...ov,
+          mode: curMode === "ask" ? "code" : "ask" })}
+        title={"режим следующей задачи" + (ov.mode ? " (разово)" : "")} />
+      <Chip size="small" clickable
+        label={curAc === "1" ? "Автокоммит" : "Ручной коммит"}
+        color={ov.ac ? "primary" : "default"}
+        variant={ov.ac ? "filled" : "outlined"}
+        onClick={() => setOv({ ...ov, ac: curAc === "1" ? "0" : "1" })}
+        title={"коммит после задачи" + (ov.ac ? " (разово)" : "")} />
+      <Chip size="small" clickable
+        label={"Модель: " + (curModel || "—")}
+        color={ov.model ? "primary" : "default"}
+        variant={ov.model ? "filled" : "outlined"}
+        onClick={e => setMAnchor(e.currentTarget)}
+        title={"модель следующей задачи" + (ov.model ? " (разово)" : "")} />
+      <Menu anchorEl={mAnchor} open={!!mAnchor}
+            onClose={() => setMAnchor(null)}>
+        {models.map(m => (
+          <MenuItem key={m.id} dense
+            selected={m.id === curModel}
+            onClick={() => { setOv({ ...ov, model: m.id });
+                             setMAnchor(null); }}>
+            {m.id}
+          </MenuItem>))}
+      </Menu>
+    </Box>
+  );
+
   const sendText = async raw => {
     const s = raw.trim();
     if (!s) return;
     setBusy(true);
     try {
       const d = await post("/api/tasks", {
-        project: project === "workspace" ? null : project, text: s });
-      if (d.ok) { setText(""); onSent?.(); }
+        project: project === "workspace" ? null : project, text: s,
+        ...(ov.mode ? { mode: ov.mode } : {}),
+        ...(ov.ac !== undefined ? { auto_commit: ov.ac } : {}),
+        ...(ov.model ? { model: ov.model } : {}) });
+      if (d.ok) { setText(""); setOv({}); onSent?.(); }
       else toast("Ошибка: " + (d.error || "?"));
     } catch (e) { toast("Сеть: " + e); }
     setBusy(false);
@@ -210,6 +272,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
           </Typography>
         )}
       </Box>
+      {chips}
       <BottomNavigation showLabels sx={{
         height: 52, bgcolor: accent || "primary.main",
         "& .MuiBottomNavigationAction-root": {
@@ -278,6 +341,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
             }}
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
           </Box>
+          {chips}
         </Grid>
         <Grid size={{ xs: 12, sm: "auto" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,

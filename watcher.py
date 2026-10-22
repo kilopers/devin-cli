@@ -801,25 +801,34 @@ def run_task(task: dict) -> None:
     # devin-task reads the prompt from a file — keep that contract via a
     # transient file in .progress/
     task_file = progress_dir / f"{stem}.task.txt"
+    try:
+        opts = json.loads(kv_get(f"opts:{stem}") or "{}")
+    except ValueError:
+        opts = {}
     instr = (task.get("instr") or "").strip()
     task_file.write_text(
         (instr + "\n\n---\n\n" + task["prompt"]) if instr
         else task["prompt"], errors="replace")
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
                TASK_STEM=stem,
-               DEVIN_MODEL=task.get("model") or current_model(),
+               DEVIN_MODEL=(opts.get("model") or task.get("model")
+                            or current_model()),
                DEVIN_WORKDIR=str(workdir),
                DEVIN_CONTINUE=("true" if ext or continue_mode()
                                else "false"),
-               REPLY_MODE=task.get("reply_mode") or reply_mode(),
+               REPLY_MODE=(opts.get("mode") or task.get("reply_mode")
+                           or reply_mode()),
                # спросить = только читать и отвечать — жёстко read-only,
                # иначе bypass-права всё равно дают править код
                DEVIN_PERMISSION_MODE=(
-                   "auto" if (task.get("reply_mode")
+                   "auto" if (opts.get("mode") or task.get("reply_mode")
                               or reply_mode()) == "ask" else "bypass"),
                DEVIN_EXPORT_FILE=str(export_path),
-               GIT_AUTO_COMMIT=("true" if pj_get(tproj, "auto_commit")
-                                        == "1" else "false"),
+               GIT_AUTO_COMMIT=(
+                   "true" if (opts.get("ac") == "1"
+                              or (opts.get("ac") is None
+                                  and pj_get(tproj, "auto_commit") == "1"))
+                   else "false"),
                WINDSURF_API_KEY=uset("devin.api_key", task_user,
                                      "WINDSURF_API_KEY"),
                GIT_USER_NAME=uset("git.name", task_user, "GIT_USER_NAME",
@@ -3019,6 +3028,9 @@ def _api_project_settings_get():
                     "fast": pj_get(p, "fast"),
                     "main_branch": pj_get(p, "main_branch"),
                     "mcp": pj_get(p, "mcp"),
+                    "eff_model": pj_get(p, "model") or current_model("web"),
+                    "eff_mode": (pj_get(p, "reply_mode")
+                                 or reply_mode("web")),
                     "panel": panel})
 
 
@@ -4634,7 +4646,18 @@ def _api_task_new():
         return jsonify({"ok": False, "error": "text too long"}), 400
     if multi_mode() and project not in _user_projects(_current_user()):
         return jsonify({"ok": False, "error": "unknown project"}), 400
-    name = enqueue_task(text, project=project, prefix="web")
+    mode = body.get("mode") if body.get("mode") in ("ask", "code") else None
+    name = enqueue_task(text, project=project, prefix="web",
+                        override_mode=mode)
+    o = {}
+    if (body.get("model") or "").strip():
+        o["model"] = body["model"].strip()[:60]
+    if body.get("auto_commit") in ("0", "1"):
+        o["ac"] = body["auto_commit"]
+    if mode:
+        o["mode"] = mode
+    if o:
+        kv_set(f"opts:{name.removesuffix('.txt')}", json.dumps(o))
     return jsonify({"ok": True, "name": name}), 201
 
 
