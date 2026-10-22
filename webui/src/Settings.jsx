@@ -16,9 +16,14 @@ export default function Settings({ open, onClose, onChanged }) {
   const [edit, setEdit] = useState({});     // введённые новые значения
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [extKey, setExtKey] = useState(null); // null — ещё не грузили
 
-  const load = () => get("/api/settings").then(j => {
-    setFields(j.fields || []); setVals(j.settings || {}); });
+  const load = () => {
+    get("/api/settings").then(j => {
+      setFields(j.fields || []); setVals(j.settings || {}); });
+    get("/api/extkey").then(j =>
+      setExtKey(j.set ? j.key : "")).catch(() => {});
+  };
   // перечитываем при каждом открытии — иначе после сохранения
   // показывались старые значения
   useEffect(() => { if (open) load(); }, [open]);
@@ -55,6 +60,28 @@ export default function Settings({ open, onClose, onChanged }) {
               onChange={e => setEdit({ ...edit,
                 all_projects: e.target.checked ? "1" : "0" })} />}
           label="Показывать все проекты (из всех пространств)" />
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="body2" sx={{ flex: 1 }}>
+            Ключ внешнего API: {extKey === null ? "…" :
+              (extKey || "не создан")}
+          </Typography>
+          <Button size="small" variant="outlined"
+            onClick={async () => {
+              const j = await post("/api/extkey", { action: "gen" });
+              setMsg({ ok: j.ok, text: j.ok
+                ? "Новый ключ: " + j.key + " — сохрани, больше не покажется"
+                : j.error });
+              if (j.ok) setExtKey(j.key.slice(0,7) + "…" + j.key.slice(-4));
+            }}>
+            {extKey ? "Перевыпустить" : "Создать"}
+          </Button>
+          {!!extKey &&
+            <Button size="small" color="error"
+              onClick={async () => {
+                await post("/api/extkey", { action: "revoke" });
+                setExtKey(""); }}>
+              Удалить</Button>}
+        </Stack>
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
           {(fields || []).map(f => (
             <TextField key={f.key} size="small" fullWidth

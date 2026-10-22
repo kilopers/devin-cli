@@ -782,7 +782,16 @@ def run_task(task: dict) -> None:
     # владелец проекта = чьи креды/настройки идут в задачу
     task_user = task.get("user") or _project_owner(tproj) \
         or WEB_ADMIN_USER
-    if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
+    ext = None
+    if task.get("source") == "ext":
+        try:
+            ext = json.loads(kv_get(f"ext:{stem}") or "{}")
+        except ValueError:
+            ext = {}
+    if ext:
+        workdir = TASKS_DIR / "ext" / (ext.get("label") or "default")
+        workdir.mkdir(parents=True, exist_ok=True)
+    elif tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
         workdir = PROJECTS_ROOT / tproj
     else:
         _, workdir = current_project()
@@ -800,7 +809,8 @@ def run_task(task: dict) -> None:
                TASK_STEM=stem,
                DEVIN_MODEL=task.get("model") or current_model(),
                DEVIN_WORKDIR=str(workdir),
-               DEVIN_CONTINUE="true" if continue_mode() else "false",
+               DEVIN_CONTINUE=("true" if ext or continue_mode()
+                               else "false"),
                REPLY_MODE=task.get("reply_mode") or reply_mode(),
                # спросить = только читать и отвечать — жёстко read-only,
                # иначе bypass-права всё равно дают править код
@@ -887,6 +897,18 @@ def run_task(task: dict) -> None:
     STATE.update(current_task=None, last_task=name,
                  last_status=status, tasks_done=STATE["tasks_done"] + 1)
     log(f"done {name} ({status}), output -> mysql")
+    if ext and ext.get("hook"):
+        try:
+            req = urllib.request.Request(
+                ext["hook"], method="POST",
+                data=json.dumps({"ok": True, "name": name,
+                                 "project": ext.get("label") or "",
+                                 "status": status, "output": body},
+                                ensure_ascii=False).encode(),
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=15)
+        except Exception as e:
+            log(f"{name}: ext-hook {ext['hook']} не ответил: {e}")
     offer_commit(task, chat_id, workdir)
     if TG_TOKEN:
         notify_chat(stem, f"{name}\n{status}\n\n{body[-3500:]}")
@@ -2527,7 +2549,8 @@ def _owns_project(name: str) -> bool:
 # --- per-user settings & secrets (kv.us:<uid> = JSON) -------------------
 
 _SECRET_KEYS = {"stt.api_key", "gemini.api_key", "devin.api_key",
-                "telegram.bot_token", "stt.base_url", "gitlab.base_url"}
+                "telegram.bot_token", "stt.base_url", "gitlab.base_url",
+                "ext_key"}
 
 
 def _fernet():
@@ -4620,6 +4643,85 @@ def _api_task_new():
 @login_required
 def _index():
     return render_template("webui.html")
+
+
+
+
+@app.post("/api/extkey")
+@login_required
+def _api_extkey():
+    """Управление ключом внешнего API текущего юзера:
+    {"action":"gen"|"revoke"}. Ключ хранится us:<uid>.ext_key,
+    обратный индекс kv ext_key:<key> -> uid."""
+    u = _current_user()
+    act = (_req_json().get("action") or "").strip()
+    old = us_get(u, "ext_key")
+    if act == "revoke":
+        if old:
+            us_set(u, "ext_key", "")
+            kv_set(f"ext_key:{old}", "")
+        return jsonify({"ok": True, "key": ""})
+    if act != "gen":
+        return jsonify({"ok": False, "error": "action: gen|revoke"}), 400
+    key = "ext_" + secrets.token_urlsafe(24)
+    if old:
+        kv_set(f"ext_key:{old}", "")
+    us_set(u, "ext_key", key)
+    kv_set(f"ext_key:{key}", u)
+    return jsonify({"ok": True, "key": key})
+
+
+@app.get("/api/extkey")
+@login_required
+def _api_extkey_get():
+    """Есть ли у юзера ext-ключ (маской)."""
+    k = us_get(_current_user(), "ext_key")
+    return jsonify({"ok": True, "set": bool(k),
+                    "key": (k[:7] + "…" + k[-4:]) if k else ""})
+
+
+def _ext_auth() -> str:
+    """Аутентификация внешнего API: Bearer/X-Api-Key -> uid юзера."""
+    k = request.headers.get("X-Api-Key", "")
+    ah = request.headers.get("Authorization", "")
+    if not k and ah.startswith("Bearer "):
+        k = ah[7:]
+    return kv_get(f"ext_key:{k.strip()}") if k else ""
+
+
+@app.post("/api/ext/task")
+def _api_ext_task():
+    """Внешняя постановка задачи Devin по ключу (см. «Внешний API» в
+    README). Обезличенная сессия в каталоге tasks/ext/<label>; сессия
+    продолжается между задачами одного label."""
+    uid = _ext_auth()
+    if not uid:
+        return jsonify({"ok": False, "error": "неверный api-ключ"}), 401
+    b = _req_json()
+    text = (b.get("task") or b.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "пустой task"}), 400
+    if len(text) > 20000:
+        return jsonify({"ok": False, "error": "task слишком длинный"}), 400
+    label = re.sub(r"[^a-z0-9_-]+", "-",
+                   (b.get("project") or "").lower()).strip("-") or "default"
+    mode = b.get("mode") if b.get("mode") in ("ask", "code") else "ask"
+    hook = (b.get("hook") or "").strip()
+    if hook and not hook.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "hook: только http(s)"}), 400
+    instr_extra = (b.get("instructions") or "").strip()
+    stem = (f"ext-{label}-{re.sub(r'[^a-z0-9_-]+', '-', uid.lower())}-"
+            f"{time.strftime('%m%d-%H%M%S')}")
+    instr = _instr_block(uid, None)
+    if instr_extra:
+        instr += "\n\n## Инструкции вызова\n" + instr_extra
+    _insert_task(stem, text, "ext", None, None, time.time(),
+                 reply_mode=mode, user=uid, instr=instr)
+    kv_set(f"ext:{stem}", json.dumps({"label": label, "hook": hook},
+                                     ensure_ascii=False))
+    name = _task_name(stem)
+    log(f"ext task {name} queued, label={label}, user={uid}, mode={mode}")
+    return jsonify({"ok": True, "name": name, "project": label}), 201
 
 
 @app.post("/")

@@ -482,3 +482,52 @@ Watchtower умеет HTTP API (`/v1/update`), но его порт наружу
 
 `WATCHTOWER_HTTP_API_PERIODIC_POLLS` оставляет и интервальный опрос — хук
 даёт мгновенный деплой, опрос остаётся страховкой.
+
+## Внешний API задач (`/api/ext/task`)
+
+Внешнее приложение может ставить Devin обезличенные задачи (не привязаны
+к репозиториям проектов) по секретному ключу. Типовой сценарий — «спросить
+и получить ответ»: технические вопросы, режим `ask` (read-only), при этом
+сессия Devin **продолжается** между задачами с одним `project`-лейблом.
+
+### Ключ
+
+Юзер генерирует ключ из веб-интерфейса (вход в панель):
+
+```bash
+# создать/перевыпустить (старый перестаёт работать)
+curl -X POST https://<host>/api/extkey \
+     -H "Content-Type: application/json" -b cookies.txt \
+     -d '{"action":"gen"}'
+# → {"ok":true,"key":"ext_...."}   ключ показывается один раз
+
+# отозвать
+curl -X POST https://<host>/api/extkey -b cookies.txt -d '{"action":"revoke"}'
+
+# проверить, что ключ установлен (маской)
+curl https://<host>/api/extkey -b cookies.txt
+```
+
+### Постановка задачи
+
+```bash
+curl -X POST https://<host>/api/ext/task \
+     -H "X-Api-Key: ext_...." \
+     -H "Content-Type: application/json" \
+     -d '{
+       "project": "my-service",          # лейбл — это ключ сессии, не repo
+       "task": "проверь статус заказа 42",
+       "instructions": "markdown — доп. правила, подмешиваются в промпт",
+       "mode": "ask",                    # ask (по умолчанию, read-only) | code
+       "hook": "https://app.example/hook" # куда POST'ить результат
+     }'
+# → 201 {"ok":true,"name":"ext-my-service-admin-1022-153012.txt",
+#         "project":"my-service"}
+```
+
+- `project` — произвольный лейбл; задачи с одним лейблом идут в один
+  каталог `tasks/ext/<label>` и **продолжают одну сессию Devin**.
+- `hook` (опционально) — по завершении туда уходит
+  `POST {"ok","name","project","status","output"}`. Таймаут ответа хука
+  15 с, ошибки пишутся в лог воркера.
+- Очередь общая с остальными задачами — ответ приходит после выполнения.
