@@ -2425,14 +2425,19 @@ def api_tasks(project: str | None = None, limit: int = 5,
             cut = out.find("### Что изменилось в репо")
             if cut != -1:
                 out = out[:cut].rstrip()
+        try:
+            o = json.loads(kv_get(f"opts:{stem}") or "{}")
+        except ValueError:
+            o = {}
         items.append({
             "name": _task_name(stem),
             "stem": stem,
             "project": r["project"] or "",
             "model": r["model"] or "",
-            "mode": r["reply_mode"] or "",
-            "ac": pj_get(r["project"], "auto_commit")
-                  if r["project"] else "",
+            "mode": o.get("mode") or r["reply_mode"] or "",
+            "ac": o.get("ac") if o.get("ac") is not None else
+                  (pj_get(r["project"], "auto_commit")
+                   if r["project"] else ""),
             "source": r["source"],
             "status": st,
             "task_status": r["task_status"] or "",
