@@ -28,8 +28,15 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
   const filtered = (repos || []).filter(r => !ql ||
     (r.name || "").toLowerCase().includes(ql) ||
     (r.desc || "").toLowerCase().includes(ql));
+  // сортировка: сначала по группе (путь до последнего /), потом по имени
+  filtered.sort((a, b) => {
+    const ga = (a.name || "").split("/").slice(0, -1).join("/");
+    const gb = (b.name || "").split("/").slice(0, -1).join("/");
+    return ga.localeCompare(gb) ||
+           (a.name || "").localeCompare(b.name || "");
+  });
   const hosts = [...new Set([...filtered.map(r => r.host),
-                             ...Object.keys(errors)])];
+                             ...Object.keys(errors)])].sort();
   return (
     <Dialog open={open} onClose={onClose} fullScreen>
       <AppBar position="sticky" color="primary">
