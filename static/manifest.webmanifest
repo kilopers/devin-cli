@@ -7,13 +7,13 @@
   "scope": "/",
   "display": "standalone",
   "background_color": "#f5f7fb",
-  "theme_color": "#3f51b5",
+  "theme_color": "#009688",
   "icons": [
     {"src": "/static/favicon.svg", "sizes": "any",
      "type": "image/svg+xml", "purpose": "any"},
     {"src": "/static/icon.png", "sizes": "568x568",
      "type": "image/png", "purpose": "any"},
-    {"src": "/static/icon.png", "sizes": "568x568",
+    {"src": "/static/icon-maskable.png", "sizes": "568x568",
      "type": "image/png", "purpose": "maskable"}
   ]
 }

@@ -1,112 +1,53 @@
 #!/usr/bin/env python3
-"""Генерирует иконку приложения (шестерёнка + </>) во всех форматах."""
-import math
-from PIL import Image, ImageDraw, ImageFilter
+"""Генерирует иконку приложения (атом с «AI») во всех форматах.
 
-OUT = "/Users/yura/Desktop/work/devincli/static"
+Исходник — scripts/icon-src.png (PNG с альфой). Выход — static/:
+  favicon.svg        — PNG внутри SVG (favicon + лого в шапке)
+  favicon.ico        — 16/32/48/64
+  icon.png           — 568x568, «any»-иконка PWA
+  icon-maskable.png  — та же с полем ~12% (safe zone для maskable)
+  apple-icon.png     — 180x180 на белом фоне (iOS не читает альфу)
+"""
+import base64
+import io
+from pathlib import Path
+from PIL import Image
 
-# Цвета из референса: фиолет градиент в синий
-C_TL = (167, 106, 245)   # верхний левый — фиолет
-C_BR = (76, 122, 240)    # нижний правый — синий
-C_GLYPH = (207, 215, 255)  # </> — светло-сиреневый
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "scripts" / "icon-src.png"
+OUT = ROOT / "static"
 
-S = 1024            # базовый холст
-SS = 4              # суперсэмплинг для сглаживания
-CX = CY = S / 2
-R_OUT = 405         # радиус по вершинам зубьев (~78% — safe zone maskable)
-R_IN = 315          # радиус впадин
-TEETH = 10
-TOOTH_HALF = math.radians(10.5)   # полуширина зуба по вершине
-VALLEY_HALF = math.radians(11.5)  # полуширина впадины
-
-
-def gear_points():
-    """Точки контура шестерёнки (зуб = плоская вершина)."""
-    pts = []
-    pitch = 2 * math.pi / TEETH
-    for i in range(TEETH):
-        a = i * pitch
-        pts += [
-            (CX + R_IN * math.cos(a - VALLEY_HALF),
-             CY + R_IN * math.sin(a - VALLEY_HALF)),
-            (CX + R_OUT * math.cos(a - TOOTH_HALF),
-             CY + R_OUT * math.sin(a - TOOTH_HALF)),
-            (CX + R_OUT * math.cos(a + TOOTH_HALF),
-             CY + R_OUT * math.sin(a + TOOTH_HALF)),
-            (CX + R_IN * math.cos(a + VALLEY_HALF),
-             CY + R_IN * math.sin(a + VALLEY_HALF)),
-        ]
-    return pts
+img = Image.open(SRC).convert("RGBA")
 
 
-GEAR = gear_points()
-
-# Глифы </>: полилинии в координатах холста 1024
-GW = 64  # толщина штриха
-GLYPHS = [
-    [(352, 398), (252, 512), (352, 626)],   # <
-    [(452, 660), (576, 364)],               # /
-    [(672, 398), (772, 512), (672, 626)],   # >
-]
-
-
-def gradient(size):
-    """Линейный градиент по диагонали TL→BR."""
-    img = Image.new("RGB", (size, size))
-    px = img.load()
-    for y in range(size):
-        for x in range(size):
-            t = (x + y) / (2 * size)
-            px[x, y] = tuple(int(C_TL[c] + (C_BR[c] - C_TL[c]) * t)
-                             for c in range(3))
-    return img
+def flat(size, bg=(255, 255, 255), scale=1.0):
+    """Иконка size×size; scale<1 — с полем (safe zone); bg=None → прозрачная."""
+    inner = round(size * scale)
+    icon = img.resize((inner, inner), Image.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(icon, ((size - inner) // 2, (size - inner) // 2), icon)
+    if bg is None:
+        return canvas
+    out = Image.new("RGBA", (size, size), bg + (255,))
+    out.paste(canvas, (0, 0), canvas)
+    return out
 
 
-def render_png():
-    big = S * SS
-    # маска шестерёнки
-    mask = Image.new("L", (big, big), 0)
-    md = ImageDraw.Draw(mask)
-    md.polygon([(x * SS, y * SS) for x, y in GEAR], fill=255)
-    mask = mask.filter(ImageFilter.GaussianBlur(9 * SS))
-    # градиент по маске
-    img = gradient(big).convert("RGBA")
-    img.putalpha(mask)
-    d = ImageDraw.Draw(img)
-    for line in GLYPHS:
-        pts = [(x * SS, y * SS) for x, y in line]
-        d.line(pts, fill=C_GLYPH, width=GW * SS, joint="curve")
-        for p in pts:  # круглые концы
-            r = GW * SS / 2
-            d.ellipse([p[0] - r, p[1] - r, p[0] + r, p[1] + r], fill=C_GLYPH)
-    return img.resize((S, S), Image.LANCZOS)
+# --- favicon.svg: растр внутри SVG (одна геометрия на все случаи) ----------
+small = img.resize((128, 128), Image.LANCZOS)
+buf = io.BytesIO()
+small.save(buf, format="PNG")
+b64 = base64.b64encode(buf.getvalue()).decode()
+(OUT / "favicon.svg").write_text(
+    '<svg xmlns="http://www.w3.org/2000/svg" '
+    'viewBox="0 0 128 128">\n'
+    f'  <image width="128" height="128" '
+    f'href="data:image/png;base64,{b64}"/>\n</svg>\n')
 
-
-def render_svg():
-    pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in GEAR)
-    shapes = []
-    for line in GLYPHS:
-        p = " ".join(f"{x},{y}" for x, y in line)
-        shapes.append(
-            f'<polyline points="{p}" fill="none" stroke="#CFD7FF" '
-            f'stroke-width="{GW}" stroke-linecap="round" '
-            f'stroke-linejoin="round"/>')
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {S} {S}">\n'
-        f'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
-        f'<stop offset="0" stop-color="#A76AF5"/>'
-        f'<stop offset="1" stop-color="#4C7AF0"/>'
-        f'</linearGradient></defs>\n'
-        f'<polygon points="{pts}" fill="url(#g)" stroke="url(#g)" '
-        f'stroke-width="44" stroke-linejoin="round"/>\n'
-        + "\n".join(shapes) + "\n</svg>\n")
-
-
-img = render_png()
-img.resize((568, 568), Image.LANCZOS).save(f"{OUT}/icon.png")
-img.resize((180, 180), Image.LANCZOS).save(f"{OUT}/apple-icon.png")
-img.save(f"{OUT}/favicon.ico",
-         sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
-with open(f"{OUT}/favicon.svg", "w") as f:
-    f.write(render_svg())
-print("done:", img.size)
+# --- PNG-иконки -------------------------------------------------------------
+flat(568).save(OUT / "icon.png")
+flat(568, bg=(255, 255, 255), scale=0.76).save(OUT / "icon-maskable.png")
+flat(180, bg=(255, 255, 255)).convert("RGB").save(OUT / "apple-icon.png")
+flat(64).save(OUT / "favicon.ico",
+              sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
+print("done ->", OUT)

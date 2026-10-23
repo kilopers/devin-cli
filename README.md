@@ -189,10 +189,11 @@ nginx режет путь; работает всегда).
 HTTP-слой — Flask + waitress; страницы — Jinja2-шаблоны (`templates/`,
 `render_template`; путь переопределяется `TEMPLATES_DIR`), логин — тоже
 MUI-форма, POST на `/login`.
-Иконка приложения — фиолетовая шестерёнка с `</>`: `static/favicon.svg`
-(+ `favicon.ico`, `icon.png`, `apple-icon.png`), показана в шапке,
+Иконка приложения — атом с «AI»: `static/favicon.svg` (+ `favicon.ico`,
+`icon.png`, `icon-maskable.png`, `apple-icon.png`), показана в шапке,
 мобильном меню и на странице входа. Все размеры генерируются одним
-скриптом `scripts/gen_icon.py` (Pillow; SVG — та же геометрия).
+скриптом `scripts/gen_icon.py` из исходника `scripts/icon-src.png`
+(Pillow; в SVG растр вшит base64).
 Веб-морда — **PWA**: `static/manifest.webmanifest` + `sw.js` (роут `/sw.js`,
 кэширует только `/static/*`, `/api/*` и POST'ы всегда в сеть) — на Android
 Chrome предложит «Установить приложение», на iPhone — «На экран Домой»

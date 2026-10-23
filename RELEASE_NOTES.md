@@ -1,3 +1,10 @@
+## 2.0.0
+- Мажорная версия: подъём 1.2 → 2.0 по запросу владельца.
+- Иконка приложения заменена на атом «AI»: favicon.svg/ico,
+  icon.png, apple-icon.png; новый icon-maskable.png (safe zone
+  для Android) и theme_color #009688 в манифесте. Исходник —
+  scripts/icon-src.png, генерация — scripts/gen_icon.py.
+
 ## 1.2.5
 - «Сборки»: кнопка перезапуска ↺ на завершённых джобах (failed,
   canceled, success) — GitLab POST jobs/<id>/retry, GitHub
