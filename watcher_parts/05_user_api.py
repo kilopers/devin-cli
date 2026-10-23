@@ -597,7 +597,9 @@ def _http_json(url: str, headers: dict | None = None, timeout: int = 20,
         **(headers or {})}, method=method)
     try:
         with TG_OPENER.open(req, timeout=timeout) as r:
-            return json.load(r), None
+            body = r.read()
+            # 201/204 на POST часто с пустым телом (GitHub rerun и т.п.)
+            return (json.loads(body) if body.strip() else {}), None
     except urllib.error.HTTPError as e:
         # verbose for the UI popover — "404: repo not found / private"
         body = e.read().decode("utf-8", errors="replace")[:300]
@@ -773,6 +775,7 @@ def _api_build_jobs():
                                     "cancelled": "canceled"}
                                    .get(j.get("conclusion") or "",
                                         "running"),
+                         "job_id": j.get("id"),
                          "url": j.get("html_url"),
                          "when": j.get("started_at") or "",
                          "sec": _sec_between(j.get("started_at"),
@@ -847,6 +850,54 @@ def _api_build_job_play():
         return jsonify({"ok": False, "error": f"GitLab: {err}"})
     _JOBS_CACHE.pop(f"{proj}:{b.get('pid') or ''}", None)
     return jsonify({"ok": True, "status": (data or {}).get("status")})
+
+
+@app.post("/api/build/job/retry")
+@login_required
+def _api_build_job_retry():
+    """Перезапуск завершённой джобы: GitLab POST jobs/<id>/retry,
+    GitHub POST actions/jobs/<id>/rerun. Тело: {project, job_id, pid?}."""
+    b = _req_json()
+    proj = (b.get("project") or "").strip()
+    jid = str(b.get("job_id") or "")
+    if not jid.isdigit():
+        return jsonify({"ok": False, "error": "нет job_id"}), 400
+    root = _proj_root(proj)
+    rc, url = _git(root, "remote", "get-url", "origin") \
+        if (root / ".git").exists() else (1, "")
+    parsed = _parse_remote(url) if rc == 0 else None
+    if not parsed:
+        return jsonify({"ok": False, "error": "нет remote"}), 400
+    host, path, token = parsed
+    if host == "github.com":
+        token = token or _cred_get(host) or GITHUB_TOKEN
+        if not token:
+            return jsonify({"ok": False, "error": "нет токена GitHub"}), 403
+        data, err = _http_json(
+            f"https://api.github.com/repos/{path}/actions/jobs"
+            f"/{jid}/rerun",
+            headers={"Authorization": f"Bearer {token}"}, method="POST")
+        provider = "GitHub"
+    else:
+        gl_host = urllib.parse.urlparse(uset(
+            "gitlab.base_url", _current_user(),
+            "GITLAB_BASE_URL", "https://gitlab.com")).hostname or ""
+        if "gitlab" not in host and host != gl_host:
+            return jsonify({"ok": False,
+                            "error": "не GitLab/GitHub remote"}), 400
+        token = token or _cred_get(host) or GITLAB_TOKEN
+        if not token:
+            return jsonify({"ok": False, "error": "нет токена GitLab"}), 403
+        enc = urllib.parse.quote(path, safe="")
+        data, err = _http_json(
+            f"https://{host}/api/v4/projects/{enc}/jobs/{jid}/retry",
+            headers={"PRIVATE-TOKEN": token}, method="POST")
+        provider = "GitLab"
+    if err:
+        return jsonify({"ok": False, "error": f"{provider}: {err}"})
+    _JOBS_CACHE.pop(f"{proj}:{b.get('pid') or ''}", None)
+    return jsonify({"ok": True,
+                    "status": (data or {}).get("status") or "queued"})
 
 
 def _sec_between(a: str | None, b: str | None):

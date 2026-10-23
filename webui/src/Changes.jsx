@@ -22,6 +22,7 @@ import CallMergeIcon from "@mui/icons-material/CallMerge";
 import DifferenceIcon from "@mui/icons-material/Difference";
 import BuildCircleIcon from "@mui/icons-material/BuildCircle";
 import PlayCircleIcon from "@mui/icons-material/PlayCircle";
+import ReplayIcon from "@mui/icons-material/Replay";
 import WebhookIcon from "@mui/icons-material/Webhook";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -133,13 +134,13 @@ function BuildsPanel({ build, open, onToggle, project }) {
     }
   };
 
-  // запуск ручной джобы GitLab (status=manual) → POST play, затем
-  // перечитать список джоб (кэш на бэке сброшен по pid)
-  const playJob = async (e, rid, jb) => {
+  // запуск ручной джобы (play) / перезапуск завершённой (retry) —
+  // после действия перечитать список джоб (кэш на бэке сброшен по pid)
+  const jobAction = async (e, rid, jb, action) => {
     e.stopPropagation();
     setJobs(m => ({ ...m, [rid]: { ...m[rid], playing: jb.job_id } }));
     try {
-      const d = await post("/api/build/job/play",
+      const d = await post("/api/build/job/" + action,
         { project, job_id: jb.job_id, pid: rid });
       if (!d.ok) {
         setJobs(m => ({ ...m, [rid]: { ...m[rid], playing: null,
@@ -260,15 +261,29 @@ function BuildsPanel({ build, open, onToggle, project }) {
                             fontFamily: "ui-monospace, Menlo, monospace" }}>
                             {jb.name}
                           </Typography>
-                          {jb.status === "manual" && jb.job_id && (
+                          {jb.job_id &&
+                            (jb.status === "manual" ||
+                             jb.status === "failed" ||
+                             jb.status === "canceled" ||
+                             jb.status === "success") && (
                             j.playing === jb.job_id ? (
                               <CircularProgress size={11} thickness={6} />
-                            ) : (
+                            ) : jb.status === "manual" ? (
                               <Tooltip title="запустить ручную джобу">
                                 <IconButton size="small" sx={{ p: 0 }}
-                                  onClick={e => playJob(e, rid, jb)}>
+                                  onClick={e => jobAction(e, rid, jb,
+                                                          "play")}>
                                   <PlayCircleIcon sx={{ fontSize: 15,
                                     color: "#1565c0" }} />
+                                </IconButton>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip title="перезапустить джобу">
+                                <IconButton size="small" sx={{ p: 0 }}
+                                  onClick={e => jobAction(e, rid, jb,
+                                                          "retry")}>
+                                  <ReplayIcon sx={{ fontSize: 14,
+                                    color: ju.color }} />
                                 </IconButton>
                               </Tooltip>
                             ))}

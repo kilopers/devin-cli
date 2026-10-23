@@ -1,3 +1,8 @@
+## 1.2.5
+- «Сборки»: кнопка перезапуска ↺ на завершённых джобах (failed,
+  canceled, success) — GitLab POST jobs/<id>/retry, GitHub
+  actions/jobs/<id>/rerun. job_id теперь отдаётся и для GitHub-джоб.
+
 ## 1.2.4
 - «Сборки»: ручные джобы GitLab (status=manual) больше не висят
   вечным спиннером — синяя иконка play + кнопка запуска на каждой
