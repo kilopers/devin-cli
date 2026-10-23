@@ -269,7 +269,7 @@ def _public_url() -> str:
     """Публичный адрес воркера: env PUBLIC_URL → kv.public_url →
     дефолт. Используется в инструкциях и ссылках наружу."""
     return (os.environ.get("PUBLIC_URL") or kv_get("public_url")
-            or "https://build.kilop.ru").rstrip("/")
+            or "https://ai.kilop.ru").rstrip("/")
 
 
 def _instr_block(author: str, proj: str | None) -> str:
