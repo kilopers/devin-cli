@@ -79,17 +79,17 @@ def _api_instr_int():
         return jsonify({"ok": True, "id": new_id})
     if not row:
         return jsonify({"ok": False, "error": "нет такой инструкции"}), 404
-    if row["kind"] == "system":
+    if row["kind"] == "system" and act != "update":
         return jsonify({"ok": False,
                         "error": "системную инструкцию менять нельзя"}), 403
     if row["kind"] in ("custom", "user") and row["user"] != u:
         return jsonify({"ok": False, "error": "чужая инструкция"}), 403
     if act == "update":
-        # проектную можно дописывать — имя фиксированное, delete/attach
-        # всё равно ниже не пройдут для kind != custom
+        # проектную и системную можно дописывать — имя фиксированное,
+        # delete/attach всё равно ниже не пройдут для kind != custom
         db_exec("UPDATE instructions SET name=%s, body=%s, updated=%s"
                 " WHERE id=%s",
-                (row["name"] if row["kind"] in ("user", "project")
+                (row["name"] if row["kind"] in ("user", "project", "system")
                  else (b.get("name") or row["name"]).strip()[:120],
                  (b.get("body") if b.get("body") is not None
                   else row["body"]), time.time(), iid))
@@ -148,12 +148,9 @@ def _api_instr_set():
     elif row["user"] != u:
         return jsonify({"ok": False, "error": "чужая инструкция"}), 403
     if act == "update":
-        if row["kind"] == "system":
-            return jsonify({"ok": False,
-                            "error": "системную менять нельзя"}), 403
         db_exec("UPDATE instructions SET name=%s, body=%s, updated=%s"
                 " WHERE id=%s",
-                (row["name"] if row["kind"] in ("user", "project")
+                (row["name"] if row["kind"] in ("user", "project", "system")
                  else (b.get("name") or row["name"]).strip()[:120],
                  b.get("body") if b.get("body") is not None
                  else row["body"], time.time(), iid))
