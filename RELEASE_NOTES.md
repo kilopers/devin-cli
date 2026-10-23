@@ -1,3 +1,9 @@
+## 1.2.9
+- SSH-доступ агента к хост-серверу: volume ./host-keys →
+  /host-keys:ro + extra_hosts host.docker.internal:host-gateway.
+  Ключ генерится рядом с compose в /docker/devin/host-keys/, pub в
+  /root/.ssh/authorized_keys хоста. Подключена инструкция «SSH к хосту».
+
 ## 1.2.8
 - Отступы вокруг чипов параметров выровнены: сверху было 2px,
   снизу ~12px до поля ввода — теперь pt/pb чипов 0.8 (~6px) и ноль

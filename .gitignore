@@ -7,3 +7,4 @@ tasks/
 .devin/config.local.json
 webui/node_modules/
 static/app/
+host-keys/

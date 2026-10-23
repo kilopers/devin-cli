@@ -91,6 +91,13 @@ services:
       - ./mihomo:/mihomo
       # Git over SSH (optional — comment out if you push over HTTPS).
       - ${HOME}/.ssh:/root/.ssh:ro
+      # SSH-ключ для доступа агента на хост-машину (генерится рядом с
+      # compose-файлом: ./host-keys/host_key; pub добавляется в
+      # /root/.ssh/authorized_keys на хосте). Пустой каталог = доступа нет.
+      - ./host-keys:/host-keys:ro
+    # host.docker.internal → IP хоста (для ssh-доступа агента на хост)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # MySQL: очередь/история задач и всё состояние воркера (таблицы создаются
   # сами при старте; файлы tasks/*.txt|*.json импортируются один раз).
