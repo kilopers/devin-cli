@@ -589,11 +589,12 @@ _BUILD_CACHE: dict = {}    # proj -> (timestamp, result) — CI APIs rate-limit
 _BUILD_TTL = 60
 
 
-def _http_json(url: str, headers: dict | None = None, timeout: int = 20):
-    """GET JSON via TG_OPENER (proxy-aware — GitHub/GitLab may need it)."""
+def _http_json(url: str, headers: dict | None = None, timeout: int = 20,
+               method: str = "GET"):
+    """GET/POST JSON via TG_OPENER (proxy-aware — GitHub/GitLab may need it)."""
     req = urllib.request.Request(url, headers={
         "Accept": "application/json", "User-Agent": "devin-worker",
-        **(headers or {})})
+        **(headers or {})}, method=method)
     try:
         with TG_OPENER.open(req, timeout=timeout) as r:
             return json.load(r), None
@@ -682,10 +683,12 @@ def _gitlab_status(host: str, path: str, token: str | None = None) -> dict:
         raw = p.get("status", "")
         st = {"success": "success", "failed": "failed",
               "canceled": "canceled", "skipped": "canceled"}.get(raw)
-        if st is None:
+        if raw == "manual":
+            st = "manual"       # пайплайн ждёт ручного запуска джобы
+        elif st is None:
             st = "running" if raw in (
                 "running", "pending", "preparing", "created",
-                "waiting_for_resource", "scheduled", "manual") \
+                "waiting_for_resource", "scheduled") \
                 else "unknown"
         return {"status": st, "name": f"pipeline #{p.get('id', '')}",
                 "ref": p.get("ref") or "", "num": p.get("id"),
@@ -795,9 +798,11 @@ def _api_build_jobs():
                              "status": {"success": "success",
                                         "failed": "failed",
                                         "canceled": "canceled",
-                                        "skipped": "canceled"}
+                                        "skipped": "canceled",
+                                        "manual": "manual"}
                                        .get(j.get("status") or "",
                                             "running"),
+                             "job_id": j.get("id"),
                              "url": j.get("web_url"),
                              "when": j.get("started_at") or "",
                              "sec": j.get("duration")}
@@ -805,6 +810,43 @@ def _api_build_jobs():
     if res.get("ok"):
         _JOBS_CACHE[key] = (time.time(), res)
     return jsonify(res)
+
+
+@app.post("/api/build/job/play")
+@login_required
+def _api_build_job_play():
+    """Запуск ручной джобы GitLab — POST /projects/:id/jobs/<job_id>/play.
+    Тело: {project, job_id, pid?} — pid = id пайплайна, чтобы сбросить
+    кэш джоб и UI увидел свежий статус. GitHub такого не умеет."""
+    b = _req_json()
+    proj = (b.get("project") or "").strip()
+    jid = str(b.get("job_id") or "")
+    if not jid.isdigit():
+        return jsonify({"ok": False, "error": "нет job_id"}), 400
+    root = _proj_root(proj)
+    rc, url = _git(root, "remote", "get-url", "origin") \
+        if (root / ".git").exists() else (1, "")
+    parsed = _parse_remote(url) if rc == 0 else None
+    if not parsed:
+        return jsonify({"ok": False, "error": "нет remote"}), 400
+    host, path, token = parsed
+    gl_host = urllib.parse.urlparse(uset(
+        "gitlab.base_url", _current_user(),
+        "GITLAB_BASE_URL", "https://gitlab.com")).hostname or ""
+    if "gitlab" not in host and host != gl_host:
+        return jsonify({"ok": False,
+                        "error": "play поддержан только для GitLab"}), 400
+    token = token or _cred_get(host) or GITLAB_TOKEN
+    if not token:
+        return jsonify({"ok": False, "error": "нет токена GitLab"}), 403
+    enc = urllib.parse.quote(path, safe="")
+    data, err = _http_json(
+        f"https://{host}/api/v4/projects/{enc}/jobs/{jid}/play",
+        headers={"PRIVATE-TOKEN": token}, method="POST")
+    if err:
+        return jsonify({"ok": False, "error": f"GitLab: {err}"})
+    _JOBS_CACHE.pop(f"{proj}:{b.get('pid') or ''}", None)
+    return jsonify({"ok": True, "status": (data or {}).get("status")})
 
 
 def _sec_between(a: str | None, b: str | None):

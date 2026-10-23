@@ -21,13 +21,14 @@ import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import CallMergeIcon from "@mui/icons-material/CallMerge";
 import DifferenceIcon from "@mui/icons-material/Difference";
 import BuildCircleIcon from "@mui/icons-material/BuildCircle";
+import PlayCircleIcon from "@mui/icons-material/PlayCircle";
 import WebhookIcon from "@mui/icons-material/Webhook";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import CircularProgress from "@mui/material/CircularProgress";
 import Popover from "@mui/material/Popover";
 import Tooltip from "@mui/material/Tooltip";
 import hljs from "highlight.js/lib/common";
-import { apiJson } from "./api.js";
+import { apiJson, post } from "./api.js";
 
 const STATUS_COLOR = { M: "#e6a23c", A: "#2e7d32", D: "#c62828",
                        R: "#1565c0", "??": "#2e7d32" };
@@ -38,6 +39,8 @@ const BUILD_UI = {
   failed:   { Icon: ErrorIcon,       color: "#c62828", label: "упала" },
   running:  { Icon: null,            color: "#e6a23c", label: "идёт" },
   canceled: { Icon: CancelIcon,      color: "#9aa0a6", label: "отменена" },
+  manual:   { Icon: PlayCircleIcon,  color: "#1565c0",
+              label: "ждёт ручного запуска" },
   unknown:  { Icon: WarningAmberIcon, color: "#9aa0a6",
               label: "статус неизвестен" },
 };
@@ -127,6 +130,34 @@ function BuildsPanel({ build, open, onToggle, project }) {
         ? { list: d.jobs } : { error: d.error || "ошибка" } }));
     } catch (e) {
       setJobs(m => ({ ...m, [rid]: { error: String(e) } }));
+    }
+  };
+
+  // запуск ручной джобы GitLab (status=manual) → POST play, затем
+  // перечитать список джоб (кэш на бэке сброшен по pid)
+  const playJob = async (e, rid, jb) => {
+    e.stopPropagation();
+    setJobs(m => ({ ...m, [rid]: { ...m[rid], playing: jb.job_id } }));
+    try {
+      const d = await post("/api/build/job/play",
+        { project, job_id: jb.job_id, pid: rid });
+      if (!d.ok) {
+        setJobs(m => ({ ...m, [rid]: { ...m[rid], playing: null,
+          error: d.error || "ошибка запуска" } }));
+        return;
+      }
+    } catch (e2) {
+      setJobs(m => ({ ...m, [rid]: { ...m[rid], playing: null,
+        error: String(e2) } }));
+      return;
+    }
+    try {
+      const d2 = await apiJson("/api/build/jobs?project=" +
+        encodeURIComponent(project || "") + "&id=" + rid);
+      setJobs(m => ({ ...m, [rid]: d2.ok
+        ? { list: d2.jobs } : { error: d2.error || "ошибка" } }));
+    } catch (e3) {
+      setJobs(m => ({ ...m, [rid]: { error: String(e3) } }));
     }
   };
   // хедер виден и при загрузке (спиннер справа), и при ошибке;
@@ -229,6 +260,18 @@ function BuildsPanel({ build, open, onToggle, project }) {
                             fontFamily: "ui-monospace, Menlo, monospace" }}>
                             {jb.name}
                           </Typography>
+                          {jb.status === "manual" && jb.job_id && (
+                            j.playing === jb.job_id ? (
+                              <CircularProgress size={11} thickness={6} />
+                            ) : (
+                              <Tooltip title="запустить ручную джобу">
+                                <IconButton size="small" sx={{ p: 0 }}
+                                  onClick={e => playJob(e, rid, jb)}>
+                                  <PlayCircleIcon sx={{ fontSize: 15,
+                                    color: "#1565c0" }} />
+                                </IconButton>
+                              </Tooltip>
+                            ))}
                           <Typography variant="caption"
                             color="text.secondary"
                             sx={{ fontSize: 10, flexShrink: 0 }}>
