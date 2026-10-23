@@ -118,7 +118,9 @@ services:
   # Needs a GHCR login on the host once:
   #   echo $GITHUB_PAT | docker login ghcr.io -u kilopers --password-stdin
   watchtower:
-    image: containrrr/watchtower:latest
+    # nickfedor-форк: containrrr заброшен и не стартует на новых Docker —
+    # drop-in замена (те же флаги, лейблы centurylinklabs и /v1/update API)
+    image: nickfedor/watchtower:latest
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
