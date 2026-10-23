@@ -1,0 +1,10 @@
+// фрагмент /etc/bind/named.conf.options на хосте:
+// слушаем только белый IP + localhost, рекурсия выключена (авторитативный сервер)
+options {
+    directory "/var/cache/bind";
+    listen-on { 151.252.106.119; 127.0.0.1; };
+    listen-on-v6 { none; };
+    allow-query { any; };
+    recursion no;
+    dnssec-validation no;
+};

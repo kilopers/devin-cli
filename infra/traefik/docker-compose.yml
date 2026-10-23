@@ -1,0 +1,25 @@
+# Traefik на хосте (/docker/traefik): 80/443, авто-HTTPS через Let's Encrypt.
+# Домены разводятся файлами в dynamic.yml (docker-provider отключён —
+# на хосте старый docker API). Запуск: docker compose up -d
+services:
+  traefik:
+    image: traefik:v3.4
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./acme.json:/letsencrypt/acme.json   # chmod 600!
+      - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=admin@kilop.ru
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.tlschallenge=true

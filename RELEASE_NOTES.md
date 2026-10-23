@@ -1,3 +1,10 @@
+## 1.2.10
+- Инфраструктура хоста в репозитории (infra/): BIND9-зона
+  ai.kilop.ru (authoritative, NS ns1.ai.kilop.ru, wildcard *.ai.kilop.ru
+  -> 151.252.106.119) и Traefik в /docker/traefik — 80/443,
+  автовыпуск сертификатов Let's Encrypt, маршрутизация доменов
+  файлами dynamic.yml. Панель открывается по https://ai.kilop.ru.
+
 ## 1.2.9
 - SSH-доступ агента к хост-серверу: volume ./host-keys →
   /host-keys:ro + extra_hosts host.docker.internal:host-gateway.

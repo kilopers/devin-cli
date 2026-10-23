@@ -1,0 +1,15 @@
+# Маршруты: домен -> сервис. Новый домен = новый блок в routers+services,
+# сертификат LE выпустится автоматически (должен резолвиться на этот IP).
+http:
+  routers:
+    devin:
+      rule: "Host(`ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: devin
+      tls:
+        certResolver: le
+  services:
+    devin:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8089"
