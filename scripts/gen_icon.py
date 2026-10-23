@@ -70,10 +70,12 @@ b64 = base64.b64encode(buf.getvalue()).decode()
     f'href="data:image/png;base64,{b64}"/>\n</svg>\n')
 
 # --- PNG-иконки -------------------------------------------------------------
-tile(568).save(OUT / "icon.png")
-# maskable обрезается ОСью в круг/сквиркл — плитка во весь квадрат
+# icon.png и apple-icon.png — плитка во весь квадрат (radius=0): у Windows
+# и iOS нет прозрачных углов, которые те подставили бы белым/чёрным фоном.
+tile(568, radius=0, scale=0.78).save(OUT / "icon.png")
+# maskable обрезается ОСью в круг/сквиркл — атом мельче, в safe zone
 tile(568, radius=0, scale=0.70).save(OUT / "icon-maskable.png")
-tile(180).convert("RGB").save(OUT / "apple-icon.png")
+tile(180, radius=0, scale=0.78).convert("RGB").save(OUT / "apple-icon.png")
 tile(256).save(OUT / "favicon.ico",
                sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
 print("done ->", OUT)
