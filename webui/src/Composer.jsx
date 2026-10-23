@@ -102,7 +102,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const chips = (
     <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", px: 0.5,
-               pt: 0.3 }}>
+               pt: 0.8, pb: 0.8 }}>
       <Chip size="small" clickable
         label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
         color={ov.mode ? "primary" : "default"}
@@ -236,7 +236,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
       {chips}
-      <Box sx={{ px: 1, pt: 0.8, pb: "5px",
+      <Box sx={{ px: 1, pt: 0, pb: "5px",
                  display: "flex", alignItems: "flex-end", gap: 0.5 }}>
         <TextField
           multiline minRows={1} maxRows={50} fullWidth size="small"
@@ -310,7 +310,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
       borderRadius: 0 }}>
       <Box sx={{ maxWidth: 1280, mx: "auto", px: 1.5 }}>{chips}</Box>
       <Grid container spacing={1} sx={{
-        maxWidth: 1280, mx: "auto", p: 1.5, alignItems: "flex-end" }}>
+        maxWidth: 1280, mx: "auto", px: 1.5, pb: 1.5, pt: 0,
+        alignItems: "flex-end" }}>
         <Grid size={{ xs: 12, sm: "grow" }}>
           <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.5 }}>
             <TextField
