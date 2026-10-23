@@ -242,7 +242,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                           overflowY: "auto" } }}
-          placeholder={mode === "ask" ? `Вопрос по «${project || "…"}»`
+          placeholder={curMode === "ask"
+                            ? `Вопрос по «${project || "…"}»`
                             : `Задача для «${project || "…"}»`}
           value={text}
           onChange={e => setText(e.target.value)}
@@ -284,7 +285,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
             onClick={() => sendAudio(lastAudio)}
             sx={{ minWidth: 0, color: "warning.light" }} />
         )}
-        <BottomNavigationAction label="В работу" icon={<SendIcon />}
+        <BottomNavigationAction
+          label={curMode === "ask" ? "Спросить" : "В работу"}
+          icon={<SendIcon />}
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
                 color: text.trim() ? "#fff" : "rgba(255,255,255,.4)" }} />
@@ -314,7 +317,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
             multiline minRows={1} maxRows={50} fullWidth size="small"
             sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                             overflowY: "auto" } }}
-            placeholder={(mode === "ask"
+            placeholder={(curMode === "ask"
              ? `Вопрос по «${project || "…"}»`
              : `Задача для Devin по проекту «${project || "…"}»`) +
                          " — Ctrl+Enter чтобы отправить"}
@@ -359,7 +362,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
             <Button variant="contained" size="small" onClick={send}
                     disabled={busy} endIcon={<SendIcon sx={{fontSize: 15}} />}
                     sx={{ whiteSpace: "nowrap", px: 1.5, minWidth: 0 }}>
-              В работу
+              {curMode === "ask" ? "Спросить" : "В работу"}
             </Button>
           </Box>
         </Grid>
