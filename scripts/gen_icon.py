@@ -1,42 +1,67 @@
 #!/usr/bin/env python3
-"""Генерирует иконку приложения (атом с «AI») во всех форматах.
+"""Генерирует иконку приложения (атом «AI» на скруглённой плитке).
 
 Исходник — scripts/icon-src.png (PNG с альфой). Выход — static/:
   favicon.svg        — PNG внутри SVG (favicon + лого в шапке)
   favicon.ico        — 16/32/48/64
   icon.png           — 568x568, «any»-иконка PWA
-  icon-maskable.png  — та же с полем ~12% (safe zone для maskable)
-  apple-icon.png     — 180x180 на белом фоне (iOS не читает альфу)
+  icon-maskable.png  — плитка во весь квадрат (safe zone для maskable)
+  apple-icon.png     — 180x180 (iOS не читает альфу — плитка как фон)
 """
 import base64
 import io
+import math
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "scripts" / "icon-src.png"
 OUT = ROOT / "static"
 
-img = Image.open(SRC).convert("RGBA")
+atom = Image.open(SRC).convert("RGBA")
+
+# Плитка: диагональный градиент циан → тёмная бирюза (палитра иконки)
+C_TL = (0, 188, 212)    # #00BCD4
+C_BR = (0, 121, 107)    # #00796B
+RADIUS = 0.225          # радиус углов, доля размера (iOS-подобный)
+ICON_SCALE = 0.86       # атом внутри плитки
 
 
-def flat(size, bg=(255, 255, 255), scale=1.0):
-    """Иконка size×size; scale<1 — с полем (safe zone); bg=None → прозрачная."""
+def gradient(size):
+    """Диагональный градиент C_TL → C_BR: строим его на холсте
+    шириной с диагональ плитки, поворачиваем и кадрируем центр —
+    полос от поворота не остаётся."""
+    d = math.ceil(size * math.sqrt(2)) + 2
+    g = Image.linear_gradient("L").resize((d, d), Image.BICUBIC)
+    g = g.rotate(45, expand=False, resample=Image.BICUBIC)
+    off = (d - size) // 2
+    g = g.crop((off, off, off + size, off + size))
+    return ImageOps.colorize(g, black=C_TL, white=C_BR).convert("RGBA")
+
+
+def rounded_mask(size, radius):
+    big = size * 4
+    m = Image.new("L", (big, big), 0)
+    d = ImageDraw.Draw(m)
+    d.rounded_rectangle([0, 0, big - 1, big - 1],
+                        radius=big * radius, fill=255)
+    return m.resize((size, size), Image.LANCZOS)
+
+
+def tile(size, radius=RADIUS, scale=ICON_SCALE):
+    """Атом на скруглённой градиентной плитке; radius=0 — квадрат."""
+    t = gradient(size)
+    t.putalpha(rounded_mask(size, radius) if radius
+               else Image.new("L", (size, size), 255))
     inner = round(size * scale)
-    icon = img.resize((inner, inner), Image.LANCZOS)
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    canvas.paste(icon, ((size - inner) // 2, (size - inner) // 2), icon)
-    if bg is None:
-        return canvas
-    out = Image.new("RGBA", (size, size), bg + (255,))
-    out.paste(canvas, (0, 0), canvas)
-    return out
+    a = atom.resize((inner, inner), Image.LANCZOS)
+    t.paste(a, ((size - inner) // 2, (size - inner) // 2), a)
+    return t
 
 
 # --- favicon.svg: растр внутри SVG (одна геометрия на все случаи) ----------
-small = img.resize((128, 128), Image.LANCZOS)
 buf = io.BytesIO()
-small.save(buf, format="PNG")
+tile(128).save(buf, format="PNG")
 b64 = base64.b64encode(buf.getvalue()).decode()
 (OUT / "favicon.svg").write_text(
     '<svg xmlns="http://www.w3.org/2000/svg" '
@@ -45,9 +70,10 @@ b64 = base64.b64encode(buf.getvalue()).decode()
     f'href="data:image/png;base64,{b64}"/>\n</svg>\n')
 
 # --- PNG-иконки -------------------------------------------------------------
-flat(568).save(OUT / "icon.png")
-flat(568, bg=(255, 255, 255), scale=0.76).save(OUT / "icon-maskable.png")
-flat(180, bg=(255, 255, 255)).convert("RGB").save(OUT / "apple-icon.png")
-flat(64).save(OUT / "favicon.ico",
-              sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
+tile(568).save(OUT / "icon.png")
+# maskable обрезается ОСью в круг/сквиркл — плитка во весь квадрат
+tile(568, radius=0, scale=0.70).save(OUT / "icon-maskable.png")
+tile(180).convert("RGB").save(OUT / "apple-icon.png")
+tile(256).save(OUT / "favicon.ico",
+               sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
 print("done ->", OUT)
