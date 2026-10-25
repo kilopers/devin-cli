@@ -1,3 +1,10 @@
+## 1.3.4
+- «Обсудить» переведён с Gemini на сам Devin CLI: /api/discuss
+  спавнит разовую read-only сессию devin (--permission-mode auto)
+  во временном каталоге и возвращает её ответ. Отдельный ключ
+  Gemini не нужен — используется тот же devin.api_key, что и у
+  задач. _gemini_chat удалён.
+
 ## 1.3.3
 - Откат миграции на GitLab: проект снова на GitHub
   (kilopers/devin-cli), образ — ghcr.io/kilopers/devin-cli,

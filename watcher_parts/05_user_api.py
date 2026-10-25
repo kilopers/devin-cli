@@ -204,38 +204,54 @@ DISCUSS_PROMPT = """\
 
 Отвечай по-русски, markdown, без воды. Если пользователь уточняет или \
 спорит — учитывай и переписывай постановку целиком. Не задавай встречных \
-вопросов простынёй: спорное отражай в плане как открытый пункт."""
+вопросов простынёй: спорное отражай в плане как открытый пункт.
+
+ВАЖНО: работай в режиме «только ответ» — ничего не пиши в файлы, не \
+запускай команды; весь ответ — в финальном сообщении."""
 
 
-def _gemini_chat(msgs: list, system: str, user: str | None = None) -> str:
-    """Текстовый чат через Gemini generateContent.
-    msgs: [{"role": "user"|"model", "text": "..."}]."""
-    gm = uset("gemini.model", user, "GEMINI_MODEL", "gemini-2.5-flash")
-    gk = uset("gemini.api_key", user, "GEMINI_API_KEY")
-    if not gk:
-        raise RuntimeError("нет ключа Gemini (Настройки → gemini.api_key)")
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{gm}:generateContent?key={gk}")
-    payload = {
-        "system_instruction": {"parts": [{"text": system}]},
-        "contents": [{"role": m["role"], "parts": [{"text": m["text"]}]}
-                     for m in msgs],
-    }
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json"})
+def _devin_discuss(msgs: list, user: str | None = None) -> str:
+    """Формализация черновика через сам Devin CLI: одноразовая read-only
+    сессия во временном каталоге, вся история диалога — в промпте.
+    Ответ — stdout сессии."""
+    parts = [DISCUSS_PROMPT, "", "ДИАЛОГ:"]
+    for m in msgs:
+        who = "Пользователь" if m["role"] == "user" else "Постановка (твой прошлый ответ)"
+        parts.append(f"{who}:\n{m['text']}")
+    parts.append("Выдай актуальную полную постановку задачи.")
+    prompt = "\n\n".join(parts)
+
+    workdir = Path(tempfile.mkdtemp(prefix="discuss-", dir="/tmp"))
+    env = dict(os.environ)
+    key = uset("devin.api_key", user, "WINDSURF_API_KEY")
+    if key:
+        env["WINDSURF_API_KEY"] = key
+    env["DEVIN_WORKDIR"] = str(workdir)
+    env["DEVIN_CONTINUE"] = "false"
     try:
-        with TG_OPENER.open(req, timeout=120) as r:
-            res = json.load(r)
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"gemini HTTP {e.code}: {e.read().decode()[:300]}")
-    return "".join(p.get("text", "")
-                   for p in res["candidates"][0]["content"]["parts"]).strip()
+        p = subprocess.run(
+            ["devin", "--model", current_model(),
+             "--permission-mode", "auto",
+             "--respect-workspace-trust", "false",
+             "-p", prompt],
+            env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, errors="replace", timeout=600)
+        out = (p.stdout or "").strip()
+        if p.returncode != 0 and not out:
+            raise RuntimeError(f"devin exit {p.returncode}")
+        if not out:
+            raise RuntimeError("пустой ответ devin")
+        return out
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("devin не ответил за 10 минут")
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 @app.post("/api/discuss")
 @login_required
 def _api_discuss():
-    """«Обсудить»: Gemini формализует сырую идею в постановку задачи.
+    """«Обсудить»: Devin формализует сырую идею в постановку задачи.
     Тело: {"history": [{"role":"user"|"assistant","text":...}]} —
     история диалога, последнее сообщение — от юзера."""
     hist = _req_json().get("history") or []
@@ -243,12 +259,12 @@ def _api_discuss():
     for m in hist[-20:]:
         t = (m.get("text") or "")[:8000]
         if t:
-            msgs.append({"role": "model" if m.get("role") == "assistant"
+            msgs.append({"role": "assistant" if m.get("role") == "assistant"
                          else "user", "text": t})
     if not msgs or msgs[-1]["role"] != "user":
         return jsonify({"ok": False, "error": "пустой ввод"}), 400
     try:
-        text = _gemini_chat(msgs, DISCUSS_PROMPT, _current_user())
+        text = _devin_discuss(msgs, _current_user())
     except Exception as e:
         log(f"discuss: {e}")
         return jsonify({"ok": False, "error": str(e)[:300]})
