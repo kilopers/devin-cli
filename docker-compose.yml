@@ -1,7 +1,7 @@
 services:
   # Long-running watcher: polls tasks/inbox/ and runs each task through Devin.
   devin:
-    image: docker.kilop.ru/ai/devin:latest
+    image: ghcr.io/kilopers/devin-cli:latest
     restart: unless-stopped
     entrypoint: ["python3", "/app/watcher.py"]
     depends_on:
@@ -120,9 +120,10 @@ services:
       timeout: 3s
       retries: 20
 
-  # Auto-deploy: watchtower опрашивает docker.kilop.ru каждые 5 минут;
-  # при смене :latest тянет и пересоздаёт devin (SIGTERM — задача умрёт).
-  # На хосте один раз: docker login docker.kilop.ru
+  # Auto-deploy: polls GHCR every 5 min; when :latest changes, pulls it and
+  # recreates the devin container (SIGTERM — a task in flight is killed).
+  # Needs a GHCR login on the host once:
+  #   echo $GITHUB_PAT | docker login ghcr.io -u kilopers --password-stdin
   watchtower:
     # nickfedor-форк: containrrr заброшен и не стартует на новых Docker —
     # drop-in замена (те же флаги, лейблы centurylinklabs и /v1/update API)
@@ -143,7 +144,7 @@ services:
 
   # One-time interactive login:  docker compose --profile auth run --rm auth
   auth:
-    image: docker.kilop.ru/ai/devin:latest
+    image: ghcr.io/kilopers/devin-cli:latest
     profiles: ["auth"]
     stdin_open: true
     tty: true

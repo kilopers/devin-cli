@@ -11,21 +11,19 @@ Docker-образ с [Devin CLI](https://devin.ai) для автономного
   в БД и удаляются.
 - **one-shot** (`docker run`) — выполняет один task-файл и завершается.
 
-Образ собирается GitLab CI (`.gitlab-ci.yml`, buildx) и пушится в
-self-hosted реджистри — `docker.kilop.ru/ai/devin`. Репозиторий:
-`https://gitlab.kilop.ru/ai/devin.git`. Креды реджистри — переменные
-CI/CD `DOCKER_REGISTRY_URL/LOGIN/TOKEN`; деплой-джоб дёргает
-`POST https://ai.kilop.ru/deploy` (Bearer = `WATCHTOWER_HOOK_TOKEN`),
-воркер пробрасывает в watchtower `/v1/update`.
+Образ собирается GitHub Actions (`.github/workflows/docker.yml`) и пушится в
+GitHub Container Registry — `ghcr.io/kilopers/devin-cli`. Secrets настраивать
+не нужно: логин идёт через встроенный `GITHUB_TOKEN`.
 
 ## Сервер: установка и запуск
 
 ```bash
-# 1. залогиниться в реджистри
-docker login docker.kilop.ru
+# 1. залогиниться в ghcr (нужен PAT с правом read:packages,
+#    если пакет приватный; для public-пакета логин не нужен)
+echo $GITHUB_PAT | docker login ghcr.io -u kilopers --password-stdin
 
 # 2. забрать файлы запуска
-git clone https://gitlab.kilop.ru/ai/devin.git
+git clone git@github.com:kilopers/devin-cli.git
 cd devin-cli
 
 # 3. настроить
@@ -49,39 +47,40 @@ docker compose logs -f
 
 ## Автообновление образа (watchtower)
 
-Сервис `watchtower` в compose раз в 5 минут спрашивает реджистри
-`docker.kilop.ru`: если `:latest` пересобрался (push в main → GitLab CI),
-делает `pull` и пересоздаёт контейнер `devin` сам — ручной
-`docker compose pull && up -d` не нужен. Учти: пересоздание — это SIGTERM
-контейнеру, выполняющаяся задача умрёт. Мгновенный деплой — CI-джоб
-`deploy-watchtower` (POST /deploy).
+Сервис `watchtower` в compose раз в 5 минут спрашивает GHCR: если `:latest`
+пересобрался (push в main → GitHub Actions), делает `pull` и пересоздаёт
+контейнер `devin` сам — ручной `docker compose pull && up -d` не нужен.
+Учти: пересоздание — это SIGTERM контейнеру, выполняющаяся задача умрёт.
 
-Один раз на сервере нужен логин в реджистри:
+Один раз на сервере нужен логин в GHCR (см. PAT ниже):
 
 ```bash
-docker login docker.kilop.ru
+echo $GITHUB_PAT | docker login ghcr.io -u kilopers --password-stdin
 docker compose up -d   # поднимет и watchtower
 ```
 
-## GitLab PAT — clone/pull/push без SSH-ключей
+## GitHub PAT — clone/pull/push и GHCR без SSH-ключей
 
-1. gitlab.kilop.ru → аватар → **Preferences** → **Access Tokens** →
-   персональный токен со scope **`api`+`read_repository`+`write_repository`**.
-2. Скопируй токен сразу — второй раз его не покажут.
+1. github.com → аватар → **Settings** → **Developer settings** →
+   **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**.
+2. Scopes: **`repo`** (клонировать/пулить/пушить приватные репо) и
+   **`read:packages`** (docker pull из GHCR; `write:packages` — если пушишь
+   образы вручную).
+3. Скопируй токен сразу — второй раз его не покажут.
 
 ```bash
-# git по HTTPS: логин — любой (oauth2), пароль — токен
-git clone https://gitlab.kilop.ru/ai/devin.git
+# git по HTTPS: логин — GitHub username, пароль — токен
+git clone https://github.com/kilopers/devin-cli.git
 # чтобы не вводить каждый раз:
 git config --global credential.helper store
 
-# реджистри на сервере:
-docker login docker.kilop.ru
+# GHCR на сервере:
+echo <TOKEN> | docker login ghcr.io -u <github-username> --password-stdin
 ```
 
 Тот же PAT используется воркеру в `GIT_REPO_URL` вида
-`https://oauth2:<TOKEN>@gitlab.kilop.ru/ai/repo.git` — но помни: токен
-остаётся в `.git/config` открытым текстом.
+`https://<TOKEN>@github.com/org/repo.git` — но помни: токен остаётся
+в `.git/config` открытым текстом.
 
 ## Как кидать задачи
 
@@ -425,7 +424,7 @@ docker run --rm \
     -v /path/to/task.txt:/task/task.txt:ro \
     -v ./devin-data:/root/.local/share/devin \
     -v ~/.ssh:/root/.ssh:ro \
-    docker.kilop.ru/ai/devin:latest
+    ghcr.io/kilopers/devin-cli:latest
 ```
 
 ## Что делает контейнер
@@ -453,7 +452,7 @@ docker run --rm \
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-    -t docker.kilop.ru/ai/devin:latest --push .
+    -t ghcr.io/kilopers/devin-cli:latest --push .
 ```
 
 Ставится всегда свежий Devin CLI (`install.sh` → latest).

@@ -1,3 +1,10 @@
+## 1.3.3
+- Откат миграции на GitLab: проект снова на GitHub
+  (kilopers/devin-cli), образ — ghcr.io/kilopers/devin-cli,
+  сборка — GitHub Actions (.github/workflows/docker.yml).
+  .gitlab-ci.yml и механика devin-bundle удалены, README и
+  docker-compose.yml возвращены к GHCR.
+
 ## 1.3.2
 - CI: бандл Devin CLI качается из package registry проекта
   (CDN static.devin.ai недоступен с раннера в РФ), плюс прокси

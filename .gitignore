@@ -9,5 +9,3 @@ webui/node_modules/
 static/app/
 host-keys/
 tmp/
-devin-bundle/*
-!devin-bundle/.gitkeep
