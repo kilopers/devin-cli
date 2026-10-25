@@ -23,6 +23,11 @@ stages:
 variables:
   # Без аттестаций (provenance/sbom) — self-hosted реджистри их не принимает.
   BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
+  # Предзалитый бандл Devin CLI из package registry ЭТОГО проекта —
+  # CDN static.devin.ai у раннера качает ~400KB/s и рвётся по таймауту.
+  # При обновлении версии CLI: залить новый tar.gz (bin/+share/) сюда же
+  # и поднять DEVIN_BUNDLE_VER.
+  DEVIN_BUNDLE_VER: "3000.11.205"
 
 build-image:
   image: docker:latest
@@ -31,6 +36,15 @@ build-image:
     - docker:dind
   before_script:
     - docker login $DOCKER_REGISTRY_URL -u $DOCKER_REGISTRY_LOGIN -p $DOCKER_REGISTRY_TOKEN
+    # предзалитый бандл → Dockerfile кладёт его в _versions/<ver>,
+    # install.sh пропускает скачивание
+    - mkdir -p devin-bundle/$DEVIN_BUNDLE_VER
+    - |
+      curl -fsSL --retry 3 -o /tmp/devin-bundle.tar.gz \
+        -H "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/devin-cli-bundle/$DEVIN_BUNDLE_VER/devin.tar.gz" \
+        && tar xzf /tmp/devin-bundle.tar.gz -C devin-bundle/$DEVIN_BUNDLE_VER \
+        && echo "bundle: $(ls devin-bundle/$DEVIN_BUNDLE_VER/bin/devin)"
     # Отдельный builder на драйвере docker-container — нужен для
     # экспорта кэша type=registry (дефолтный docker-драйвер не умеет).
     - docker buildx create --use --driver docker-container
