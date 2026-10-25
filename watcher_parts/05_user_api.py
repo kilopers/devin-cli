@@ -243,7 +243,8 @@ def _devin_discuss(msgs: list, user: str | None = None,
              "--permission-mode", "auto",
              "--respect-workspace-trust", "false",
              "-p", prompt],
-            env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            env=env, cwd=str(workdir),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, errors="replace", timeout=600)
         out = (p.stdout or "").strip()
         if p.returncode != 0 and not out:

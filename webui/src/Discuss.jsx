@@ -2,7 +2,7 @@
 // Gemini формализует её в постановку задачи (полная версия на каждый
 // ответ), можно договаривать; «В работу» ставит последнюю постановку
 // как обычную задачу на выбранной модели. Чипов режима/автокоммита нет.
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -21,6 +21,24 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import { STT_RATE, resample, encodeWav } from "./Composer.jsx";
+
+const MsgRow = memo(function MsgRow({ m }) {
+  return m.role === "user" ? (
+    <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+      <Paper sx={{ px: 1.5, py: 0.8, maxWidth: "80%",
+                   bgcolor: "primary.main", color: "#fff",
+                   borderRadius: "12px 12px 2px 12px" }}>
+        <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+          {m.text}
+        </Typography>
+      </Paper>
+    </Box>
+  ) : (
+    <Paper variant="outlined" sx={{ px: 1.5, py: 0.5, mb: 1 }}>
+      <Markdown text={m.text} />
+    </Paper>
+  );
+});
 
 export default function Discuss({ open, onClose, project, models,
                                   defModel, onSubmit, toast }) {
@@ -135,23 +153,7 @@ export default function Discuss({ open, onClose, project, models,
             Набросай идею текстом или голосом — Devin оформит её
             в постановку задачи.
           </Typography>)}
-        {msgs.map((m, i) => m.role === "user" ? (
-          <Box key={i} sx={{ display: "flex", justifyContent: "flex-end",
-                            mb: 1 }}>
-            <Paper sx={{ px: 1.5, py: 0.8, maxWidth: "80%",
-                         bgcolor: "primary.main", color: "#fff",
-                         borderRadius: "12px 12px 2px 12px" }}>
-              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                {m.text}
-              </Typography>
-            </Paper>
-          </Box>
-        ) : (
-          <Paper key={i} variant="outlined"
-                 sx={{ px: 1.5, py: 0.5, mb: 1 }}>
-            <Markdown text={m.text} />
-          </Paper>
-        ))}
+        {msgs.map((m, i) => <MsgRow key={i} m={m} />)}
         {busy && (
           <Typography variant="caption" color="text.secondary">
             Devin формулирует…
