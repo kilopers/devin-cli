@@ -714,6 +714,13 @@ export default function App() {
           🗂 Обзор репозиториев (GitHub/GitLab)
         </Typography>
       </ListItemButton>
+      <ListItemButton dense onClick={() => { setDrawerOpen(false);
+                                             setView("models"); }}
+                      sx={{ px: 1.5 }}>
+        <Typography variant="body2" sx={{ fontSize: 12.5 }}>
+          🤖 Модели
+        </Typography>
+      </ListItemButton>
       <Box sx={{ px: 2, py: 1.5, display: "flex", flexDirection: "column",
                  gap: 1.5 }}>
         <Typography variant="caption" color="text.secondary">
@@ -986,6 +993,12 @@ export default function App() {
                 🗂 Обзор репозиториев (GitHub/GitLab)
               </Typography>
             </ListItemButton>
+            <ListItemButton dense onClick={() => setView("models")}
+                            sx={{ px: 1.5 }}>
+              <Typography variant="body2" sx={{ fontSize: 12.5 }}>
+                🤖 Модели
+              </Typography>
+            </ListItemButton>
           </Paper>
           </>}
         </Box>
@@ -993,7 +1006,6 @@ export default function App() {
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={wsColor}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
-                  onOpenModels={() => setView("models")}
                   mode={mode}
                   fast={fast}
                   onFast={v => post("/api/project/settings",

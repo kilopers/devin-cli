@@ -18,17 +18,18 @@ import MenuIcon from "@mui/icons-material/Menu";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import SmartToyIcon from "@mui/icons-material/SmartToy";
+import PsychologyIcon from "@mui/icons-material/Psychology";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson as get, post } from "./api.js";
+import Discuss from "./Discuss.jsx";
 
-const STT_RATE = 16000;
+export const STT_RATE = 16000;
 const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
                     String(Math.floor(s % 60)).padStart(2, "0");
 
-function resample(chunks, srcRate, dstRate) {
+export function resample(chunks, srcRate, dstRate) {
   const srcLen = chunks.reduce((a, c) => a + c.length, 0);
   const src = new Float32Array(srcLen);
   let off = 0;
@@ -45,7 +46,7 @@ function resample(chunks, srcRate, dstRate) {
   return [dst];
 }
 
-function encodeWav(chunks, rate) {
+export function encodeWav(chunks, rate) {
   const len = chunks.reduce((a, c) => a + c.length, 0);
   const buf = new ArrayBuffer(44 + len * 2), v = new DataView(buf);
   const ws = (o, s) => { for (let i = 0; i < s.length; i++)
@@ -65,7 +66,7 @@ function encodeWav(chunks, rate) {
 }
 
 export default function Composer({ project, sttStatus, toast, onSent,
-                                   conn, onOpenDrawer, accent, onOpenModels, mode, onMode,
+                                   conn, onOpenDrawer, accent, mode, onMode,
                                    fast, onFast }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
@@ -76,6 +77,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
   const [lastAudio, setLastAudio] = useState(null);  // failed WAV → retry
+  const [discussOpen, setDiscussOpen] = useState(false);
   const textRef = useRef("");
   textRef.current = text;
 
@@ -133,6 +135,20 @@ export default function Composer({ project, sttStatus, toast, onSent,
           </MenuItem>))}
       </Menu>
     </Box>
+  );
+
+  const submitDiscussed = (text, model) =>
+    post("/api/tasks", { project: project === "workspace" ? null : project,
+                         text, mode: "code",
+                         ...(model ? { model } : {}) })
+      .then(d => { if (d.ok) { setDiscussOpen(false); onSent?.(); }
+                   else toast("Ошибка: " + (d.error || "?")); })
+      .catch(e => toast("Сеть: " + e));
+
+  const discuss = (
+    <Discuss open={discussOpen} onClose={() => setDiscussOpen(false)}
+             project={project} models={models} defModel={curModel}
+             onSubmit={submitDiscussed} toast={toast} />
   );
 
   const sendText = async raw => {
@@ -231,7 +247,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
 
-  if (mobile) return (
+  if (mobile) return (<>
     <Paper elevation={6} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
@@ -297,14 +313,16 @@ export default function Composer({ project, sttStatus, toast, onSent,
           disabled={!project}
           sx={{ minWidth: 0,
                 color: fast ? "#ffd54f" : "rgba(255,255,255,.72)" }} />
-        <BottomNavigationAction label="Модели" icon={<SmartToyIcon />}
-          onClick={onOpenModels}
+        <BottomNavigationAction label="Обсудить"
+          icon={<PsychologyIcon />}
+          onClick={() => setDiscussOpen(true)}
           sx={{ minWidth: 0, color: "#fff" }} />
       </BottomNavigation>
     </Paper>
-  );
+    {discuss}
+  </>);
 
-  return (
+  return (<>
     <Paper elevation={4} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
@@ -335,6 +353,10 @@ export default function Composer({ project, sttStatus, toast, onSent,
         <Grid size={{ xs: 12, sm: "auto" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,
                      justifyContent: "flex-end", flexWrap: "nowrap" }}>
+            <IconButton size="small" title="обсудить идею с Devin"
+                        onClick={() => setDiscussOpen(true)}>
+              <PsychologyIcon />
+            </IconButton>
             <IconButton onClick={micClick} size="small"
                         color={recording ? "error" : "default"}
                         title="надиктовать голосом"
@@ -369,5 +391,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
         </Grid>
       </Grid>
     </Paper>
-  );
+    {discuss}
+  </>);
 }

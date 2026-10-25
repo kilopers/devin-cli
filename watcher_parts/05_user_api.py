@@ -192,6 +192,69 @@ def _api_models():
         fresh=request.args.get("fresh") == "1"))
 
 
+DISCUSS_PROMPT = """\
+Ты — формализатор задач для AI-агента Devin. Пользователь набрасывает \
+сырую идею (часто голосом, сбивчиво). Твоя работа — превратить её в \
+чёткую постановку задачи для агента-программиста.
+
+В КАЖДОМ ответе выводи ПОЛНУЮ обновлённую постановку (не дельту):
+- ## Цель — что должно получиться;
+- ## Что сделать — нумерованный план работ по шагам;
+- ## Критерии приёмки — как проверить, что готово.
+
+Отвечай по-русски, markdown, без воды. Если пользователь уточняет или \
+спорит — учитывай и переписывай постановку целиком. Не задавай встречных \
+вопросов простынёй: спорное отражай в плане как открытый пункт."""
+
+
+def _gemini_chat(msgs: list, system: str, user: str | None = None) -> str:
+    """Текстовый чат через Gemini generateContent.
+    msgs: [{"role": "user"|"model", "text": "..."}]."""
+    gm = uset("gemini.model", user, "GEMINI_MODEL", "gemini-2.5-flash")
+    gk = uset("gemini.api_key", user, "GEMINI_API_KEY")
+    if not gk:
+        raise RuntimeError("нет ключа Gemini (Настройки → gemini.api_key)")
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{gm}:generateContent?key={gk}")
+    payload = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"role": m["role"], "parts": [{"text": m["text"]}]}
+                     for m in msgs],
+    }
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with TG_OPENER.open(req, timeout=120) as r:
+            res = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"gemini HTTP {e.code}: {e.read().decode()[:300]}")
+    return "".join(p.get("text", "")
+                   for p in res["candidates"][0]["content"]["parts"]).strip()
+
+
+@app.post("/api/discuss")
+@login_required
+def _api_discuss():
+    """«Обсудить»: Gemini формализует сырую идею в постановку задачи.
+    Тело: {"history": [{"role":"user"|"assistant","text":...}]} —
+    история диалога, последнее сообщение — от юзера."""
+    hist = _req_json().get("history") or []
+    msgs = []
+    for m in hist[-20:]:
+        t = (m.get("text") or "")[:8000]
+        if t:
+            msgs.append({"role": "model" if m.get("role") == "assistant"
+                         else "user", "text": t})
+    if not msgs or msgs[-1]["role"] != "user":
+        return jsonify({"ok": False, "error": "пустой ввод"}), 400
+    try:
+        text = _gemini_chat(msgs, DISCUSS_PROMPT, _current_user())
+    except Exception as e:
+        log(f"discuss: {e}")
+        return jsonify({"ok": False, "error": str(e)[:300]})
+    return jsonify({"ok": True, "text": text})
+
+
 @app.get("/api/tasks")
 @login_required
 def _api_tasks():
