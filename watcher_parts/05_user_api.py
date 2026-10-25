@@ -259,15 +259,43 @@ def _devin_discuss(msgs: list, user: str | None = None,
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _discuss_key(u: str, proj: str | None) -> str:
+    return f"us:{u}.discuss:{proj or '_'}"
+
+
+@app.get("/api/discuss")
+@login_required
+def _api_discuss_get():
+    """История обсуждения проекта — переживает устройства: начал на
+    телефоне, продолжил на компьютере."""
+    u = _current_user()
+    proj = (request.args.get("project") or "").strip()
+    if proj and not _owns_project(proj):
+        abort(403)
+    try:
+        msgs = json.loads(kv_get(_discuss_key(u, proj or None)) or "[]")
+    except Exception:
+        msgs = []
+    return jsonify({"ok": True, "history": msgs[-40:]})
+
+
 @app.post("/api/discuss")
 @login_required
 def _api_discuss():
     """«Обсудить»: Devin формализует сырую идею в постановку задачи.
-    Тело: {"history": [{"role":"user"|"assistant","text":...}]} —
-    история диалога, последнее сообщение — от юзера."""
+    Тело: {"history": [...], "project": "..."} — история диалога,
+    последнее сообщение — от юзера. action=clear стирает историю.
+    История хранится в kv и продолжается на любом устройстве."""
     b = _req_json()
-    hist = b.get("history") or []
     proj = (b.get("project") or "").strip() or None
+    u = _current_user()
+    if proj and not _owns_project(proj):
+        abort(403)
+    key = _discuss_key(u, proj)
+    if b.get("action") == "clear":
+        kv_set(key, "[]")
+        return jsonify({"ok": True})
+    hist = b.get("history") or []
     msgs = []
     for m in hist[-20:]:
         t = (m.get("text") or "")[:8000]
@@ -277,10 +305,13 @@ def _api_discuss():
     if not msgs or msgs[-1]["role"] != "user":
         return jsonify({"ok": False, "error": "пустой ввод"}), 400
     try:
-        text = _devin_discuss(msgs, _current_user(), proj)
+        text = _devin_discuss(msgs, u, proj)
     except Exception as e:
         log(f"discuss: {e}")
         return jsonify({"ok": False, "error": str(e)[:300]})
+    kv_set(key, json.dumps((msgs + [{"role": "assistant",
+                                     "text": text}])[-40:],
+                           ensure_ascii=False))
     return jsonify({"ok": True, "text": text})
 
 

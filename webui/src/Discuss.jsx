@@ -18,7 +18,7 @@ import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { api, post } from "./api.js";
+import { api, apiJson as get, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import { STT_RATE, resample, encodeWav } from "./Composer.jsx";
 
@@ -55,8 +55,20 @@ export default function Discuss({ open, onClose, project, models,
 
   useEffect(() => { if (open) setModel(defModel || ""); },
            [open, defModel]);
-  useEffect(() => { setMsgs([]); setInput(""); },  // смена проекта —
-           [project]);                             // новое обсуждение
+  // история живёт на сервере (kv) — продолжается на любом устройстве;
+  // смена проекта → грузим его обсуждение
+  useEffect(() => {
+    if (!open) return;
+    setMsgs([]); setInput("");
+    get("/api/discuss?project=" + encodeURIComponent(project || ""))
+      .then(d => { if (d.ok) setMsgs(d.history || []); })
+      .catch(() => {});
+  }, [project, open]);
+
+  const clearDiscuss = () => {
+    setMsgs([]); setInput("");
+    post("/api/discuss", { action: "clear", project }).catch(() => {});
+  };
   useEffect(() => {                       // автопрокрутка к новому
     listRef.current?.scrollTo(0, listRef.current.scrollHeight);
   }, [msgs, busy]);
@@ -138,7 +150,7 @@ export default function Discuss({ open, onClose, project, models,
         </Typography>
         <Button size="small" variant="outlined"
                 disabled={!msgs.length || busy}
-                onClick={() => { setMsgs([]); setInput(""); }}
+                onClick={clearDiscuss}
                 sx={{ ml: "auto", textTransform: "none", mr: 0.5,
                       fontSize: 12 }}>
           Новое обсуждение
