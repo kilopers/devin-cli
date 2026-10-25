@@ -28,6 +28,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Установка Devin CLI (всегда latest: пустой список моделей был не версией,
 # а таймаутом remote config через внешний прокси — лечится mihomo ниже).
+# Если рядом лежит devin-bundle/<ver>/{bin,share} — кладём его как уже
+# установленную версию: install.sh увидит _versions/<ver>/bin/devin и
+# пропустит скачивание бандла (на плохих каналах до static.devin.ai это
+# единственный способ собраться). Каталог пуст в репо — содержимое в
+# .gitignore, раскладывается рядом при ручной сборке.
+COPY devin-bundle/ /opt/devin-install/devin/cli/_versions/
 # install.sh завершается запуском интерактивного `devin setup` — строка
 # вырезается, сборка не виснет. Ставим в /opt/devin-install (а не в
 # ~/.local/share/devin), чтобы примонтированный data-dir не перекрыл бинарник.
