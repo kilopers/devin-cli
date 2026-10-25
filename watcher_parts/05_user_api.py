@@ -207,13 +207,16 @@ DISCUSS_PROMPT = """\
 вопросов простынёй: спорное отражай в плане как открытый пункт.
 
 ВАЖНО: работай в режиме «только ответ» — ничего не пиши в файлы, не \
-запускай команды; весь ответ — в финальном сообщении."""
+запускай команды; весь ответ — в финальном сообщении. У тебя read-only \
+доступ к коду проекта — при вопросах о коде изучай его и отвечай по \
+факту, с учётом реального состояния репозитория."""
 
 
-def _devin_discuss(msgs: list, user: str | None = None) -> str:
+def _devin_discuss(msgs: list, user: str | None = None,
+                   proj: str | None = None) -> str:
     """Формализация черновика через сам Devin CLI: одноразовая read-only
-    сессия во временном каталоге, вся история диалога — в промпте.
-    Ответ — stdout сессии."""
+    сессия в каталоге проекта (читает код и отвечает на вопросы по нему),
+    вся история диалога — в промпте. Ответ — stdout сессии."""
     parts = [DISCUSS_PROMPT, "", "ДИАЛОГ:"]
     for m in msgs:
         who = "Пользователь" if m["role"] == "user" else "Постановка (твой прошлый ответ)"
@@ -221,7 +224,13 @@ def _devin_discuss(msgs: list, user: str | None = None) -> str:
     parts.append("Выдай актуальную полную постановку задачи.")
     prompt = "\n\n".join(parts)
 
-    workdir = Path(tempfile.mkdtemp(prefix="discuss-", dir="/tmp"))
+    tmpdir = None
+    if proj and PROJECTS_ROOT and (PROJECTS_ROOT / proj).is_dir() \
+            and _owns_project(proj):
+        workdir = PROJECTS_ROOT / proj          # репо проекта — читаем код
+    else:
+        tmpdir = Path(tempfile.mkdtemp(prefix="discuss-", dir="/tmp"))
+        workdir = tmpdir
     env = dict(os.environ)
     key = uset("devin.api_key", user, "WINDSURF_API_KEY")
     if key:
@@ -245,7 +254,8 @@ def _devin_discuss(msgs: list, user: str | None = None) -> str:
     except subprocess.TimeoutExpired:
         raise RuntimeError("devin не ответил за 10 минут")
     finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @app.post("/api/discuss")
@@ -254,7 +264,9 @@ def _api_discuss():
     """«Обсудить»: Devin формализует сырую идею в постановку задачи.
     Тело: {"history": [{"role":"user"|"assistant","text":...}]} —
     история диалога, последнее сообщение — от юзера."""
-    hist = _req_json().get("history") or []
+    b = _req_json()
+    hist = b.get("history") or []
+    proj = (b.get("project") or "").strip() or None
     msgs = []
     for m in hist[-20:]:
         t = (m.get("text") or "")[:8000]
@@ -264,7 +276,7 @@ def _api_discuss():
     if not msgs or msgs[-1]["role"] != "user":
         return jsonify({"ok": False, "error": "пустой ввод"}), 400
     try:
-        text = _devin_discuss(msgs, _current_user())
+        text = _devin_discuss(msgs, _current_user(), proj)
     except Exception as e:
         log(f"discuss: {e}")
         return jsonify({"ok": False, "error": str(e)[:300]})

@@ -37,6 +37,8 @@ export default function Discuss({ open, onClose, project, models,
 
   useEffect(() => { if (open) setModel(defModel || ""); },
            [open, defModel]);
+  useEffect(() => { setMsgs([]); setInput(""); },  // смена проекта —
+           [project]);                             // новое обсуждение
   useEffect(() => {                       // автопрокрутка к новому
     listRef.current?.scrollTo(0, listRef.current.scrollHeight);
   }, [msgs, busy]);
@@ -49,7 +51,8 @@ export default function Discuss({ open, onClose, project, models,
     const hist = [...msgs, { role: "user", text: s }];
     setMsgs(hist); setInput(""); setBusy(true);
     try {
-      const d = await post("/api/discuss", { history: hist });
+      const d = await post("/api/discuss", { history: hist,
+                                            project });
       if (d.ok) setMsgs([...hist, { role: "assistant", text: d.text }]);
       else toast("Ошибка: " + (d.error || "?"));
     } catch (e) { toast("Сеть: " + e); }
@@ -115,7 +118,14 @@ export default function Discuss({ open, onClose, project, models,
         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
           💭 Обсудить задачу{project ? ` — «${project}»` : ""}
         </Typography>
-        <IconButton size="small" onClick={onClose} sx={{ ml: "auto" }}
+        <Button size="small" variant="outlined"
+                disabled={!msgs.length || busy}
+                onClick={() => { setMsgs([]); setInput(""); }}
+                sx={{ ml: "auto", textTransform: "none", mr: 0.5,
+                      fontSize: 12 }}>
+          Новое обсуждение
+        </Button>
+        <IconButton size="small" onClick={onClose}
                     title="закрыть"><CloseIcon /></IconButton>
       </Box>
 
