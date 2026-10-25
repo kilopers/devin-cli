@@ -210,7 +210,9 @@ DISCUSS_PROMPT = """\
 сообщении. Читать код и смотреть репозиторий можно свободно — при \
 вопросах о коде изучай его и отвечай по факту, с учётом реального \
 состояния репозитория. Не вызывай инструменты, меняющие что-либо \
-(запись, установка пакетов, git push и т.п.) — они будут отклонены."""
+(запись, установка пакетов, git push и т.п.) — они будут отклонены. \
+Не исследуй хост/сервер и ничего вне каталога проекта: доступа нет, \
+вызывать такие команды бессмысленно."""
 
 
 def _devin_discuss(msgs: list, user: str | None = None,
@@ -258,9 +260,11 @@ def _devin_discuss(msgs: list, user: str | None = None,
             env=env, cwd=str(workdir),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, errors="replace", timeout=600)
-        # warning'и CLI об отклонённых вызовах — служебный шум, не ответ
-        out = "\n".join(l for l in (p.stdout or "").splitlines()
-                        if not l.lstrip().startswith("warning:")).strip()
+        # warning'и CLI об отклонённых вызовах — служебный шум, не ответ.
+        # Регексом, не построчно: warning иногда сливается с текстом
+        # без перевода строки («...хранилища.warning: rejected…»).
+        out = re.sub(r"warning:[^\n]*", "", p.stdout or "")
+        out = re.sub(r"[ \t]+(\n|$)", r"\1", out).strip()
         if p.returncode != 0 and not out:
             raise RuntimeError(f"devin exit {p.returncode}")
         if not out:
