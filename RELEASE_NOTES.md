@@ -1,3 +1,10 @@
+## 1.3.2
+- CI: бандл Devin CLI качается из package registry проекта
+  (CDN static.devin.ai недоступен с раннера в РФ), плюс прокси
+  build-args из masked-переменной BUILD_PROXY как fallback для
+  шагов сборки. Значения: BUILD_PROXY и DOCKER_REGISTRY_* заданы
+  в CI/CD Variables проекта ai/devin.
+
 ## 1.3.1
 - Переезд на self-hosted GitLab: репо gitlab.kilop.ru/ai/devin,
   .gitlab-ci.yml — buildx-сборка образа в docker.kilop.ru/ai/devin,
