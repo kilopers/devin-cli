@@ -410,6 +410,21 @@ def _api_tasks():
                              request.args.get("before")))
 
 
+@app.get("/api/task/<stem>/prompt")
+@login_required
+def _api_task_prompt(stem: str):
+    """Полный текст задачи: на карточке показано превью (2000 символов),
+    полный догружается по кнопке «показать весь текст»."""
+    rows = db_query("SELECT project, prompt FROM tasks WHERE stem=%s",
+                    (stem,))
+    if not rows:
+        abort(404)
+    r = rows[0]
+    if r["project"] and not _owns_project(r["project"]):
+        abort(403)
+    return jsonify({"ok": True, "prompt": r["prompt"] or ""})
+
+
 @app.get("/api/files")
 @login_required
 def _api_files():

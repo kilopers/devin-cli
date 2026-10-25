@@ -142,6 +142,14 @@ const branchSuggest = prompt => {
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
   // свёрнута: заголовок + ~3 строки задачи; «подробнее» — slide-down
   const [open, setOpen] = useState(false);
+  // prompt с бэкенда — превью (2000): полный текст догружаем по кнопке
+  const [full, setFull] = useState(null);
+  const loadFull = () =>
+    apiJson("/api/task/" + t.stem + "/prompt")
+      .then(d => { if (d.ok) setFull(d.prompt); })
+      .catch(() => {});
+  const promptShown = full !== null ? full : t.prompt;
+  const maybeCut = full === null && (t.prompt || "").length >= 2000;
   return (
     <Card sx={{ mb: 1.5 }}>
       <CardContent sx={{ p: "14px 18px", "&:last-child": { pb: "14px" } }}>
@@ -200,7 +208,13 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
                 ...(!open && {
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
                   WebkitLineClamp: 3, overflow: "hidden" }) }}>
-          {t.prompt}</Typography>
+          {promptShown}</Typography>
+        {maybeCut && (
+          <Typography variant="caption" onClick={loadFull}
+            sx={{ color: "#1565c0", cursor: "pointer",
+                  "&:hover": { textDecoration: "underline" } }}>
+            … показать весь текст задачи
+          </Typography>)}
         <Collapse in={open} unmountOnExit>
           {t.output
             ? (t.status === "done"
