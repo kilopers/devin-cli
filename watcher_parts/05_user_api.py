@@ -217,11 +217,22 @@ def _devin_discuss(msgs: list, user: str | None = None,
     """Формализация черновика через сам Devin CLI: одноразовая read-only
     сессия в каталоге проекта (читает код и отвечает на вопросы по нему),
     вся история диалога — в промпте. Ответ — stdout сессии."""
-    parts = [DISCUSS_PROMPT, "", "ДИАЛОГ:"]
-    for m in msgs:
-        who = "Пользователь" if m["role"] == "user" else "Постановка (твой прошлый ответ)"
+    # Каждая assistant-реплика — накопительная полная постановка, поэтому
+    # в промпт идут ВСЕ сообщения пользователя с первого (все правки и
+    # уточнения учитываются до «Нового обсуждения») + последняя
+    # постановка целиком. Ранние постановки дублируют позднюю — без них
+    # контекст не раздувается на длинных обсуждениях.
+    last_ai = max((i for i, m in enumerate(msgs)
+                   if m["role"] == "assistant"), default=-1)
+    parts = [DISCUSS_PROMPT, "", "ДИАЛОГ (полностью, с самого начала):"]
+    for i, m in enumerate(msgs):
+        if m["role"] == "assistant" and i != last_ai:
+            continue
+        who = "Пользователь" if m["role"] == "user" \
+            else "Постановка (твой прошлый ответ)"
         parts.append(f"{who}:\n{m['text']}")
-    parts.append("Выдай актуальную полную постановку задачи.")
+    parts.append("Выдай актуальную полную постановку задачи, учитывая "
+                 "ВЕСЬ диалог с первого сообщения.")
     prompt = "\n\n".join(parts)
 
     tmpdir = None
@@ -297,7 +308,7 @@ def _api_discuss():
         return jsonify({"ok": True})
     hist = b.get("history") or []
     msgs = []
-    for m in hist[-20:]:
+    for m in hist[-40:]:
         t = (m.get("text") or "")[:8000]
         if t:
             msgs.append({"role": "assistant" if m.get("role") == "assistant"
