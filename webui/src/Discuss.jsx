@@ -46,6 +46,7 @@ export default function Discuss({ open, onClose, project, models,
   const [msgs, setMsgs] = useState([]);       // {role:"user"|"assistant", text}
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [model, setModel] = useState("");
   const [recInfo, setRecInfo] = useState("");
   const [recording, setRecording] = useState(false);
@@ -72,6 +73,13 @@ export default function Discuss({ open, onClose, project, models,
   useEffect(() => {                       // автопрокрутка к новому
     listRef.current?.scrollTo(0, listRef.current.scrollHeight);
   }, [msgs, busy]);
+  // живой статус: devin-сессия длится минуты — показываем таймер,
+  // чтобы было видно, что она работает, а не зависла
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
 
   const lastPlan = [...msgs].reverse().find(m => m.role === "assistant");
 
@@ -79,7 +87,7 @@ export default function Discuss({ open, onClose, project, models,
     const s = input.trim();
     if (!s || busy) return;
     const hist = [...msgs, { role: "user", text: s }];
-    setMsgs(hist); setInput(""); setBusy(true);
+    setMsgs(hist); setInput(""); setBusy(true); setElapsed(0);
     try {
       const d = await post("/api/discuss", { history: hist,
                                             project });
@@ -167,9 +175,13 @@ export default function Discuss({ open, onClose, project, models,
           </Typography>)}
         {msgs.map((m, i) => <MsgRow key={i} m={m} />)}
         {busy && (
-          <Typography variant="caption" color="text.secondary">
-            Devin формулирует…
-          </Typography>)}
+          <Box sx={{ mb: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Devin работает… {Math.floor(elapsed / 60)}:
+              {String(elapsed % 60).padStart(2, "0")} — изучает проект
+              и формулирует ответ, это может занять несколько минут
+            </Typography>
+          </Box>)}
       </Box>
 
       <Box sx={{ px: 1.5, pt: 0.5, pb: 1, borderTop: 1,
