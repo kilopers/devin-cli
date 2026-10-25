@@ -1,3 +1,10 @@
+## 1.3.1
+- Переезд на self-hosted GitLab: репо gitlab.kilop.ru/ai/devin,
+  .gitlab-ci.yml — buildx-сборка образа в docker.kilop.ru/ai/devin,
+  deploy-джоб дёргает POST https://ai.kilop.ru/deploy (watchtower),
+  notify-джобы шлют статус в /api/deploy/status. README и
+  docker-compose.yml переписаны на gitlab/реестр docker.kilop.ru.
+
 ## 1.3.0
 - Новый режим «Обсудить»: кнопка 💭 в нижнем баре (моб.) и рядом с
   отправкой (десктоп) открывает диалог — накидываешь идею текстом или
