@@ -206,10 +206,11 @@ DISCUSS_PROMPT = """\
 спорит — учитывай и переписывай постановку целиком. Не задавай встречных \
 вопросов простынёй: спорное отражай в плане как открытый пункт.
 
-ВАЖНО: работай в режиме «только ответ» — ничего не пиши в файлы, не \
-запускай команды; весь ответ — в финальном сообщении. У тебя read-only \
-доступ к коду проекта — при вопросах о коде изучай его и отвечай по \
-факту, с учётом реального состояния репозитория."""
+ВАЖНО: ничего не пиши в файлы, не меняй код; весь ответ — в финальном \
+сообщении. Читать код и смотреть репозиторий можно свободно — при \
+вопросах о коде изучай его и отвечай по факту, с учётом реального \
+состояния репозитория. Не вызывай инструменты, меняющие что-либо \
+(запись, установка пакетов, git push и т.п.) — они будут отклонены."""
 
 
 def _devin_discuss(msgs: list, user: str | None = None,
@@ -251,13 +252,15 @@ def _devin_discuss(msgs: list, user: str | None = None,
     try:
         p = subprocess.run(
             ["devin", "--model", current_model(),
-             "--permission-mode", "auto",
+             "--permission-mode", "smart",
              "--respect-workspace-trust", "false",
              "-p", prompt],
             env=env, cwd=str(workdir),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, errors="replace", timeout=600)
-        out = (p.stdout or "").strip()
+        # warning'и CLI об отклонённых вызовах — служебный шум, не ответ
+        out = "\n".join(l for l in (p.stdout or "").splitlines()
+                        if not l.lstrip().startswith("warning:")).strip()
         if p.returncode != 0 and not out:
             raise RuntimeError(f"devin exit {p.returncode}")
         if not out:
