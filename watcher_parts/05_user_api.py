@@ -220,10 +220,13 @@ DISCUSS_PROMPT = """\
 
 
 def _devin_discuss(msgs: list, user: str | None = None,
-                   proj: str | None = None) -> str:
+                   proj: str | None = None,
+                   job: dict | None = None) -> str:
     """Формализация черновика через сам Devin CLI: одноразовая read-only
     сессия в каталоге проекта (читает код и отвечает на вопросы по нему),
-    вся история диалога — в промпте. Ответ — stdout сессии."""
+    вся история диалога — в промпте. Ответ — stdout сессии.
+    job — живой статус для опроса из GET /api/discuss (tail = последняя
+    осмысленная строка вывода сессии)."""
     # Каждая assistant-реплика — накопительная полная постановка, поэтому
     # в промпт идут ВСЕ сообщения пользователя с первого (все правки и
     # уточнения учитываются до «Нового обсуждения») + последняя
@@ -256,18 +259,36 @@ def _devin_discuss(msgs: list, user: str | None = None,
     env["DEVIN_WORKDIR"] = str(workdir)
     env["DEVIN_CONTINUE"] = "false"
     try:
-        p = subprocess.run(
+        p = subprocess.Popen(
             ["devin", "--model", current_model(),
              "--permission-mode", "smart",
              "--respect-workspace-trust", "false",
              "-p", prompt],
             env=env, cwd=str(workdir),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, errors="replace", timeout=600)
+            text=True, errors="replace")
+        lines = []
+
+        def _reader():                       # живой хвост для статуса
+            for line in p.stdout:
+                lines.append(line)
+                t = line.strip()
+                if job is not None and t:
+                    job["tail"] = re.sub(r"warning:[^\n]*", "", t)[-160:]
+
+        rd = threading.Thread(target=_reader, daemon=True)
+        rd.start()
+        try:
+            p.wait(timeout=600)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            raise RuntimeError("devin не ответил за 10 минут")
+        rd.join(timeout=5)
+        out = "".join(lines)
         # warning'и CLI об отклонённых вызовах — служебный шум, не ответ.
         # Регексом, не построчно: warning иногда сливается с текстом
         # без перевода строки («...хранилища.warning: rejected…»).
-        out = re.sub(r"warning:[^\n]*", "", p.stdout or "")
+        out = re.sub(r"warning:[^\n]*", "", out)
         out = re.sub(r"[ \t]+(\n|$)", r"\1", out).strip()
         # stdout — весь транскрипт сессии с промежуточными рассуждениями;
         # в диалог идёт только финальная постановка после маркера
@@ -289,11 +310,26 @@ def _discuss_key(u: str, proj: str | None) -> str:
     return f"us:{u}.discuss:{proj or '_'}"
 
 
+# Фоновые devin-сессии обсуждения: ключ f"{u}|{proj}" → статус задачи.
+# Фронт опрашивает GET и показывает, жив ли процесс и что он делает.
+DISCUSS_JOBS = {}
+DISCUSS_LOCK = threading.Lock()
+
+
+def _discuss_job(u: str, proj: str | None) -> dict | None:
+    j = DISCUSS_JOBS.get(f"{u}|{proj or '_'}")
+    if not j:
+        return None
+    return {"status": j["status"], "tail": j.get("tail", ""),
+            "elapsed": int(time.time() - j["t0"]),
+            "error": j.get("error", "")}
+
+
 @app.get("/api/discuss")
 @login_required
 def _api_discuss_get():
     """История обсуждения проекта — переживает устройства: начал на
-    телефоне, продолжил на компьютере."""
+    телефоне, продолжил на компьютере. job — статус фоновой сессии."""
     u = _current_user()
     proj = (request.args.get("project") or "").strip()
     if proj and not _owns_project(proj):
@@ -302,7 +338,8 @@ def _api_discuss_get():
         msgs = json.loads(kv_get(_discuss_key(u, proj or None)) or "[]")
     except Exception:
         msgs = []
-    return jsonify({"ok": True, "history": msgs[-40:]})
+    return jsonify({"ok": True, "history": msgs[-40:],
+                    "job": _discuss_job(u, proj or None)})
 
 
 @app.post("/api/discuss")
@@ -330,15 +367,32 @@ def _api_discuss():
                          else "user", "text": t})
     if not msgs or msgs[-1]["role"] != "user":
         return jsonify({"ok": False, "error": "пустой ввод"}), 400
-    try:
-        text = _devin_discuss(msgs, u, proj)
-    except Exception as e:
-        log(f"discuss: {e}")
-        return jsonify({"ok": False, "error": str(e)[:300]})
-    kv_set(key, json.dumps((msgs + [{"role": "assistant",
-                                     "text": text}])[-40:],
-                           ensure_ascii=False))
-    return jsonify({"ok": True, "text": text})
+    # сессия идёт минутами — в фоне; статус смотрит фронт через GET
+    jkey = f"{u}|{proj or '_'}"
+    with DISCUSS_LOCK:
+        j = DISCUSS_JOBS.get(jkey)
+        if j and j["status"] == "running":
+            return jsonify({"ok": False,
+                            "error": "Devin ещё отвечает — дождись "
+                                     "конца таймера"}), 409
+        j = {"status": "running", "t0": time.time(), "tail": "",
+             "error": ""}
+        DISCUSS_JOBS[jkey] = j
+
+    def _run():
+        try:
+            text = _devin_discuss(msgs, u, proj, j)
+            kv_set(key, json.dumps(
+                (msgs + [{"role": "assistant", "text": text}])[-40:],
+                ensure_ascii=False))
+            j["status"] = "done"
+        except Exception as e:
+            log(f"discuss: {e}")
+            j["status"] = "error"
+            j["error"] = str(e)[:300]
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True, "running": True})
 
 
 @app.get("/api/tasks")

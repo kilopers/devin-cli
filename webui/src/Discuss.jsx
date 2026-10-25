@@ -47,12 +47,14 @@ export default function Discuss({ open, onClose, project, models,
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [tail, setTail] = useState("");      // что сейчас делает devin
   const [model, setModel] = useState("");
   const [recInfo, setRecInfo] = useState("");
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
   const recRef = useRef(null);
   const listRef = useRef(null);
+  const missRef = useRef(0);               // опросы без job (рестарт?)
 
   useEffect(() => { if (open) setModel(defModel || ""); },
            [open, defModel]);
@@ -62,7 +64,15 @@ export default function Discuss({ open, onClose, project, models,
     if (!open) return;
     setMsgs([]); setInput("");
     get("/api/discuss?project=" + encodeURIComponent(project || ""))
-      .then(d => { if (d.ok) setMsgs(d.history || []); })
+      .then(d => {
+        if (!d.ok) return;
+        setMsgs(d.history || []);
+        // сессия могла идти, пока диалог был закрыт (или с другого
+        // устройства) — подхватываем опрос
+        if (d.job && d.job.status === "running") {
+          setBusy(true); setElapsed(d.job.elapsed); setTail(d.job.tail);
+        }
+      })
       .catch(() => {});
   }, [project, open]);
 
@@ -73,13 +83,38 @@ export default function Discuss({ open, onClose, project, models,
   useEffect(() => {                       // автопрокрутка к новому
     listRef.current?.scrollTo(0, listRef.current.scrollHeight);
   }, [msgs, busy]);
-  // живой статус: devin-сессия длится минуты — показываем таймер,
-  // чтобы было видно, что она работает, а не зависла
+  // живой статус: devin-сессия идёт в фоне на воркере — опрашиваем
+  // каждые 3с: elapsed, хвост вывода (что делает), done/error
   useEffect(() => {
     if (!busy) return;
-    const t = setInterval(() => setElapsed(e => e + 1), 1000);
-    return () => clearInterval(t);
-  }, [busy]);
+    let dead = false;
+    const poll = () => {
+      get("/api/discuss?project=" + encodeURIComponent(project || ""))
+        .then(d => {
+          if (dead || !d.ok) return;
+          const j = d.job;
+          if (!j) {                          // воркер перезапустился?
+            if (++missRef.current >= 3) {
+              setBusy(false); setTail("");
+              toast("Сессия потеряна — отправь сообщение ещё раз");
+            }
+            return;
+          }
+          missRef.current = 0;
+          setElapsed(j.elapsed); setTail(j.tail || "");
+          if (j.status === "done") {
+            setMsgs(d.history || []); setBusy(false); setTail("");
+          } else if (j.status === "error") {
+            setBusy(false); setTail("");
+            toast("Devin: " + (j.error || "ошибка"));
+          }
+        })
+        .catch(() => {});
+    };
+    const t = setInterval(poll, 3000);
+    poll();
+    return () => { dead = true; clearInterval(t); };
+  }, [busy, project]);
 
   const lastPlan = [...msgs].reverse().find(m => m.role === "assistant");
 
@@ -89,12 +124,14 @@ export default function Discuss({ open, onClose, project, models,
     const hist = [...msgs, { role: "user", text: s }];
     setMsgs(hist); setInput(""); setBusy(true); setElapsed(0);
     try {
+      // сессия в фоне: ok → крутим busy и опрашиваем статус (эффект выше)
       const d = await post("/api/discuss", { history: hist,
                                             project });
-      if (d.ok) setMsgs([...hist, { role: "assistant", text: d.text }]);
-      else toast("Ошибка: " + (d.error || "?"));
-    } catch (e) { toast("Сеть: " + e); }
-    setBusy(false);
+      if (!d.ok) {
+        toast("Ошибка: " + (d.error || "?"));
+        if (!(d.error || "").includes("ещё отвечает")) setBusy(false);
+      }
+    } catch (e) { toast("Сеть: " + e); setBusy(false); }
   };
 
   const stopRec = async r => {
@@ -176,11 +213,18 @@ export default function Discuss({ open, onClose, project, models,
         {msgs.map((m, i) => <MsgRow key={i} m={m} />)}
         {busy && (
           <Box sx={{ mb: 1 }}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ display: "block" }}>
               Devin работает… {Math.floor(elapsed / 60)}:
-              {String(elapsed % 60).padStart(2, "0")} — изучает проект
-              и формулирует ответ, это может занять несколько минут
+              {String(elapsed % 60).padStart(2, "0")} — процесс жив,
+              может занять несколько минут
             </Typography>
+            {!!tail && (
+              <Typography variant="caption" color="text.secondary"
+                          sx={{ display: "block", opacity: .75,
+                                fontStyle: "italic" }}>
+                сейчас: {tail}
+              </Typography>)}
           </Box>)}
       </Box>
 
