@@ -1,3 +1,10 @@
+## 1.3.16
+- soslan.ai.kilop.ru задеплоен: /docker/soslan на хосте, nginx :8091
+  (не 127.0.0.1 — Traefik ходит через host.docker.internal), роутер
+  в dynamic.yml, сертификат Let's Encrypt выпущен, HTTPS 200.
+  infra/traefik/dynamic.yml в репо синхронизирован с продовым
+  (все роутеры: devin, soslan, techcontrol, myai, watchtower'ы).
+
 ## 1.3.15
 - Новый сайт soslan.ai.kilop.ru: статичная страница про Осетию
   (sites/soslan, nginx на 127.0.0.1:8091). В Traefik добавлен роутер

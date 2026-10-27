@@ -1,5 +1,3 @@
-# Маршруты: домен -> сервис. Новый домен = новый блок в routers+services,
-# сертификат LE выпустится автоматически (должен резолвиться на этот IP).
 http:
   routers:
     devin:
@@ -14,6 +12,49 @@ http:
       service: soslan
       tls:
         certResolver: le
+    techcontrol:
+      rule: "Host(`techcontrol.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: techcontrol
+      tls:
+        certResolver: le
+    myai-ws:
+      rule: "Host(`myai.ai.kilop.ru`) && PathPrefix(`/app`)"
+      entryPoints: [websecure]
+      service: myai-ws
+      tls:
+        certResolver: le
+    myai:
+      rule: "Host(`myai.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: myai
+      tls:
+        certResolver: le
+    techcontrol-watchtower:
+      rule: "Host(`techcontrol.ai.kilop.ru`) && PathPrefix(`/_watchtower`)"
+      entryPoints: [websecure]
+      service: techcontrol-watchtower
+      middlewares: [wt-strip]
+      tls:
+        certResolver: le
+    myai-watchtower:
+      rule: "Host(`myai.ai.kilop.ru`) && PathPrefix(`/_watchtower`)"
+      entryPoints: [websecure]
+      service: myai-watchtower
+      middlewares: [wt-strip]
+      tls:
+        certResolver: le
+    mygarage-watchtower:
+      rule: "Host(`mygarage.ai.kilop.ru`) && PathPrefix(`/_watchtower`)"
+      entryPoints: [websecure]
+      service: mygarage-watchtower
+      middlewares: [wt-strip]
+      tls:
+        certResolver: le
+  middlewares:
+    wt-strip:
+      stripPrefix:
+        prefixes: ["/_watchtower"]
   services:
     devin:
       loadBalancer:
@@ -23,3 +64,27 @@ http:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:8091"
+    techcontrol:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:380"
+    myai:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8282"
+    myai-ws:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8286"
+    techcontrol-watchtower:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8284"
+    myai-watchtower:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8283"
+    mygarage-watchtower:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8285"
