@@ -8,8 +8,18 @@ http:
       service: devin
       tls:
         certResolver: le
+    soslan:
+      rule: "Host(`soslan.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: soslan
+      tls:
+        certResolver: le
   services:
     devin:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:8089"
+    soslan:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8091"
