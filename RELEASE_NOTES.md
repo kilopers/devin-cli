@@ -1,3 +1,9 @@
+## 1.3.17
+- Удалён soslan.ai.kilop.ru: контейнер и /docker/soslan на хосте,
+  роутер+сервис в Traefik dynamic.yml, каталог sites/soslan в репо.
+  Отдельной DNS-записи не было (резолвился по wildcard) — домен
+  теперь отвечает 404.
+
 ## 1.3.16
 - soslan.ai.kilop.ru задеплоен: /docker/soslan на хосте, nginx :8091
   (не 127.0.0.1 — Traefik ходит через host.docker.internal), роутер
