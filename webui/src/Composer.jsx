@@ -69,6 +69,24 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const curAc = ov.ac ?? eff.ac;
   const curModel = ov.model ?? eff.model;
 
+  const pickFile = async e => {
+    const fl = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!fl) return;
+    if (fl.size > 20 * 1024 * 1024) { toast("Файл > 20 МБ"); return; }
+    try {
+      const d = await (await api("/api/attach?name=" +
+        encodeURIComponent(fl.name), { method: "POST", body: fl })).json();
+      if (d.ok) setAtt({ id: d.id, name: d.name });
+      else toast("Файл: " + (d.error || "?"));
+    } catch (err) { toast("Сеть: " + err); }
+  };
+  const fileInput = (
+    <input ref={fileRef} type="file" hidden onChange={pickFile} />);
+  const attChip = att && (
+    <Chip size="small" icon={<AttachFileIcon />} label={att.name}
+          onDelete={() => setAtt(null)} title="прикреплённый файл — убрать" />);
+
   const chips = (
     <Box sx={{ display: "flex", gap: 0.5, flexWrap: "nowrap",
                justifyContent: "flex-start", overflowX: "auto", px: 0.5,
@@ -121,24 +139,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
              project={project} models={models} defModel={curModel}
              onSubmit={submitDiscussed} toast={toast} />
   );
-
-  const pickFile = async e => {
-    const fl = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!fl) return;
-    if (fl.size > 20 * 1024 * 1024) { toast("Файл > 20 МБ"); return; }
-    try {
-      const d = await (await api("/api/attach?name=" +
-        encodeURIComponent(fl.name), { method: "POST", body: fl })).json();
-      if (d.ok) setAtt({ id: d.id, name: d.name });
-      else toast("Файл: " + (d.error || "?"));
-    } catch (err) { toast("Сеть: " + err); }
-  };
-  const fileInput = (
-    <input ref={fileRef} type="file" hidden onChange={pickFile} />);
-  const attChip = att && (
-    <Chip size="small" icon={<AttachFileIcon />} label={att.name}
-          onDelete={() => setAtt(null)} title="прикреплённый файл — убрать" />);
 
   const sendText = async raw => {
     const s = raw.trim();

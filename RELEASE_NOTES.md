@@ -1,3 +1,8 @@
+## 1.4.5
+- Фикс падения рендера «Cannot access 'wt' before initialization»:
+  attChip/pickFile/fileInput объявлялись в Composer ПОСЛЕ JSX-константы
+  chips, которая их использует (TDZ на const). Перенесены выше.
+
 ## 1.4.4
 - Фикс белого экрана «Cannot access 'vt' before initialization»:
   циклический импорт Composer.jsx ⇄ Discuss.jsx (Discuss тянул
