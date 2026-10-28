@@ -107,7 +107,24 @@ def main() -> int:
     start_web()
     # каталог моделей для веб-селекта — в фоне: mihomo может ещё мерить ноды
     threading.Thread(target=refresh_models, daemon=True).start()
-    log(f"watching {INBOX} every {POLL_INTERVAL}s (timeout {TASK_TIMEOUT}s)")
+    log(f"watching {INBOX} every {POLL_INTERVAL}s "
+        f"(timeout {TASK_TIMEOUT}s, workers {WORKER_THREADS})")
+    # воркеры: задачи РАЗНЫХ проектов идут параллельно, одного —
+    # по очереди (RUNNING_PROJS в claim_task). WORKER_THREADS из env.
+    def _worker(wid: int) -> None:
+        while True:
+            try:
+                task = claim_task()
+                if task is None:
+                    time.sleep(POLL_INTERVAL)
+                    continue
+                run_task(task)
+            except Exception as e:
+                log(f"worker{wid} ERROR: {e}")
+                time.sleep(POLL_INTERVAL)
+    for i in range(WORKER_THREADS):
+        threading.Thread(target=_worker, args=(i,), daemon=True,
+                         name=f"worker-{i}").start()
     while True:
         try:
             if _bot_proc and _bot_proc.poll() is not None \
@@ -119,11 +136,7 @@ def main() -> int:
                 log(f"mihomo exited ({_mihomo_proc.returncode}), restarting")
                 _mihomo_proc = None
                 start_mihomo()
-            task = next_task()
-            if task is None:
-                time.sleep(POLL_INTERVAL)
-                continue
-            run_task(task)
+            time.sleep(POLL_INTERVAL)
         except KeyboardInterrupt:
             log("stopping")
             if _bot_proc:

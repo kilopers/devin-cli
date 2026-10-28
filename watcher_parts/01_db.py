@@ -588,31 +588,64 @@ def progress_loop(chat_id, export_path: Path, out_path: Path,
             last_sent = time.time()
 
 
-def kill_task() -> None:
-    """SIGKILL the whole process group of the running devin-task."""
-    if not _task_proc:
-        return
-    try:
-        os.killpg(_task_proc.pid, signal.SIGKILL)
-        log(f"task process group {_task_proc.pid} killed")
-    except Exception as e:
-        log(f"killpg failed ({e}), falling back to kill()")
-        _task_proc.kill()
+def kill_task(stem: str | None = None) -> int:
+    """SIGKILL devin-task по stem; без stem — все запущенные
+    (telegram /stop). Возвращает число убитых процессов."""
+    with _procs_lock:
+        procs = ([(stem, _task_procs[stem])]
+                 if stem and stem in _task_procs else
+                 list(_task_procs.items()) if not stem else [])
+        n = 0
+        for st, p in procs:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+                log(f"task process group {p.pid} ({st}) killed")
+            except Exception as e:
+                log(f"killpg {st} failed ({e}), falling back to kill()")
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+            n += 1
+        return n
 
 
-def next_task() -> dict | None:
+def claim_task() -> dict | None:
+    """Атомарно забрать из очереди задачу проекта, который сейчас не
+    выполняется. UPDATE-first: второй воркер ту же задачу не ухватит.
+    None — очередь пуста или все взятые проекты заняты."""
     ingest_inbox_files()
-    rows = db_query("SELECT * FROM tasks WHERE status='queued'"
-                    " ORDER BY created LIMIT 1")
-    return rows[0] if rows else None
+    rows = db_query("SELECT stem, project FROM tasks"
+                    " WHERE status='queued' ORDER BY created LIMIT 20")
+    for r in rows:
+        proj = r.get("project") or ""
+        with _run_lock:
+            if proj in RUNNING_PROJS:
+                continue                    # этот проект уже в работе
+        got = db_exec("UPDATE tasks SET status='running', started=%s"
+                      " WHERE stem=%s AND status='queued'",
+                      (time.time(), r["stem"]))
+        if not got:                         # ухватил другой воркер
+            continue
+        with _run_lock:
+            RUNNING_PROJS.add(proj)
+            RUNNING_STEMS.add(r["stem"])
+        t = task_row(r["stem"])
+        if t:
+            STATE["running_tasks"] = sorted(
+                _task_name(s) for s in RUNNING_STEMS)
+            return t
+        # строка пропала (cancel между SELECT и UPDATE) — отпускаем
+        with _run_lock:
+            RUNNING_PROJS.discard(proj)
+            RUNNING_STEMS.discard(r["stem"])
+    return None
 
 
 def run_task(task: dict) -> None:
     stem, name = task["stem"], _task_name(task["stem"])
     log(f"processing {name}")
-    STATE["current_task"] = name
-    db_exec("UPDATE tasks SET status='running', started=%s WHERE stem=%s",
-            (time.time(), stem))
+    STATE["current_task"] = name   # последняя стартовавшая (инфо)
 
     started_ts = time.time()
     tproj = task.get("project")
@@ -676,40 +709,43 @@ def run_task(task: dict) -> None:
                                    "GIT_USER_EMAIL", ""))
     chat_id = task.get("chat_id")
     out_path = progress_dir / f"{stem}.out"
-    global _task_proc
 
     def _run_once(env2: dict) -> tuple:
         """Один прогон devin-task: вывод в .progress/<stem>.out,
-        возвращает (status, body)."""
-        global _task_proc
+        возвращает (status, body). Процесс регистрируется в
+        _task_procs[stem] — kill_task(stem) убивает именно его."""
+        proc = None
         try:
             # stdout+stderr go to a file the progress thread tails —
             # devin -p prints as it goes, so this gives live output for
-            # free. start_new_session: own process group, so telegram
-            # /stop kills the whole tree (devin-task -> devin -> children)
+            # free. start_new_session: own process group, so /stop
+            # kills the whole tree (devin-task -> devin -> children)
             out_f = open(out_path, "w", errors="replace")
-            _task_proc = subprocess.Popen(
+            proc = subprocess.Popen(
                 [DEVIN_TASK], env=env2,
                 stdout=out_f, stderr=subprocess.STDOUT,
                 text=True, start_new_session=True,
             )
+            with _procs_lock:
+                _task_procs[stem] = proc
             if chat_id:
                 threading.Thread(
                     target=progress_loop, daemon=True,
                     args=(chat_id, export_path, out_path,
-                          _task_proc, started_ts)).start()
+                          proc, started_ts)).start()
             try:
-                _task_proc.wait(timeout=TASK_TIMEOUT)
-                st = f"exit code: {_task_proc.returncode}"
+                proc.wait(timeout=TASK_TIMEOUT)
+                st = f"exit code: {proc.returncode}"
             except subprocess.TimeoutExpired:
-                kill_task()
-                _task_proc.wait()
+                kill_task(stem)
+                proc.wait()
                 st = f"TIMEOUT after {TASK_TIMEOUT}s"
             out_f.close()
             return st, (out_path.read_text(errors="replace")
                         if out_path.exists() else "")
         finally:
-            _task_proc = None
+            with _procs_lock:
+                _task_procs.pop(stem, None)
 
     mcp_restore = _mcp_apply(tproj)
     try:
@@ -742,8 +778,16 @@ def run_task(task: dict) -> None:
 
     db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
             " finished=%s WHERE stem=%s", (body, status, time.time(), stem))
-    STATE.update(current_task=None, last_task=name,
-                 last_status=status, tasks_done=STATE["tasks_done"] + 1)
+    with _run_lock:
+        RUNNING_PROJS.discard(tproj or "")
+        RUNNING_STEMS.discard(stem)
+        STATE["running_tasks"] = sorted(
+            _task_name(s) for s in RUNNING_STEMS)
+        if STATE["current_task"] == name:
+            STATE["current_task"] = (STATE["running_tasks"][-1]
+                                     if STATE["running_tasks"] else None)
+        STATE["tasks_done"] += 1
+    STATE.update(last_task=name, last_status=status)
     log(f"done {name} ({status}), output -> mysql")
     if ext and ext.get("hook"):
         payload = {"ok": True, "name": name,

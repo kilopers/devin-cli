@@ -495,12 +495,16 @@ def _api_commit():
 @app.post("/api/stop")
 @login_required
 def _api_stop():
-    """Web «Стоп» button — same kill_task() as telegram /stop."""
-    if _task_proc and STATE["current_task"]:
-        name = STATE["current_task"]
-        kill_task()
-        log(f"web stop killed {name}")
-        return jsonify({"ok": True, "stopped": name})
+    """Web «Стоп»: гасит задачу по stem (карточка) или все запущенные,
+    если stem не передан."""
+    stem = (_req_json().get("stem") or "").strip()
+    if stem and stem not in RUNNING_STEMS:
+        return jsonify({"ok": False,
+                        "error": "задача не выполняется"}), 409
+    n = kill_task(stem or None)
+    if n:
+        log(f"web stop killed {stem or 'all'}")
+        return jsonify({"ok": True, "stopped": stem or "all"})
     return jsonify({"ok": False, "error": "нет активной задачи"})
 
 

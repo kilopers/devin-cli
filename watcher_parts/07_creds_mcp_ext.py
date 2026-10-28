@@ -112,6 +112,9 @@ def _api_creds_del():
 # Диалог «MCP серверы» в веб-панели читает/пишет этот файл напрямую.
 
 _MCP_CFG = os.path.expanduser("~/.config/devin/mcp_config.json")
+# конфиг общий на весь процесс — при параллельных задачах сериализуем
+# его правку+использование, иначе задачи затрут конфиг друг другу
+_MCP_LOCK = threading.Lock()
 
 
 def _mcp_cfg_read() -> dict:
@@ -143,6 +146,7 @@ def _mcp_apply(proj: str):
         extra = {}
     if not isinstance(extra, dict) or not extra:
         return lambda: None
+    _MCP_LOCK.acquire()          # конфиг держим до restore() задачи
     cfg = _mcp_cfg_read()
     backup = json.dumps(cfg, ensure_ascii=False)
     srvs = cfg.setdefault("mcpServers", {})
@@ -155,6 +159,8 @@ def _mcp_apply(proj: str):
             _mcp_cfg_write(json.loads(backup))
         except Exception as e:
             log(f"{proj}: не смог откатить mcp_config: {e}")
+        finally:
+            _MCP_LOCK.release()
     return restore
 
 

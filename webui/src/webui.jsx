@@ -629,7 +629,7 @@ export default function App() {
     setConfirm(null);
     try {
       const d = c.kind === "stop"
-        ? await post("/api/stop", {})
+        ? await post("/api/stop", { stem: confirm.stem })
         : await post("/api/task/cancel", { stem: c.stem });
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped

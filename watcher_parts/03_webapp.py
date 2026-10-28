@@ -16,6 +16,7 @@ def api_status() -> dict:
         "queue": db_query(
             "SELECT COUNT(*) AS n FROM tasks WHERE status='queued'")[0]["n"],
         "current_task": STATE["current_task"],
+        "running_tasks": STATE.get("running_tasks") or [],
         "last_task": STATE["last_task"],
         "last_status": STATE["last_status"],
         "tasks_done": STATE["tasks_done"],
@@ -90,8 +91,8 @@ def api_tasks(project: str | None = None, limit: int = 5,
     newest `limit` tasks first and pages upward on scroll — `before` is a
     stem cursor: return up to `limit` items immediately older than that
     task (immune to new arrivals)."""
-    running = Path(STATE["current_task"]).stem \
-        if STATE["current_task"] else None
+    with _run_lock:
+        running = set(RUNNING_STEMS)
     sql, params = "SELECT * FROM tasks", []
     if project:
         sql += " WHERE project=%s"
@@ -100,7 +101,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
     items = []
     for r in rows:
         stem = r["stem"]
-        st = "running" if stem == running else r["status"]
+        st = "running" if stem in running else r["status"]
         out = ""
         if st == "running":
             out = _tail(TASKS_DIR / ".progress" / f"{stem}.out")

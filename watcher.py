@@ -145,12 +145,22 @@ else:
 DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 _bot_proc: subprocess.Popen | None = None
-_task_proc: subprocess.Popen | None = None  # running devin-task, killable via telegram
+# параллельные воркеры: запущенные devin-task по stem, снимок для
+# kill_task/stop. Задачи одного проекта сериализуются через
+# RUNNING_PROJS, разных — идут параллельно (WORKER_THREADS штук).
+_task_procs: dict = {}
+_procs_lock = threading.Lock()
+RUNNING_PROJS: set = set()
+RUNNING_STEMS: set = set()
+_run_lock = threading.Lock()
+WORKER_THREADS = max(1, min(int(os.environ.get("WORKER_THREADS", "3")
+                                 or 1), 8))
 _mihomo_proc: subprocess.Popen | None = None
 _started_at = time.time()
 
 STATE = {
     "current_task": None,
+    "running_tasks": [],
     "last_task": "-",
     "last_status": "-",
     "tasks_done": 0,

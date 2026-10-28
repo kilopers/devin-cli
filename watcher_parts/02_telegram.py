@@ -991,11 +991,11 @@ def handle_command(chat_id, text: str) -> None:
         else:
             send_session_menu(chat_id)
     elif cmd == "stop":
-        if _task_proc and STATE["current_task"]:
-            kill_task()
+        n = kill_task()
+        if n:
             tg_send(chat_id,
-                    f"⛔ Задача {STATE['current_task']} остановлена — "
-                    "воркер возьмёт следующую из очереди.")
+                    f"⛔ Остановлено задач: {n} — воркеры возьмут "
+                    "следующие из очереди.")
         else:
             tg_send(chat_id, "Сейчас ничего не выполняется.")
     elif cmd == "mode":
@@ -1044,13 +1044,13 @@ def handle_callback(cb: dict) -> None:
         send_projects(chat_id, msg_id)
         return
     if data == "cmd:stop":
-        if _task_proc and STATE["current_task"]:
-            kill_task()
+        n = kill_task()
+        if n:
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Остановлено")
             tg_send(chat_id,
-                    f"⛔ Задача {STATE['current_task']} остановлена — "
-                    "воркер возьмёт следующую из очереди.")
+                    f"⛔ Остановлено задач: {n} — воркеры возьмут "
+                    "следующие из очереди.")
         else:
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Ничего не выполняется")
