@@ -1058,6 +1058,7 @@ export default function App() {
                                  if (!multiMode) setAddOpen(true); }} />
       <ProjectSettings project={pSetOpen}
                        onClose={() => setPSetOpen(null)}
+                       onDeleted={refreshProjects}
                        toast={setToast} />
       <Workspaces open={wsOpen} onClose={() => setWsOpen(false)}
                   onChanged={() => { loadWs(); refreshProjects(); }} />

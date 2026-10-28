@@ -94,6 +94,38 @@ def _api_project_settings_set():
     return jsonify({"ok": True})
 
 
+PROTECTED_PROJECTS = {"devin-cli"}   # сам воркер — удалить нельзя
+
+
+@app.post("/api/project/delete")
+@login_required
+def _api_project_delete():
+    """Удалить проект: каталог PROJECTS_ROOT/<name> и строки в БД
+    (owner, ws, acl, instr_attach, kv pj:<name>.*). GitHub не трогаем.
+    Защищённые проекты и проект с бегущей задачей — нельзя."""
+    p = (_req_json().get("project") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    if p in PROTECTED_PROJECTS:
+        return jsonify({"ok": False,
+                        "error": "это проект самого воркера — "
+                                 "удалять нельзя"}), 409
+    with _run_lock:
+        if p in RUNNING_PROJS:
+            return jsonify({"ok": False,
+                            "error": "по проекту идёт задача — "
+                                     "дождись или останови"}), 409
+    root = PROJECTS_ROOT / p if PROJECTS_ROOT else None
+    db_exec("DELETE FROM project_owner WHERE name=%s", (p,))
+    db_exec("DELETE FROM project_ws WHERE name=%s", (p,))
+    db_exec("DELETE FROM project_acl WHERE name=%s", (p,))
+    db_exec("DELETE FROM instr_attach WHERE project=%s", (p,))
+    db_exec("DELETE FROM kv WHERE k LIKE %s", (f"pj:{p}.%",))
+    shutil.rmtree(root, ignore_errors=True)
+    log(f"project {p} deleted by {_current_user()}")
+    return jsonify({"ok": True})
+
+
 @app.get("/api/settings")
 @login_required
 def _api_settings_get():

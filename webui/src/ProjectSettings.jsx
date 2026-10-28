@@ -9,8 +9,10 @@ import {
 } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
-export default function ProjectSettings({ project, onClose, toast }) {
+export default function ProjectSettings({ project, onClose, toast,
+                                          onDeleted }) {
   const [model, setModel] = useState("");
+  const [askDel, setAskDel] = useState(false);
   const [mode, setMode] = useState("");
   const [autoCommit, setAutoCommit] = useState(false);
   const [mainBranch, setMainBranch] = useState("");
@@ -39,6 +41,16 @@ export default function ProjectSettings({ project, onClose, toast }) {
       main_branch: mainBranch.trim(), mcp: mcp.trim() });
     setBusy(false);
     if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(); }
+  };
+
+  const del = async () => {
+    setBusy(true);
+    try {
+      const j = await post("/api/project/delete", { project });
+      setBusy(false); setAskDel(false);
+      if (j.ok) { toast?.("Проект удалён"); onDeleted?.(); onClose(); }
+      else toast?.("Ошибка: " + (j.error || "?"));
+    } catch (e) { setBusy(false); toast?.("Сеть: " + e); }
   };
 
   return (
@@ -89,10 +101,31 @@ export default function ProjectSettings({ project, onClose, toast }) {
         </Stack>
       </DialogContent>
       <DialogActions>
+        {project !== "devin-cli" && (
+          <Button color="error" disabled={busy}
+                  onClick={() => setAskDel(true)}
+                  sx={{ mr: "auto", textTransform: "none" }}>
+            Удалить</Button>)}
         <Button onClick={onClose}>Отмена</Button>
         <Button variant="contained" onClick={save} disabled={busy}>
           Сохранить</Button>
       </DialogActions>
+      <Dialog open={askDel} onClose={() => setAskDel(false)}>
+        <DialogTitle>Удалить «{project}»?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Будет удалена папка проекта на сервере и его записи в базе
+            (настройки, привязки инструкций, права). Репозиторий на
+            GitHub не трогаем. Действие необратимо.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAskDel(false)}>Отмена</Button>
+          <Button color="error" variant="contained" disabled={busy}
+                  onClick={del}>
+            Удалить</Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 }
