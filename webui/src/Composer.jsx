@@ -19,6 +19,7 @@ import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PsychologyIcon from "@mui/icons-material/Psychology";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -86,6 +87,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [eff, setEff] = useState({ model: "", mode: "code", ac: "0" });
   const [ov, setOv] = useState({});       // {mode?, ac?, model?}
   const [models, setModels] = useState([]);
+  const [att, setAtt] = useState(null);     // {id, name} прикреплённый файл
+  const fileRef = useRef(null);
   const [mAnchor, setMAnchor] = useState(null);
   useEffect(() => {
     if (!project || project === "workspace") return;
@@ -108,6 +111,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                pt: 0.8, pb: 0.8,
                "& .MuiChip-root": { flexShrink: 0 },
                "&::-webkit-scrollbar": { display: "none" } }}>
+      {attChip}
       <Chip size="small" clickable
         label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
         color={ov.mode ? "primary" : "default"}
@@ -154,6 +158,24 @@ export default function Composer({ project, sttStatus, toast, onSent,
              onSubmit={submitDiscussed} toast={toast} />
   );
 
+  const pickFile = async e => {
+    const fl = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!fl) return;
+    if (fl.size > 20 * 1024 * 1024) { toast("Файл > 20 МБ"); return; }
+    try {
+      const d = await (await api("/api/attach?name=" +
+        encodeURIComponent(fl.name), { method: "POST", body: fl })).json();
+      if (d.ok) setAtt({ id: d.id, name: d.name });
+      else toast("Файл: " + (d.error || "?"));
+    } catch (err) { toast("Сеть: " + err); }
+  };
+  const fileInput = (
+    <input ref={fileRef} type="file" hidden onChange={pickFile} />);
+  const attChip = att && (
+    <Chip size="small" icon={<AttachFileIcon />} label={att.name}
+          onDelete={() => setAtt(null)} title="прикреплённый файл — убрать" />);
+
   const sendText = async raw => {
     const s = raw.trim();
     if (!s) return;
@@ -163,8 +185,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
         project: project === "workspace" ? null : project, text: s,
         ...(ov.mode ? { mode: ov.mode } : {}),
         ...(ov.ac !== undefined ? { auto_commit: ov.ac } : {}),
-        ...(ov.model ? { model: ov.model } : {}) });
-      if (d.ok) { setText(""); setOv({}); onSent?.(); }
+        ...(ov.model ? { model: ov.model } : {}),
+        ...(att ? { attach: att.id } : {}) });
+      if (d.ok) { setText(""); setOv({}); setAtt(null); onSent?.(); }
       else toast("Ошибка: " + (d.error || "?"));
     } catch (e) { toast("Сеть: " + e); }
     setBusy(false);
@@ -255,6 +278,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0 }}>
       {chips}
+      {fileInput}
       <Box sx={{ px: 1, pt: 0, pb: "5px",
                  display: "flex", alignItems: "flex-end", gap: 0.5 }}>
         <TextField
@@ -316,6 +340,10 @@ export default function Composer({ project, sttStatus, toast, onSent,
           disabled={!project}
           sx={{ minWidth: 0,
                 color: fast ? "#ffd54f" : "rgba(255,255,255,.72)" }} />
+        <BottomNavigationAction label="Файл"
+          icon={<AttachFileIcon />}
+          onClick={() => fileRef.current?.click()}
+          sx={{ minWidth: 0, color: "#fff" }} />
         <BottomNavigationAction label="Обсудить"
           icon={<PsychologyIcon />}
           onClick={() => setDiscussOpen(true)}
@@ -356,6 +384,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
         <Grid size={{ xs: 12, sm: "auto" }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,
                      justifyContent: "flex-end", flexWrap: "nowrap" }}>
+            {fileInput}
+            <IconButton size="small" title="прикрепить файл к задаче"
+                        onClick={() => fileRef.current?.click()}>
+              <AttachFileIcon />
+            </IconButton>
             <IconButton size="small" title="обсудить идею с Devin"
                         onClick={() => setDiscussOpen(true)}>
               <PsychologyIcon />

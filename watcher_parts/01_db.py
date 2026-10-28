@@ -676,9 +676,20 @@ def run_task(task: dict) -> None:
     except ValueError:
         opts = {}
     instr = (task.get("instr") or "").strip()
-    task_file.write_text(
-        (instr + "\n\n---\n\n" + task["prompt"]) if instr
-        else task["prompt"], errors="replace")
+    body_txt = (instr + "\n\n---\n\n" + task["prompt"]) if instr \
+        else task["prompt"]
+    # прикреплённый файл (из /api/attach): кладём рядом с промптом и
+    # указываем путь в задаче — Devin прочтёт и учтёт его
+    att = (opts.get("attach") or "").strip()
+    if att and "/" not in att:
+        src = ATTACH_DIR / att
+        if src.is_file():
+            dest = progress_dir / f"{stem}.attach"
+            shutil.copy2(src, dest)
+            src.unlink(missing_ok=True)
+            body_txt += ("\n\n---\n\nПрикреплённый файл: "
+                         f"{dest} — прочти и учитывай в задаче.")
+    task_file.write_text(body_txt, errors="replace")
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
                TASK_STEM=stem,
                DEVIN_MODEL=(opts.get("model") or task.get("model")

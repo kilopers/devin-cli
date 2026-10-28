@@ -49,6 +49,7 @@ except ImportError:
     pymysql = None
 
 TASKS_DIR = Path(os.environ.get("TASKS_DIR", "/tasks"))
+ATTACH_DIR = TASKS_DIR / "attach"   # файлы, прикреплённые к задачам
 INBOX = TASKS_DIR / "inbox"
 DONE = TASKS_DIR / "done"
 OUTBOX = TASKS_DIR / "outbox"

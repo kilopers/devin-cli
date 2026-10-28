@@ -126,6 +126,27 @@ def _api_project_delete():
     return jsonify({"ok": True})
 
 
+@app.post("/api/attach")
+@login_required
+def _api_attach():
+    """Загрузить файл для прикрепления к задаче. Имя — ?name= или
+    заголовок X-Filename; тело — raw bytes (до 20 МБ). Ответ — id
+    вложения, передаётся в /api/tasks полем attach."""
+    name = (request.args.get("name")
+            or request.headers.get("X-Filename") or "file")
+    name = re.sub(r"[^A-Za-z0-9а-яА-Я_.() -]+", "_",
+                  Path(name).name)[:120] or "file"
+    data = request.get_data()
+    if not data:
+        return jsonify({"ok": False, "error": "пустой файл"}), 400
+    if len(data) > 20 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "файл > 20 МБ"}), 400
+    ATTACH_DIR.mkdir(parents=True, exist_ok=True)
+    att_id = f"{_current_user()}-{secrets.token_hex(4)}-{name}"
+    (ATTACH_DIR / att_id).write_bytes(data)
+    return jsonify({"ok": True, "id": att_id, "name": name})
+
+
 @app.get("/api/settings")
 @login_required
 def _api_settings_get():

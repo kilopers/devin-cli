@@ -269,6 +269,14 @@ def _api_task_new():
     name = enqueue_task(text, project=project, prefix="web",
                         override_mode=mode)
     o = {}
+    att = (body.get("attach") or "").strip()
+    if att:
+        # id из /api/attach; файл должен существовать и принадлежать
+        # каталогу вложений (без выхода из него через ../)
+        if "/" in att or not (ATTACH_DIR / att).is_file():
+            return jsonify({"ok": False,
+                            "error": "вложение не найдено"}), 400
+        o["attach"] = att
     if (body.get("model") or "").strip():
         o["model"] = body["model"].strip()[:60]
     if body.get("auto_commit") in ("0", "1"):
