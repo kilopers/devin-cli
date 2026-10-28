@@ -1,3 +1,9 @@
+## 1.4.4
+- Фикс белого экрана «Cannot access 'vt' before initialization»:
+  циклический импорт Composer.jsx ⇄ Discuss.jsx (Discuss тянул
+  STT_RATE-const из Composer). Аудио-хелперы (STT_RATE, resample,
+  encodeWav) вынесены в webui/src/audio.js — цикла больше нет.
+
 ## 1.4.3
 - «Начать задачу»: кнопка по центру после последней карточки фида.
   Нажал — сообщения из композера копятся частями задачи (не уходят

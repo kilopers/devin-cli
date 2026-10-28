@@ -20,7 +20,7 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson as get, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
-import { STT_RATE, resample, encodeWav } from "./Composer.jsx";
+import { STT_RATE, resample, encodeWav } from "./audio.js";
 
 const MsgRow = memo(function MsgRow({ m }) {
   return m.role === "user" ? (
