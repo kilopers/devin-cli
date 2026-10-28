@@ -14,6 +14,9 @@ const adorn = icon => (
   <InputAdornment position="start">{icon}</InputAdornment>);
 
 function Login() {
+  // куда вернуться после входа — пришёл с ?next=… (например, ссылка
+  // на конкретный проект ?project=X)
+  const next = new URLSearchParams(location.search).get("next") || "";
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -31,6 +34,7 @@ function Login() {
             </Typography>
             {window.LOGIN_ERROR &&
               <Alert severity="error">Неверный логин или пароль</Alert>}
+            {next && <input type="hidden" name="next" value={next} />}
             <TextField name="user" label="Логин" autoComplete="username"
                        autoFocus required fullWidth
                        slotProps={{ input: {

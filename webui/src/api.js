@@ -2,7 +2,9 @@
 export async function api(url, opts) {
   const r = await fetch(url, opts);
   if (r.status === 401) {
-    location = "/login";
+    // сохраняем текущий URL (в т.ч. ?project=…) — после логина вернёмся
+    location = "/login?next=" +
+      encodeURIComponent(location.pathname + location.search);
     throw new Error("401");
   }
   return r;

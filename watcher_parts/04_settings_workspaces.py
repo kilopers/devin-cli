@@ -198,7 +198,9 @@ def login_required(fn):
         if _admin_hash() and not session.get("uid"):
             if request.path.startswith("/api/"):
                 return jsonify({"ok": False, "error": "auth required"}), 401
-            return redirect("/login")
+            nxt = request.full_path.rstrip("?")
+            return redirect("/login?next=" +
+                            urllib.parse.quote(nxt, safe=""))
         return fn(*a, **kw)
     return wrapper
 
@@ -211,6 +213,11 @@ def _req_json() -> dict:
 def _login():
     if not _admin_hash():          # no password configured → auth off
         return redirect("/")
+    # куда вернуться после входа (?next=/…?project=X) — только
+    # внутренние пути, open-redirect исключён
+    nxt = (request.form.get("next") or request.args.get("next") or "")
+    if not (nxt.startswith("/") and not nxt.startswith("//")):
+        nxt = ""
     if request.method == "POST":
         user = request.form.get("user", "")
         pw = request.form.get("password", "")
@@ -218,11 +225,13 @@ def _login():
                 check_password_hash(_user_hash(user), pw):
             session["uid"] = user
             log(f"web login ok: {user}")
-            return redirect("/")
+            return redirect(nxt or "/")
         log(f"web login failed: {user!r}")
-        return redirect("/login?err=1")
+        return redirect("/login?err=1" +
+                        ("&next=" + urllib.parse.quote(nxt, safe="")
+                         if nxt else ""))
     if session.get("uid"):
-        return redirect("/")
+        return redirect(nxt or "/")
     return render_template("login.html",
                            error=bool(request.args.get("err")))
 

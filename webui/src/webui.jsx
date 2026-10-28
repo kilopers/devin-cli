@@ -587,8 +587,17 @@ export default function App() {
         // онбординг: проектов нет → сначала ключи, потом репозиторий
         if (!d.projects.length && d.current === null)
           setKeysOpen(true);
-        const cur = d.current || projs[0];
+        // ?project=X в URL — открыть конкретный проект; неизвестный
+        // или чужой → обычный выбор (current/первый), параметр чистим
+        const qp = new URLSearchParams(location.search).get("project");
+        const cur = (qp && projs.includes(qp)) ? qp
+                                              : (d.current || projs[0]);
         setProject(cur); projRef.current = cur;
+        if (qp) {
+          history.replaceState(null, "", location.pathname);
+          if (cur === qp && d.projects.length)
+            post("/api/project", { project: cur }).catch(() => {});
+        }
         loadTasks();
       } catch (e) {}
     })();
