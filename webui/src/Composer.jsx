@@ -103,8 +103,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const curModel = ov.model ?? eff.model;
 
   const chips = (
-    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", px: 0.5,
-               pt: 0.8, pb: 0.8 }}>
+    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "nowrap",
+               justifyContent: "flex-start", overflowX: "auto", px: 0.5,
+               pt: 0.8, pb: 0.8,
+               "& .MuiChip-root": { flexShrink: 0 },
+               "&::-webkit-scrollbar": { display: "none" } }}>
       <Chip size="small" clickable
         label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
         color={ov.mode ? "primary" : "default"}
