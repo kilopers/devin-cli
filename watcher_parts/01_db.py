@@ -678,17 +678,26 @@ def run_task(task: dict) -> None:
     instr = (task.get("instr") or "").strip()
     body_txt = (instr + "\n\n---\n\n" + task["prompt"]) if instr \
         else task["prompt"]
-    # прикреплённый файл (из /api/attach): кладём рядом с промптом и
-    # указываем путь в задаче — Devin прочтёт и учтёт его
-    att = (opts.get("attach") or "").strip()
-    if att and "/" not in att:
-        src = ATTACH_DIR / att
+    # прикреплённые файлы (из /api/attach): кладём рядом с промптом и
+    # указываем пути в задаче — Devin прочтёт и учтёт их
+    att = opts.get("attach")
+    atts = att if isinstance(att, list) else ([att] if att else [])
+    paths = []
+    for i, a in enumerate(atts):
+        a = (a or "").strip()
+        if not a or "/" in a:
+            continue
+        src = ATTACH_DIR / a
         if src.is_file():
-            dest = progress_dir / f"{stem}.attach"
+            dest = progress_dir / (f"{stem}.attach" if i == 0
+                                   else f"{stem}.attach.{i+1}")
             shutil.copy2(src, dest)
             src.unlink(missing_ok=True)
-            body_txt += ("\n\n---\n\nПрикреплённый файл: "
-                         f"{dest} — прочти и учитывай в задаче.")
+            paths.append(str(dest))
+    if paths:
+        body_txt += ("\n\n---\n\nПрикреплённые файлы — прочти "
+                     "и учитывай в задаче:\n"
+                     + "\n".join("- " + p for p in paths))
     task_file.write_text(body_txt, errors="replace")
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
                TASK_STEM=stem,

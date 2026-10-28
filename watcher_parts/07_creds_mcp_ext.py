@@ -266,17 +266,21 @@ def _api_task_new():
     if multi_mode() and project not in _user_projects(_current_user()):
         return jsonify({"ok": False, "error": "unknown project"}), 400
     mode = body.get("mode") if body.get("mode") in ("ask", "code") else None
+    att = body.get("attach")
+    atts = ([a.strip() for a in att] if isinstance(att, list)
+            else ([att.strip()] if isinstance(att, str) and att.strip()
+                  else []))
+    for a in atts:
+        # id из /api/attach; файл должен существовать и принадлежать
+        # каталогу вложений (без выхода из него через ../)
+        if "/" in a or not (ATTACH_DIR / a).is_file():
+            return jsonify({"ok": False,
+                            "error": "вложение не найдено"}), 400
     name = enqueue_task(text, project=project, prefix="web",
                         override_mode=mode)
     o = {}
-    att = (body.get("attach") or "").strip()
-    if att:
-        # id из /api/attach; файл должен существовать и принадлежать
-        # каталогу вложений (без выхода из него через ../)
-        if "/" in att or not (ATTACH_DIR / att).is_file():
-            return jsonify({"ok": False,
-                            "error": "вложение не найдено"}), 400
-        o["attach"] = att
+    if atts:
+        o["attach"] = atts[0] if len(atts) == 1 else atts
     if (body.get("model") or "").strip():
         o["model"] = body["model"].strip()[:60]
     if body.get("auto_commit") in ("0", "1"):

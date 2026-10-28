@@ -68,7 +68,7 @@ export function encodeWav(chunks, rate) {
 
 export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
-                                   fast, onFast }) {
+                                   fast, onFast, collect, onCollect }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -179,6 +179,13 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const sendText = async raw => {
     const s = raw.trim();
     if (!s) return;
+    // режим «Начать задачу»: сообщение копится в пачку, в очередь
+    // Devin оно попадёт по кнопке «Начать выполнение»
+    if (collect) {
+      onCollect?.({ text: s, attach: att });
+      setText(""); setAtt(null);
+      return;
+    }
     setBusy(true);
     try {
       const d = await post("/api/tasks", {
@@ -329,7 +336,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
             sx={{ minWidth: 0, color: "warning.light" }} />
         )}
         <BottomNavigationAction
-          label={curMode === "ask" ? "Спросить" : "В работу"}
+          label={collect ? "+ В задачу"
+                        : (curMode === "ask" ? "Спросить" : "В работу")}
           icon={<SendIcon />}
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
@@ -421,7 +429,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
             <Button variant="contained" size="small" onClick={send}
                     disabled={busy} endIcon={<SendIcon sx={{fontSize: 15}} />}
                     sx={{ whiteSpace: "nowrap", px: 1.5, minWidth: 0 }}>
-              {curMode === "ask" ? "Спросить" : "В работу"}
+              {collect ? "+ В задачу"
+                       : (curMode === "ask" ? "Спросить" : "В работу")}
             </Button>
           </Box>
         </Grid>

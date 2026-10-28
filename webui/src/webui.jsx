@@ -33,6 +33,8 @@ import FlashOffIcon from "@mui/icons-material/FlashOff";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
+import CloseIcon from "@mui/icons-material/Close";
 import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
@@ -366,6 +368,11 @@ export default function App() {
                                         builds: true, hooks: true,
                                         ws: true, branches: true,
                                         instr: true, deploy: true });
+  // «Начать задачу»: null — режим выкл, [] — собираем части задачи,
+  // каждая часть {text, attach:{id,name}?}; «Начать выполнение»
+  // склеивает всё в одну задачу
+  const [batch, setBatch] = useState(null);
+  const [batchBusy, setBatchBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -571,6 +578,28 @@ export default function App() {
     t2 => setConfirm({ kind: "stop", name: t2.name }), []);
   const askCancel = useCallback(
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
+  // накопление частей задачи («Начать задачу» → каждое сообщение
+  // композера кладётся в batch, файл — тоже часть пачки)
+  const onCollectPart = useCallback(part => {
+    setBatch(b => [...(b || []), part]);
+    setToast("Добавлено в задачу");
+  }, []);
+  const delBatchPart = useCallback(
+    i => setBatch(b => (b || []).filter((_, j) => j !== i)), []);
+  const submitBatch = async () => {
+    if (!batch || !batch.length || batchBusy) return;
+    setBatchBusy(true);
+    try {
+      const atts = batch.filter(p => p.attach).map(p => p.attach.id);
+      const d = await post("/api/tasks", {
+        project: project === "workspace" ? null : project,
+        text: batch.map(p => p.text).join("\n\n"),
+        ...(atts.length ? { attach: atts } : {}) });
+      if (d.ok) { setBatch(null); loadTasks(); }
+      else setToast("Ошибка: " + (d.error || "?"));
+    } catch (e) { setToast("Сеть: " + e); }
+    setBatchBusy(false);
+  };
   const openBranchDlg = useCallback(() => {
     setBranchName(branchSuggest(""));
     setBranchDlg({ new: true });
@@ -936,6 +965,54 @@ export default function App() {
                     onCancel={askCancel} />)
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
+            {/* части собираемой задачи — после последней карточки,
+                по центру; «Начать выполнение» склеивает их в одну */}
+            {batch !== null && (
+              <Box sx={{ display: "flex", flexDirection: "column",
+                         gap: 0.7, mt: 1 }}>
+                {batch.map((p, i) => (
+                  <Paper key={i} variant="outlined" sx={{
+                    px: 1.2, py: 0.6, display: "flex",
+                    alignItems: "center", gap: 0.8,
+                    borderStyle: "dashed",
+                    borderColor: wsColor || "divider" }}>
+                    <Typography variant="body2" sx={{
+                      flex: 1, minWidth: 0, fontSize: 12.5,
+                      overflow: "hidden", textOverflow: "ellipsis",
+                      whiteSpace: "nowrap" }}>
+                      {i + 1}. {p.text}
+                    </Typography>
+                    {p.attach && (
+                      <Chip size="small" icon={<AttachFileIcon />}
+                            label={p.attach.name} />)}
+                    <IconButton size="small" title="убрать из задачи"
+                                onClick={() => delBatchPart(i)}>
+                      <CloseIcon sx={{ fontSize: 15 }} />
+                    </IconButton>
+                  </Paper>))}
+              </Box>)}
+            <Box sx={{ display: "flex", justifyContent: "center",
+                       mt: 1.2 }}>
+              {batch === null ? (
+                <Button size="small" variant="outlined"
+                        onClick={() => setBatch([])}
+                        sx={{ textTransform: "none" }}>
+                  ＋ Начать задачу
+                </Button>
+              ) : !batch.length ? (
+                <Button size="small" variant="outlined" disabled
+                        sx={{ textTransform: "none" }}>
+                  Собираю задачу — отправь сообщение внизу
+                </Button>
+              ) : (
+                <Button size="small" variant="contained"
+                        color="primary" disabled={batchBusy}
+                        onClick={submitBatch}
+                        sx={{ textTransform: "none" }}>
+                  ▶ Начать выполнение ({batch.length})
+                </Button>
+              )}
+            </Box>
           </Box>
           {/* сайдбар жёстко прижат: от хедера до низа экрана, скроллит
               внутри один общий список; block-layout — секции не сжимаются
@@ -1028,6 +1105,7 @@ export default function App() {
 
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={wsColor}
+                  collect={batch !== null} onCollect={onCollectPart}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
                   mode={mode}
                   fast={fast}
