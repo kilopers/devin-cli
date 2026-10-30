@@ -83,31 +83,35 @@ export default function Composer({ project, sttStatus, toast, onSent,
   };
   const fileInput = (
     <input ref={fileRef} type="file" hidden onChange={pickFile} />);
+  // единый стиль мета-чипов (как на карточках задач)
+  const chipSx = { height: 24, fontSize: 11.5, fontWeight: 500,
+                   borderRadius: "7px",
+                   "& .MuiChip-label": { px: "9px" } };
   const attChip = att && (
     <Chip size="small" icon={<AttachFileIcon />} label={att.name}
+          sx={chipSx} color="primary" variant="outlined"
           onDelete={() => setAtt(null)} title="прикреплённый файл — убрать" />);
-
   const chips = (
-    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "nowrap",
+    <Box sx={{ display: "flex", gap: 0.7, flexWrap: "nowrap",
                justifyContent: "flex-start", overflowX: "auto", px: 0.5,
-               pt: 0.8, pb: 0.8,
+               pt: 1, pb: 0.9,
                "& .MuiChip-root": { flexShrink: 0 },
                "&::-webkit-scrollbar": { display: "none" } }}>
       {attChip}
-      <Chip size="small" clickable
+      <Chip size="small" clickable sx={chipSx}
         label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
         color={ov.mode ? "primary" : "default"}
         variant={ov.mode ? "filled" : "outlined"}
         onClick={() => setOv({ ...ov,
           mode: curMode === "ask" ? "code" : "ask" })}
         title={"режим следующей задачи" + (ov.mode ? " (разово)" : "")} />
-      <Chip size="small" clickable
+      <Chip size="small" clickable sx={chipSx}
         label={curAc === "1" ? "Автокоммит" : "Ручной коммит"}
         color={ov.ac ? "primary" : "default"}
         variant={ov.ac ? "filled" : "outlined"}
         onClick={() => setOv({ ...ov, ac: curAc === "1" ? "0" : "1" })}
         title={"коммит после задачи" + (ov.ac ? " (разово)" : "")} />
-      <Chip size="small" clickable
+      <Chip size="small" clickable sx={chipSx}
         label={"Модель: " + (curModel || "—")}
         color={ov.model ? "primary" : "default"}
         variant={ov.model ? "filled" : "outlined"}
@@ -245,9 +249,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
 
   if (mobile) return (<>
-    <Paper elevation={6} sx={{
+    <Paper elevation={0} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
-      borderRadius: 0 }}>
+      borderRadius: 0, borderTop: "1px solid", borderColor: "divider" }}>
       {chips}
       {fileInput}
       <Box sx={{ px: 1, pt: 0, pb: "5px",
@@ -326,9 +330,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
   </>);
 
   return (<>
-    <Paper elevation={4} sx={{
+    <Paper elevation={0} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
-      borderRadius: 0 }}>
+      borderRadius: 0, borderTop: "1px solid", borderColor: "divider" }}>
       <Box sx={{ maxWidth: 1280, mx: "auto", px: 1.5 }}>{chips}</Box>
       <Grid container spacing={1} sx={{
         maxWidth: 1280, mx: "auto", px: 1.5, pb: 1.5, pt: 0,
@@ -392,7 +396,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
             </Typography>
             <Button variant="contained" size="small" onClick={send}
                     disabled={busy} endIcon={<SendIcon sx={{fontSize: 15}} />}
-                    sx={{ whiteSpace: "nowrap", px: 1.5, minWidth: 0 }}>
+                    sx={{ whiteSpace: "nowrap", px: 2, minWidth: 0,
+                          height: 36, borderRadius: "9px",
+                          textTransform: "none", fontWeight: 600,
+                          boxShadow: "none",
+                          "&:hover": { boxShadow: "none" } }}>
               {collect ? "+ В задачу"
                        : (curMode === "ask" ? "Спросить" : "В работу")}
             </Button>

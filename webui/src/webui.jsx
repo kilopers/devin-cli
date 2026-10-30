@@ -66,7 +66,16 @@ class ErrBoundary extends React.Component {
   }
 }
 
-const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
+const theme = createTheme({
+  palette: { primary: { main: "#3f51b5" } },
+  // единый «карточный» стиль: скругления и мягкие контуры везде
+  shape: { borderRadius: 10 },
+  components: {
+    MuiCard: { styleOverrides: { root: { borderRadius: 14 } } },
+    MuiDialog: { styleOverrides: {
+      paper: { borderRadius: 14 } } },
+  },
+});
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const STATUS_RU = { queued: "в очереди", running: "выполняется", done: "готово" };
 const SRC_RU = { telegram: "telegram", web: "web", file: "файл" };
@@ -993,9 +1002,9 @@ export default function App() {
                          gap: 0.7, mt: 1 }}>
                 {batch.map((p, i) => (
                   <Paper key={i} variant="outlined" sx={{
-                    px: 1.2, py: 0.6, display: "flex",
+                    px: 1.4, py: 0.8, display: "flex",
                     alignItems: "center", gap: 0.8,
-                    borderStyle: "dashed",
+                    borderRadius: "10px", borderStyle: "dashed",
                     borderColor: wsColor || "divider" }}>
                     <Typography variant="body2" sx={{
                       flex: 1, minWidth: 0, fontSize: 12.5,
@@ -1038,11 +1047,12 @@ export default function App() {
           {/* сайдбар жёстко прижат: от хедера до низа экрана, скроллит
               внутри один общий список; block-layout — секции не сжимаются
               и не наезжают друг на друга при длинных списках */}
-          <Paper elevation={1} sx={{
+          <Paper elevation={0} sx={{
             width: 290, flexShrink: 0, m: "0 12px 0 4px",
             display: { xs: "none", md: "block" },
             alignSelf: "flex-start", position: "sticky", top: 80,
-            height: "calc(100vh - 80px)", borderRadius: "0 0 8px 8px",
+            height: "calc(100vh - 80px)", borderRadius: "0 0 14px 14px",
+            border: "1px solid", borderColor: "divider",
             overflowY: "auto", overflowX: "hidden",
             // pb как у ленты: нижние пункты докручиваются выше
             // фиксированного композера (иначе уходят под него)
