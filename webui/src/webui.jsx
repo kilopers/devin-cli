@@ -152,52 +152,65 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
       .catch(() => {});
   const promptShown = full !== null ? full : t.prompt;
   const maybeCut = full === null && (t.prompt || "").length >= 2000;
+  // мелкие мета-чипы шапки: один стиль, воздух вокруг текста
+  const metaSx = { height: 22, fontSize: 11, fontWeight: 500,
+                   borderRadius: "7px",
+                   "& .MuiChip-label": { px: "8px" } };
   return (
-    <Card sx={{ mb: 1.5 }}>
-      <CardContent sx={{ p: "14px 18px", "&:last-child": { pb: "14px" } }}>
+    <Card elevation={0} sx={{
+      mb: 2, borderRadius: "14px",
+      border: "1px solid", borderColor: "divider",
+      transition: "box-shadow .2s ease, border-color .2s ease",
+      "&:hover": { borderColor: "#c7d2e0",
+                   boxShadow: "0 6px 24px rgba(16,24,40,.08)" } }}>
+      <CardContent sx={{ p: "20px 24px 12px",
+                         "&:last-child": { pb: "12px" } }}>
         <Box sx={{ display: "flex", justifyContent: "space-between",
-                   alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-          <Typography variant="caption" color="text.secondary">
-            {t.name} · {new Date(t.created * 1000).toLocaleString("ru-RU")}{" "}
-            <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
-              borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
-              color: "#78909c" }}>{SRC_RU[t.source] || t.source || ""}</Box>
-            {t.model ? " " : null}
+                   alignItems: "flex-start", gap: 1.5,
+                   flexWrap: "wrap", mb: 1.5 }}>
+          <Box sx={{ display: "flex", alignItems: "center",
+                     gap: 0.8, flexWrap: "wrap", minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ fontSize: 12, mr: 0.2 }}>
+              {t.name} · {new Date(t.created * 1000)
+                            .toLocaleString("ru-RU")}
+            </Typography>
+            <Chip size="small" variant="outlined" sx={metaSx}
+                  label={SRC_RU[t.source] || t.source || ""} />
             {t.model &&
-              <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
-                borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
-                color: "#78909c" }}>{t.model}</Box>}
-            {" "}
-            <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
-              borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
-              color: "#78909c" }}>
-              {t.mode === "ask" ? "💬 вопрос" : "🛠 код"}</Box>
-            {" "}
-            <Box component="span" sx={{ border: "1px solid #cfd8dc", whiteSpace: "nowrap",
-              borderRadius: "10px", px: "8px", py: "1px", fontSize: 11,
-              color: t.ac === "1" ? "#2e7d32" : "#78909c" }}>
-              {t.ac === "1" ? "⚡ автокоммит" : "✋ коммит вручную"}</Box>
-            {t.tag ? " " : null}
+              <Chip size="small" variant="outlined" sx={metaSx}
+                    label={t.model} />}
+            <Chip size="small" variant="outlined" sx={metaSx}
+                  label={t.mode === "ask" ? "💬 вопрос" : "🛠 код"} />
+            <Chip size="small" variant="outlined"
+                  sx={{ ...metaSx,
+                        color: t.ac === "1" ? "#2e7d32" : undefined,
+                        borderColor: t.ac === "1" ? "#a5d6a7" : undefined }}
+                  label={t.ac === "1" ? "⚡ автокоммит"
+                                      : "✋ коммит вручную"} />
             {t.tag &&
-              <Box component="span" sx={{ border: "1px solid #90caf9",
-                whiteSpace: "nowrap", borderRadius: "10px", px: "8px",
-                py: "1px", fontSize: 11, color: "#1565c0",
-                bgcolor: "#e3f2fd" }}>{t.tag}</Box>}
-          </Typography>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
+              <Chip size="small" color="primary"
+                    sx={{ ...metaSx,
+                          bgcolor: "#e3f2fd", color: "#1565c0" }}
+                    label={t.tag} />}
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center",
+                     gap: 0.8, flexShrink: 0 }}>
             {t.status === "running" && onStop && (
               <Button size="small" variant="outlined" color="error"
                       onClick={() => onStop(t)}
-                      sx={{ fontSize: 11, px: 1, py: 0, height: 24,
-                            whiteSpace: "nowrap" }}>
+                      sx={{ fontSize: 11, px: 1.2, height: 26,
+                            borderRadius: "7px", whiteSpace: "nowrap",
+                            textTransform: "none" }}>
                 ⛔ стоп
               </Button>
             )}
             {t.status === "queued" && onCancel && (
               <Button size="small" variant="outlined" color="error"
                       onClick={() => onCancel(t)}
-                      sx={{ fontSize: 11, px: 1, py: 0, height: 24,
-                            whiteSpace: "nowrap" }}>
+                      sx={{ fontSize: 11, px: 1.2, height: 26,
+                            borderRadius: "7px", whiteSpace: "nowrap",
+                            textTransform: "none" }}>
                 ✖ удалить
               </Button>
             )}
@@ -205,33 +218,41 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
           </Box>
         </Box>
         <Typography variant="body2" onClick={() => setOpen(o => !o)}
-          sx={{ whiteSpace: "pre-wrap", fontWeight: 500, my: 1,
-                cursor: "pointer",
+          sx={{ whiteSpace: "pre-wrap", fontWeight: 500, fontSize: 13.5,
+                lineHeight: 1.62, cursor: "pointer",
                 ...(!open && {
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
                   WebkitLineClamp: 3, overflow: "hidden" }) }}>
           {promptShown}</Typography>
         {maybeCut && (
           <Typography variant="caption" onClick={loadFull}
-            sx={{ color: "#1565c0", cursor: "pointer",
+            sx={{ display: "inline-block", mt: 0.5,
+                  color: "#1565c0", cursor: "pointer", fontWeight: 500,
                   "&:hover": { textDecoration: "underline" } }}>
             … показать весь текст задачи
           </Typography>)}
         <Collapse in={open} unmountOnExit>
-          {t.output
-            ? (t.status === "done"
-                ? <Markdown text={t.output} />
-                : <pre className="out">{t.output}</pre>)
-            : <Typography variant="body2" color="text.secondary">
-                {t.status === "queued" ? "в очереди — вывод ещё пуст"
-                                      : "вывод пока пуст"}</Typography>}
+          <Box sx={{ mt: 1.5, pt: 1.5,
+                     borderTop: "1px solid",
+                     borderColor: "divider" }}>
+            {t.output
+              ? (t.status === "done"
+                  ? <Markdown text={t.output} />
+                  : <pre className="out">{t.output}</pre>)
+              : <Typography variant="body2" color="text.secondary">
+                  {t.status === "queued" ? "в очереди — вывод ещё пуст"
+                                        : "вывод пока пуст"}</Typography>}
+          </Box>
         </Collapse>
 
         <Box onClick={() => setOpen(o => !o)}
-             sx={{ display: "flex", alignItems: "center", gap: 0.5,
-                   justifyContent: "center", cursor: "pointer", mt: 0.5,
-                   color: "text.secondary", fontSize: 11,
-                   "&:hover": { color: "#1565c0" } }}>
+             sx={{ display: "flex", alignItems: "center", gap: 0.4,
+                   justifyContent: "center", cursor: "pointer", mt: 1.2,
+                   py: 0.3, borderRadius: "8px",
+                   color: "text.secondary", fontSize: 11.5,
+                   transition: "color .15s, background .15s",
+                   "&:hover": { color: "#1565c0",
+                                bgcolor: "rgba(21,101,192,.06)" } }}>
           {open ? "свернуть" : "подробнее"}
           <ExpandMoreIcon sx={{
             fontSize: 16, transition: "transform .25s",
