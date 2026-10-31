@@ -6,6 +6,12 @@ http:
       service: devin
       tls:
         certResolver: le
+    turcia:
+      rule: "Host(`turcia.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: turcia
+      tls:
+        certResolver: le
     techcontrol:
       rule: "Host(`techcontrol.ai.kilop.ru`)"
       entryPoints: [websecure]
@@ -54,6 +60,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:8089"
+    turcia:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8092"
     techcontrol:
       loadBalancer:
         servers:

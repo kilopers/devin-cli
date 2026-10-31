@@ -1,0 +1,12 @@
+name: turcia
+
+# Статичный лендинг turcia.ai.kilop.ru — nginx отдаёт ./site.
+# Traefik проксирует домен на host.docker.internal:8092.
+services:
+  web:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+    ports:
+      - "8092:80"
