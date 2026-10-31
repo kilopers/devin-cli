@@ -305,7 +305,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         )}
         <BottomNavigationAction
           label={collect ? "+ В задачу"
-                        : (curMode === "ask" ? "Спросить" : "В работу")}
+                        : (curMode === "ask" ? "Спросить" : "Делай")}
           icon={<SendIcon />}
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
