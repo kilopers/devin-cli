@@ -830,13 +830,14 @@ export default function App() {
         <AppBar position="fixed" color="primary"
                 sx={{ bgcolor: wsColor }}>
           <Toolbar variant="dense" sx={{ gap: 1 }}>
-            <img src="/static/favicon.svg" alt=""
-                 style={{ height: 24, filter: "invert(1)" }} />
-            {projIcon && (/^https?:|^\/\S/.test(projIcon)
-              ? <img src={projIcon} alt="" style={{ height: 24,
-                     width: 24, objectFit: "cover", borderRadius: 6 }} />
-              : <Typography component="span" sx={{ fontSize: 20,
-                     lineHeight: 1 }}>{projIcon}</Typography>)}
+            {projIcon
+              ? (/^https?:|^\/\S/.test(projIcon)
+                ? <img src={projIcon} alt="" style={{ height: 24,
+                       width: 24, objectFit: "cover", borderRadius: 6 }} />
+                : <Typography component="span" sx={{ fontSize: 20,
+                       lineHeight: 1 }}>{projIcon}</Typography>)
+              : <img src="/static/favicon.svg" alt=""
+                     style={{ height: 24, filter: "invert(1)" }} />}
             <Typography variant="h6" sx={{ fontSize: 19, flexShrink: 0,
                                            display: "flex",
                                            alignItems: "center", gap: 0.8 }}>
