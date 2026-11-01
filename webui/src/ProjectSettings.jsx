@@ -4,13 +4,13 @@
 import { useEffect, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
-  Stack, Typography, TextField, MenuItem, Alert,
+  Stack, Typography, TextField, MenuItem, Alert, Box,
   FormControlLabel, Checkbox,
 } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
 export default function ProjectSettings({ project, onClose, toast,
-                                          onDeleted }) {
+                                          onDeleted, onPreview }) {
   const [model, setModel] = useState("");
   const [askDel, setAskDel] = useState(false);
   const [mode, setMode] = useState("");
@@ -21,6 +21,7 @@ export default function ProjectSettings({ project, onClose, toast,
   const [busy, setBusy] = useState(false);
   const [mcp, setMcp] = useState("");
   const [icon, setIcon] = useState("");
+  const [color, setColor] = useState("");
 
   useEffect(() => {
     if (!project) return;
@@ -28,7 +29,8 @@ export default function ProjectSettings({ project, onClose, toast,
       .then(j => { setModel(j.model || ""); setMode(j.reply_mode || "");
                    setAutoCommit(j.auto_commit === "1");
                    setMainBranch(j.main_branch || "");
-                   setMcp(j.mcp || ""); setIcon(j.icon || ""); });
+                   setMcp(j.mcp || ""); setIcon(j.icon || "");
+                   setColor(j.color || ""); });
     get("/api/models").then(j => setModels(j.models || []));
     get("/api/branches?project=" + encodeURIComponent(project))
       .then(j => setBranches((j.branches || []).map(b => b.name)));
@@ -40,9 +42,9 @@ export default function ProjectSettings({ project, onClose, toast,
       project, model, reply_mode: mode,
       auto_commit: autoCommit ? "1" : "0",
       main_branch: mainBranch.trim(), mcp: mcp.trim(),
-      icon: icon.trim() });
+      icon: icon.trim(), color: color.trim() });
     setBusy(false);
-    if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(); }
+    if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(true); }
   };
 
   const del = async () => {
@@ -98,6 +100,25 @@ export default function ProjectSettings({ project, onClose, toast,
                      onChange={e => setIcon(e.target.value)}
                      helperText="эмодзи или URL картинки — показывается в шапке рядом с логотипом; пусто — без иконки"
                      placeholder="🚀 или https://…/icon.png" />
+          <Box sx={{ display: "flex", gap: 1.2,
+                     alignItems: "flex-start" }}>
+            <input type="color"
+                   value={/^#[0-9a-fA-F]{6}$/.test(color)
+                          ? color : "#1565c0"}
+                   onChange={e => { setColor(e.target.value);
+                                    onPreview?.(e.target.value); }}
+                   title="выбрать цвет"
+                   style={{ width: 44, height: 38, marginTop: 1,
+                            border: "1px solid rgba(0,0,0,.23)",
+                            borderRadius: 8, padding: 2,
+                            background: "none", cursor: "pointer" }} />
+            <TextField label="Цвет проекта" size="small" fullWidth
+                       value={color}
+                       onChange={e => { setColor(e.target.value);
+                                        onPreview?.(e.target.value); }}
+                       helperText="любой CSS-цвет — #rrggbb, rgb(), hsl(); шапка красится сразу (превью); пусто — цвет пространства"
+                       placeholder="#1565c0" />
+          </Box>
           <TextField label="MCP серверы проекта" size="small" fullWidth
                      multiline minRows={2} maxRows={8}
                      value={mcp}

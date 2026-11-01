@@ -406,6 +406,8 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
   const [projIcon, setProjIcon] = useState(""); // иконка активного проекта
+  const [projColor, setProjColor] = useState(""); // цвет активного проекта
+  const [colorPreview, setColorPreview] = useState(null); // превью из диалога настроек
   const [profileOpen, setProfileOpen] = useState(false);
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
   const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
@@ -536,6 +538,8 @@ export default function App() {
     .catch(() => {});
   const wsColor = (wsInfo.ws.find(w => w.id === wsInfo.active) || {})
     .color || "#1565c0";
+  // акцент приложения: превью из диалога → цвет проекта → цвет пространства
+  const accent = (colorPreview ?? projColor) || wsColor;
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
@@ -663,14 +667,18 @@ export default function App() {
     })();
   }, [loadTasks]);
 
-  // иконка проекта (pj:<name>.icon) — эмодзи или URL, в шапке
-  useEffect(() => {
-    setProjIcon("");
+  // иконка и цвет проекта (pj:<name>.icon / .color) — в шапке
+  const loadProjSettings = useCallback(() => {
     if (!project || project === "workspace") return;
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
-      .then(j => { if (j.ok) setProjIcon(j.icon || ""); })
+      .then(j => { if (j.ok) { setProjIcon(j.icon || "");
+                               setProjColor(j.color || ""); } })
       .catch(() => {});
   }, [project]);
+  useEffect(() => {
+    setProjIcon(""); setProjColor(""); setColorPreview(null);
+    loadProjSettings();
+  }, [loadProjSettings]);
   useEffect(() => {
     loadStatus(); loadModels();
     const t = setInterval(() => { loadStatus(); loadTasks(); loadModels(); }, 3000);
@@ -828,7 +836,7 @@ export default function App() {
       <ErrBoundary>
       <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <AppBar position="fixed" color="primary"
-                sx={{ bgcolor: wsColor }}>
+                sx={{ bgcolor: accent }}>
           <Toolbar variant="dense" sx={{ gap: 1 }}>
             {projIcon
               ? (/^https?:|^\/\S/.test(projIcon)
@@ -989,7 +997,7 @@ export default function App() {
         <Box sx={{ flex: 1, display: "flex", width: "100%", maxWidth: 1280,
                    mx: "auto" }}>
           {view === "models"
-            ? <ModelsPage accent={wsColor} toast={setToast}
+            ? <ModelsPage accent={accent} toast={setToast}
                           onClose={() => setView("feed")} />
           : <>
           <Box sx={{ flex: 1, minWidth: 0,
@@ -1020,7 +1028,7 @@ export default function App() {
                     px: 1.4, py: 0.8, display: "flex",
                     alignItems: "center", gap: 0.8,
                     borderRadius: "10px", borderStyle: "dashed",
-                    borderColor: wsColor || "divider" }}>
+                    borderColor: accent || "divider" }}>
                     <Typography variant="body2" sx={{
                       flex: 1, minWidth: 0, fontSize: 12.5,
                       overflow: "hidden", textOverflow: "ellipsis",
@@ -1150,7 +1158,7 @@ export default function App() {
         </Box>
 
         <Composer project={project} sttStatus={status.stt_status}
-                  toast={setToast} onSent={loadTasks} accent={wsColor}
+                  toast={setToast} onSent={loadTasks} accent={accent}
                   collect={batch !== null} onCollect={onCollectPart}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
                   mode={mode}
@@ -1181,7 +1189,11 @@ export default function App() {
                 onClose={() => { setKeysOpen(false);
                                  if (!multiMode) setAddOpen(true); }} />
       <ProjectSettings project={pSetOpen}
-                       onClose={() => setPSetOpen(null)}
+                       onClose={saved => {
+                         setPSetOpen(null);
+                         if (saved !== true) setColorPreview(null);
+                         loadProjSettings(); }}
+                       onPreview={setColorPreview}
                        onDeleted={refreshProjects}
                        toast={setToast} />
       <Workspaces open={wsOpen} onClose={() => setWsOpen(false)}
