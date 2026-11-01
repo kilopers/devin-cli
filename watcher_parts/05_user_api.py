@@ -53,6 +53,7 @@ def _api_project_settings_get():
                     "auto_commit": pj_get(p, "auto_commit"),
                     "fast": pj_get(p, "fast"),
                     "main_branch": pj_get(p, "main_branch"),
+                    "icon": pj_get(p, "icon"),
                     "mcp": pj_get(p, "mcp"),
                     "eff_model": pj_get(p, "model") or current_model("web"),
                     "eff_mode": (pj_get(p, "reply_mode")
@@ -71,10 +72,11 @@ def _api_project_settings_set():
                   ("reply_mode", ("", "ask", "code")),
                   ("auto_commit", ("", "0", "1")),
                   ("fast", ("", "0", "1")),
-                  ("main_branch", None)):
+                  ("main_branch", None),
+                  ("icon", None)):
         if k not in body:
             continue  # частичное обновление — не трогаем пропущенные ключи
-        v = (body.get(k) or "").strip()
+        v = (body.get(k) or "").strip()[:200]
         if ok is None or v in ok:
             pj_set(p, k, v)
     if "mcp" in body:

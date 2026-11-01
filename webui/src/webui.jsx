@@ -405,6 +405,7 @@ export default function App() {
   const [batchBusy, setBatchBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
+  const [projIcon, setProjIcon] = useState(""); // иконка активного проекта
   const [profileOpen, setProfileOpen] = useState(false);
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
   const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
@@ -662,6 +663,14 @@ export default function App() {
     })();
   }, [loadTasks]);
 
+  // иконка проекта (pj:<name>.icon) — эмодзи или URL, в шапке
+  useEffect(() => {
+    setProjIcon("");
+    if (!project || project === "workspace") return;
+    apiJson("/api/project/settings?project=" + encodeURIComponent(project))
+      .then(j => { if (j.ok) setProjIcon(j.icon || ""); })
+      .catch(() => {});
+  }, [project]);
   useEffect(() => {
     loadStatus(); loadModels();
     const t = setInterval(() => { loadStatus(); loadTasks(); loadModels(); }, 3000);
@@ -823,6 +832,11 @@ export default function App() {
           <Toolbar variant="dense" sx={{ gap: 1 }}>
             <img src="/static/favicon.svg" alt=""
                  style={{ height: 24, filter: "invert(1)" }} />
+            {projIcon && (/^https?:|^\/\S/.test(projIcon)
+              ? <img src={projIcon} alt="" style={{ height: 24,
+                     width: 24, objectFit: "cover", borderRadius: 6 }} />
+              : <Typography component="span" sx={{ fontSize: 20,
+                     lineHeight: 1 }}>{projIcon}</Typography>)}
             <Typography variant="h6" sx={{ fontSize: 19, flexShrink: 0,
                                            display: "flex",
                                            alignItems: "center", gap: 0.8 }}>

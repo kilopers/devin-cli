@@ -20,6 +20,7 @@ export default function ProjectSettings({ project, onClose, toast,
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
   const [mcp, setMcp] = useState("");
+  const [icon, setIcon] = useState("");
 
   useEffect(() => {
     if (!project) return;
@@ -27,7 +28,7 @@ export default function ProjectSettings({ project, onClose, toast,
       .then(j => { setModel(j.model || ""); setMode(j.reply_mode || "");
                    setAutoCommit(j.auto_commit === "1");
                    setMainBranch(j.main_branch || "");
-                   setMcp(j.mcp || ""); });
+                   setMcp(j.mcp || ""); setIcon(j.icon || ""); });
     get("/api/models").then(j => setModels(j.models || []));
     get("/api/branches?project=" + encodeURIComponent(project))
       .then(j => setBranches((j.branches || []).map(b => b.name)));
@@ -38,7 +39,8 @@ export default function ProjectSettings({ project, onClose, toast,
     const j = await post("/api/project/settings", {
       project, model, reply_mode: mode,
       auto_commit: autoCommit ? "1" : "0",
-      main_branch: mainBranch.trim(), mcp: mcp.trim() });
+      main_branch: mainBranch.trim(), mcp: mcp.trim(),
+      icon: icon.trim() });
     setBusy(false);
     if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(); }
   };
@@ -91,6 +93,11 @@ export default function ProjectSettings({ project, onClose, toast,
             {branches.map(b => (
               <MenuItem key={b} value={b}>{b}</MenuItem>))}
           </TextField>
+          <TextField label="Иконка проекта" size="small" fullWidth
+                     value={icon}
+                     onChange={e => setIcon(e.target.value)}
+                     helperText="эмодзи или URL картинки — показывается в шапке рядом с логотипом; пусто — без иконки"
+                     placeholder="🚀 или https://…/icon.png" />
           <TextField label="MCP серверы проекта" size="small" fullWidth
                      multiline minRows={2} maxRows={8}
                      value={mcp}
