@@ -1,0 +1,11 @@
+services:
+  mihomo:
+    image: metacubex/mihomo:v1.19.33
+    container_name: mihomo
+    restart: unless-stopped
+    volumes:
+      - ./config:/root/.config/mihomo
+    ports:
+      - "7890:7890"          # mixed HTTP+SOCKS5 прокси — внешние клиенты
+      - "7890:7890/udp"      # UDP для socks5
+      - "9090:9090"          # REST API + веб-панель (/ui) -> Traefik mihomo.ai.kilop.ru

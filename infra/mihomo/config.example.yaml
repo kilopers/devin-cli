@@ -1,0 +1,82 @@
+# Mihomo (Clash Meta) — выделенный прокси-сервер с веб-панелью.
+#
+# Развёрнут на хосте в /docker/mihomo (см. README.md рядом).
+# Веб-панель (zashboard): https://mihomo.ai.kilop.ru/ui
+#   или http://<IP>:9090/ui  —  API secret: см. ключ `secret` ниже.
+# Прокси для клиентов:    http://<IP>:7890  (логин/пароль — authentication ниже)
+#
+# ЧТО ЗАПОЛНИТЬ: секцию `proxies:` — ноды из своей подписки
+# (формат Clash/Mihomo — можно вставлять целиком из конфига подписки).
+# Плейсхолдер-нода ниже мёртвая — замени на свои. Настоящий config.yaml
+# с ключами в git не коммитим.
+
+mixed-port: 7890        # HTTP и SOCKS5 на одном порту
+allow-lan: true         # принимать подключения снаружи контейнера
+bind-address: "*"       # слушать все интерфейсы
+mode: rule
+log-level: warning
+tcp-concurrent: true
+unified-delay: true
+ipv6: false
+
+# Авторизация на прокси-порту — ОБЯЗАТЕЛЬНО: 7890 открыт наружу,
+# без пароля это open-прокси для всего интернета.
+authentication:
+  - "user:CHANGE_ME"
+# Локальным адресам можно не спрашивать пароль:
+# skip-auth-prefixes:
+#   - 127.0.0.0/8
+
+# REST API + веб-панель (zashboard лежит в ./config/ui)
+external-controller: 0.0.0.0:9090
+external-ui: ui
+secret: "CHANGE_ME"
+
+profile:
+  store-selected: true   # помнить выбранную ноду между рестартами
+  store-fake-ip: true
+
+dns:
+  enable: true
+  ipv6: false
+  nameserver:
+    - 77.88.8.8
+    - 1.1.1.1
+  proxy-server-nameserver:
+    - 77.88.8.8
+    - 1.1.1.1
+
+proxies:
+  # ПРИМЕР VLESS-Reality ноды — ЗАМЕНИ на свои из подписки.
+  - name: "proxy-1"
+    type: vless
+    server: example.com          # адрес ноды
+    port: 443
+    network: tcp
+    udp: true
+    uuid: "00000000-0000-0000-0000-000000000000"   # uuid из подписки
+    packet-encoding: xudp
+    tls: true
+    servername: example.com       # SNI из подписки
+    reality-opts:
+      public-key: "OMMzhK8B-NtZX7aJS925YdmmKPLUedqJyd1EHlOovyQ"  # валидный формат, но МЁРТВАЯ нода — замени
+      short-id: ""
+    client-fingerprint: firefox
+  # - name: "proxy-2"
+  #   ...
+
+proxy-groups:
+  # Автовыбор: раз в 5 минут меряет задержку и ездит через самую
+  # быструю ноду; include-all забирает всё из proxies: — список
+  # нод здесь править не нужно. В панели можно выбрать ноду руками.
+  - name: Прокси
+    type: url-test
+    include-all: true
+    url: "http://connectivitycheck.gstatic.com/generate_204"
+    interval: 300
+    tolerance: 50
+
+rules:
+  - "DOMAIN-SUFFIX,yandex.net,DIRECT"
+  - "DOMAIN-SUFFIX,yandex.ru,DIRECT"
+  - "MATCH,Прокси"

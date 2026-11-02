@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 .env
 devin-data/
-mihomo/
+/mihomo/
 tasks/
 .devin/config.local.json
 webui/node_modules/
