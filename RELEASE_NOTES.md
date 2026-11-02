@@ -1,3 +1,11 @@
+## 1.4.13
+- Выделенный прокси-стек на хосте: `/docker/mihomo` —
+  metacubex/mihomo:v1.19.33 + веб-панель zashboard (config/ui).
+  Прокси HTTP+SOCKS5 наружу на :7890 с обязательной авторизацией,
+  REST API + панель на :9090 → Traefik `mihomo.ai.kilop.ru` (роутер
+  добавлен в infra/traefik/dynamic.yml). Копия стека без секретов —
+  infra/mihomo/ (compose, config.example.yaml, README с инструкцией).
+
 ## 1.4.12
 - Свой цвет проекта: поле «Цвет проекта» в настройках (пикер +
   произвольный CSS-цвет #rrggbb/rgb()/hsl()), хранится в

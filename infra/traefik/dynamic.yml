@@ -6,6 +6,12 @@ http:
       service: devin
       tls:
         certResolver: le
+    mihomo:
+      rule: "Host(`mihomo.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: mihomo
+      tls:
+        certResolver: le
     turcia:
       rule: "Host(`turcia.ai.kilop.ru`)"
       entryPoints: [websecure]
@@ -60,6 +66,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:8089"
+    mihomo:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:9090"
     turcia:
       loadBalancer:
         servers:
