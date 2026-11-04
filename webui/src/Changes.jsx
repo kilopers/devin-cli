@@ -32,7 +32,7 @@ import hljs from "highlight.js/lib/common";
 import { apiJson, post } from "./api.js";
 
 const STATUS_COLOR = { M: "#e6a23c", A: "#2e7d32", D: "#c62828",
-                       R: "#1565c0", "??": "#2e7d32" };
+                       R: "#5e6ad2", "??": "#2e7d32" };
 
 // Last CI run icon (GitHub Actions / GitLab pipeline via GET /api/build).
 const BUILD_UI = {
@@ -40,7 +40,7 @@ const BUILD_UI = {
   failed:   { Icon: ErrorIcon,       color: "#c62828", label: "упала" },
   running:  { Icon: null,            color: "#e6a23c", label: "идёт" },
   canceled: { Icon: CancelIcon,      color: "#9aa0a6", label: "отменена" },
-  manual:   { Icon: PlayCircleIcon,  color: "#1565c0",
+  manual:   { Icon: PlayCircleIcon,  color: "#5e6ad2",
               label: "ждёт ручного запуска" },
   unknown:  { Icon: WarningAmberIcon, color: "#9aa0a6",
               label: "статус неизвестен" },
@@ -274,7 +274,7 @@ function BuildsPanel({ build, open, onToggle, project }) {
                                   onClick={e => jobAction(e, rid, jb,
                                                           "play")}>
                                   <PlayCircleIcon sx={{ fontSize: 15,
-                                    color: "#1565c0" }} />
+                                    color: "#5e6ad2" }} />
                                 </IconButton>
                               </Tooltip>
                             ) : (

@@ -68,14 +68,53 @@ class ErrBoundary extends React.Component {
   }
 }
 
+// Дизайн-система панели: светлая нейтральная тема в духе Linear/Vercel —
+// Inter, один акцент (#5e6ad2), скругления 10–14, тонкие границы,
+// минимум теней. Акцент шапки/кнопок всё ещё динамический — цвет
+// проекта/пространства (см. accent в App).
+const FONT = '"Inter", "Segoe UI", system-ui, -apple-system, ' +
+             '"Helvetica Neue", Arial, sans-serif';
 const theme = createTheme({
-  palette: { primary: { main: "#3f51b5" } },
+  palette: {
+    primary: { main: "#5e6ad2" },
+    background: { default: "#f6f7fa", paper: "#ffffff" },
+    text: { primary: "#1c2128", secondary: "#5d6673" },
+    divider: "rgba(28,33,40,.09)",
+  },
+  typography: {
+    fontFamily: FONT,
+    button: { textTransform: "none" },
+    h6: { fontWeight: 600 },
+  },
   // единый «карточный» стиль: скругления и мягкие контуры везде
   shape: { borderRadius: 10 },
   components: {
-    MuiCard: { styleOverrides: { root: { borderRadius: 14 } } },
-    MuiDialog: { styleOverrides: {
-      paper: { borderRadius: 14 } } },
+    MuiCard: { styleOverrides: { root: ({ theme: t }) => ({
+      borderRadius: 14, boxShadow: "none",
+      border: `1px solid ${t.palette.divider}` }) } },
+    MuiDialog: { styleOverrides: { paper: ({ theme: t }) => ({
+      borderRadius: 14,
+      border: `1px solid ${t.palette.divider}`,
+      boxShadow: "0 16px 48px rgba(16,24,40,.16)" }) } },
+    MuiPaper: { styleOverrides: {
+      root: { backgroundImage: "none" } } },
+    MuiAppBar: { defaultProps: { elevation: 0 } },
+    MuiButton: {
+      defaultProps: { disableElevation: true },
+      styleOverrides: { root: {
+        textTransform: "none", borderRadius: 9, fontWeight: 500 } } },
+    MuiChip: { styleOverrides: { root: {
+      borderRadius: 8, fontWeight: 500 } } },
+    MuiOutlinedInput: { styleOverrides: { root: {
+      borderRadius: 10 } } },
+    MuiPopover: { styleOverrides: { paper: ({ theme: t }) => ({
+      borderRadius: 12, border: `1px solid ${t.palette.divider}`,
+      boxShadow: "0 8px 28px rgba(16,24,40,.12)" }) } },
+    MuiTooltip: { styleOverrides: { tooltip: {
+      borderRadius: 7, fontSize: 11.5, bgcolor: "#1c2128" } } },
+    MuiAlert: { styleOverrides: { root: { borderRadius: 10 } } },
+    MuiSnackbar: { styleOverrides: { root: {
+      "& .MuiSnackbarContent-root": { borderRadius: 10 } } } },
   },
 });
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -83,7 +122,7 @@ const STATUS_RU = { queued: "в очереди", running: "выполняетс�
 const SRC_RU = { telegram: "telegram", web: "web", file: "файл" };
 
 const mdStyles = {
-  body: { background: "#f5f7fb" },
+  body: { background: "#f6f7fa" },
   // два подряд разделителя (секция вернула null) — показываем один
   ".MuiDivider-root + .MuiDivider-root": { display: "none" },
   ".md": { fontSize: 14, lineHeight: 1.6, wordBreak: "break-word",
@@ -103,7 +142,7 @@ const mdStyles = {
     "& blockquote": { borderLeft: "3px solid #c5cae9", m: ".5em 0",
       p: "2px 12px", color: "#5f6368" },
     "& ul,& ol": { pl: "24px", m: ".4em 0" },
-    "& a": { color: "#3f51b5" },
+    "& a": { color: "#5e6ad2" },
     "& table": { borderCollapse: "collapse", m: ".6em 0" },
     "& th,& td": { border: "1px solid #dadce0", p: "4px 10px", fontSize: 13 },
     "& th": { bgcolor: "#f1f3f4" },
@@ -196,16 +235,16 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                    "& .MuiChip-label": { px: "8px" } };
   return (
     <Card elevation={0} sx={{
-      mb: 2, borderRadius: "14px",
+      mb: 1.6, borderRadius: "14px",
       border: "1px solid", borderColor: "divider",
       transition: "box-shadow .2s ease, border-color .2s ease",
-      "&:hover": { borderColor: "#c7d2e0",
-                   boxShadow: "0 6px 24px rgba(16,24,40,.08)" } }}>
-      <CardContent sx={{ p: "20px 24px 12px",
-                         "&:last-child": { pb: "12px" } }}>
+      "&:hover": { borderColor: "#c9cfda",
+                   boxShadow: "0 4px 18px rgba(16,24,40,.07)" } }}>
+      <CardContent sx={{ p: "14px 20px 10px",
+                         "&:last-child": { pb: "10px" } }}>
         <Box sx={{ display: "flex", justifyContent: "space-between",
                    alignItems: "flex-start", gap: 1.5,
-                   flexWrap: "wrap", mb: 1.5 }}>
+                   flexWrap: "wrap", mb: 1.2 }}>
           <Box sx={{ display: "flex", alignItems: "center",
                      gap: 0.8, flexWrap: "wrap", minWidth: 0 }}>
             <Typography variant="caption" color="text.secondary"
@@ -229,7 +268,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             {t.tag &&
               <Chip size="small" color="primary"
                     sx={{ ...metaSx,
-                          bgcolor: "#e3f2fd", color: "#1565c0" }}
+                          bgcolor: "#eceefc", color: "#4c57b8" }}
                     label={t.tag} />}
           </Box>
           <Box sx={{ display: "flex", alignItems: "center",
@@ -273,7 +312,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
         {maybeCut && (
           <Typography variant="caption" onClick={loadFull}
             sx={{ display: "inline-block", mt: 0.5,
-                  color: "#1565c0", cursor: "pointer", fontWeight: 500,
+                  color: "#5e6ad2", cursor: "pointer", fontWeight: 500,
                   "&:hover": { textDecoration: "underline" } }}>
             … показать весь текст задачи
           </Typography>)}
@@ -297,8 +336,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                    py: 0.3, borderRadius: "8px",
                    color: "text.secondary", fontSize: 11.5,
                    transition: "color .15s, background .15s",
-                   "&:hover": { color: "#1565c0",
-                                bgcolor: "rgba(21,101,192,.06)" } }}>
+                   "&:hover": { color: "#5e6ad2",
+                                bgcolor: "rgba(94,106,210,.07)" } }}>
           {open ? "свернуть" : "подробнее"}
           <ExpandMoreIcon sx={{
             fontSize: 16, transition: "transform .25s",
@@ -325,8 +364,12 @@ function ProjectSelect({ projects, current, onChange, onAdd,
             onChange={e => e.target.value === "__add__"
                       ? onAdd?.() : onChange(e.target.value)}
             sx={{ color: "#fff", height: 32, fontSize: 13, maxWidth: 200,
-                  bgcolor: "rgba(255,255,255,.15)",
-                  "& .MuiSelect-icon": { color: "rgba(255,255,255,.8)" } }}>
+                  bgcolor: "rgba(255,255,255,.15)", borderRadius: "10px",
+                  "& .MuiSelect-icon": { color: "rgba(255,255,255,.8)" },
+                  "& .MuiOutlinedInput-notchedOutline":
+                    { borderColor: "rgba(255,255,255,.28)" },
+                  "&:hover .MuiOutlinedInput-notchedOutline":
+                    { borderColor: "rgba(255,255,255,.45)" } }}>
       {projects.map(p => {
         const wid = (wsmap || {})[p];
         const hdr = wid !== lastWid
@@ -356,7 +399,7 @@ function ProjectSelect({ projects, current, onChange, onAdd,
           </IconButton>
         </MenuItem>];
       })}
-      <MenuItem value="__add__" sx={{ color: "#1565c0", fontSize: 13 }}>
+      <MenuItem value="__add__" sx={{ color: "#5e6ad2", fontSize: 13 }}>
         ➕ Добавить проект…
       </MenuItem>
     </Select>
@@ -375,7 +418,10 @@ function ModelSelect({ models, current, onChange, sx }) {
   return (
     <Select size="small" value={current || ""} onChange={e => onChange(e.target.value)}
             displayEmpty sx={{ color: "#fff", maxWidth: 320, height: 32,
-              bgcolor: "rgba(255,255,255,.15)", fontSize: 13, ...sx }}>
+              bgcolor: "rgba(255,255,255,.15)", fontSize: 13,
+              borderRadius: "10px",
+              "& .MuiOutlinedInput-notchedOutline":
+                { borderColor: "rgba(255,255,255,.28)" }, ...sx }}>
       {(models.length ? models : [{ id: current, description: "" }]).map(m =>
         <MenuItem key={m.id} value={m.id}>
           {m.id + (m.description ? " — " + m.description.slice(0, 90) : "")}
@@ -388,7 +434,10 @@ function ModeSelect({ mode, onChange, sx }) {
   return (
     <Select size="small" value={mode} onChange={e => onChange(e.target.value)}
             sx={{ color: "#fff", height: 32,
-              bgcolor: "rgba(255,255,255,.15)", fontSize: 13, ...sx }}>
+              bgcolor: "rgba(255,255,255,.15)", fontSize: 13,
+              borderRadius: "10px",
+              "& .MuiOutlinedInput-notchedOutline":
+                { borderColor: "rgba(255,255,255,.28)" }, ...sx }}>
       <MenuItem value="code">🛠 код</MenuItem>
       <MenuItem value="ask">💬 вопрос</MenuItem>
     </Select>
@@ -574,7 +623,7 @@ export default function App() {
     .then(j => setWsInfo({ ws: j.ws || [], active: j.active || 0 }))
     .catch(() => {});
   const wsColor = (wsInfo.ws.find(w => w.id === wsInfo.active) || {})
-    .color || "#1565c0";
+    .color || "#5e6ad2";
   // акцент приложения: превью из диалога → цвет проекта → цвет пространства
   const accent = (colorPreview ?? projColor) || wsColor;
 
@@ -1111,7 +1160,7 @@ export default function App() {
             width: 290, flexShrink: 0, m: "0 12px 0 4px",
             display: { xs: "none", md: "block" },
             alignSelf: "flex-start", position: "sticky", top: 80,
-            height: "calc(100vh - 80px)", borderRadius: "0 0 14px 14px",
+            height: "calc(100vh - 80px)", borderRadius: "14px",
             border: "1px solid", borderColor: "divider",
             overflowY: "auto", overflowX: "hidden",
             // pb как у ленты: нижние пункты докручиваются выше

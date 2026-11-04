@@ -9,7 +9,33 @@ import {
 import PersonIcon from "@mui/icons-material/Person";
 import LockIcon from "@mui/icons-material/Lock";
 
-const theme = createTheme({ palette: { primary: { main: "#3f51b5" } } });
+// та же дизайн-система, что и в основной панели (webui.jsx): Inter,
+// акцент #5e6ad2, скругления, кнопки без теней
+const theme = createTheme({
+  palette: {
+    primary: { main: "#5e6ad2" },
+    background: { default: "#f6f7fa", paper: "#ffffff" },
+    text: { primary: "#1c2128", secondary: "#5d6673" },
+    divider: "rgba(28,33,40,.09)",
+  },
+  typography: {
+    fontFamily: '"Inter", "Segoe UI", system-ui, -apple-system, ' +
+                '"Helvetica Neue", Arial, sans-serif',
+    button: { textTransform: "none" },
+  },
+  shape: { borderRadius: 10 },
+  components: {
+    MuiCard: { styleOverrides: { root: ({ theme: t }) => ({
+      borderRadius: 16, boxShadow: "none",
+      border: `1px solid ${t.palette.divider}` }) } },
+    MuiButton: { defaultProps: { disableElevation: true },
+      styleOverrides: { root: {
+        textTransform: "none", borderRadius: 9, fontWeight: 500 } } },
+    MuiOutlinedInput: { styleOverrides: { root: {
+      borderRadius: 10 } } },
+    MuiAlert: { styleOverrides: { root: { borderRadius: 10 } } },
+  },
+});
 const adorn = icon => (
   <InputAdornment position="start">{icon}</InputAdornment>);
 
@@ -21,7 +47,7 @@ function Login() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center",
-                 justifyContent: "center", bgcolor: "#f5f6fa", p: 2 }}>
+                 justifyContent: "center", bgcolor: "#f6f7fa", p: 2 }}>
         <Card component="form" method="post" action="/login"
               sx={{ width: 380, maxWidth: "100%" }}>
           <CardContent

@@ -270,7 +270,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
               e.preventDefault(); send();
             }
           }}
-          sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+          sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px" } }} />
         {shownStat && (
           <Typography variant="caption" color="text.secondary"
                       sx={{ display: "block", pt: 0.2, fontSize: 11 }}>
@@ -354,7 +354,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                 e.preventDefault(); send();
               }
             }}
-            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px" } }} />
           </Box>
         </Grid>
         <Grid size={{ xs: 12, sm: "auto" }}>

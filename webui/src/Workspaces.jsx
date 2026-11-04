@@ -12,7 +12,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import AddIcon from "@mui/icons-material/Add";
 import { apiJson as get, post } from "./api.js";
 
-const COLORS = ["#1565c0", "#2e7d32", "#6a1b9a", "#ef6c00", "#c62828",
+const COLORS = ["#5e6ad2", "#2e7d32", "#6a1b9a", "#ef6c00", "#c62828",
                 "#00838f", "#455a64", "#ad1457"];
 
 

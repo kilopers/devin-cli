@@ -238,7 +238,7 @@ export default function Discuss({ open, onClose, project, models,
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault(); send();
               } }}
-            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }} />
+            sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px" } }} />
           <IconButton size="small" onClick={micClick}
                       color={recording ? "error" : "default"}
                       title="надиктовать"

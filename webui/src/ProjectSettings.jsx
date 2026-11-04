@@ -104,7 +104,7 @@ export default function ProjectSettings({ project, onClose, toast,
                      alignItems: "flex-start" }}>
             <input type="color"
                    value={/^#[0-9a-fA-F]{6}$/.test(color)
-                          ? color : "#1565c0"}
+                          ? color : "#5e6ad2"}
                    onChange={e => { setColor(e.target.value);
                                     onPreview?.(e.target.value); }}
                    title="выбрать цвет"
@@ -117,7 +117,7 @@ export default function ProjectSettings({ project, onClose, toast,
                        onChange={e => { setColor(e.target.value);
                                         onPreview?.(e.target.value); }}
                        helperText="любой CSS-цвет — #rrggbb, rgb(), hsl(); шапка красится сразу (превью); пусто — цвет пространства"
-                       placeholder="#1565c0" />
+                       placeholder="#5e6ad2" />
           </Box>
           <TextField label="MCP серверы проекта" size="small" fullWidth
                      multiline minRows={2} maxRows={8}
