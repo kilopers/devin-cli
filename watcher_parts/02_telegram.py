@@ -847,8 +847,21 @@ def usage_totals() -> tuple:
     return day, nday, week, nweek
 
 
-def send_task_stats(chat_id, since: float) -> None:
-    s = session_stats(since) or {}
+def _fmt_dur(sec) -> str:
+    """Длительность в секундах → «1ч 5м» / «3м 12с» / «40с»."""
+    if sec is None:
+        return "?"
+    sec = int(sec)
+    if sec >= 3600:
+        return f"{sec // 3600}ч {sec % 3600 // 60}м"
+    if sec >= 60:
+        return f"{sec // 60}м {sec % 60}с"
+    return f"{sec}с"
+
+
+def send_task_stats(chat_id, st: dict) -> None:
+    """Метрики завершённой задачи — то же, что кнопка «инфо» в вебе."""
+    s = st or {}
     day, nday, week, nweek = usage_totals()
     lines = [
         f"model: {s.get('model') or current_model()}",
@@ -856,6 +869,7 @@ def send_task_stats(chat_id, since: float) -> None:
         f"(cached={s.get('cached_tokens', '?')}), "
         f"completion={s.get('completion_tokens', '?')}",
         f"steps: {s.get('steps', '?')}, session: {s.get('session') or '-'}",
+        f"время: {_fmt_dur(s.get('duration'))}",
         f"за 24ч: {day} токенов ({nday} задач), "
         f"за 7д: {week} токенов ({nweek} задач)",
     ]

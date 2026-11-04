@@ -37,6 +37,7 @@ import AttachFileIcon from "@mui/icons-material/AttachFile";
 import CloseIcon from "@mui/icons-material/Close";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CheckIcon from "@mui/icons-material/Check";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
@@ -120,6 +121,11 @@ const theme = createTheme({
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const STATUS_RU = { queued: "в очереди", running: "выполняется", done: "готово" };
 const SRC_RU = { telegram: "telegram", web: "web", file: "файл" };
+const fmtNum = n => (n ?? 0).toLocaleString("ru-RU");
+const fmtDur = s => s == null ? null
+  : s >= 3600 ? `${Math.floor(s / 3600)}ч ${Math.round(s % 3600 / 60)}м`
+  : s >= 60 ? `${Math.floor(s / 60)}м ${s % 60}с`
+  : `${s}с`;
 
 const mdStyles = {
   body: { background: "#f6f7fa" },
@@ -204,6 +210,20 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
       .catch(() => {});
   const promptShown = full !== null ? full : t.prompt;
   const maybeCut = full === null && (t.prompt || "").length >= 2000;
+  // «инфо» — статистика завершённой задачи (tasks.stats + длительность)
+  const [info, setInfo] = useState(false);
+  const st = t.stats || {};
+  const infoRows = [
+    ["Статус", t.task_status || null],
+    ["Время выполнения", fmtDur(st.duration)],
+    ["Модель", st.model || t.model || null],
+    ["Токены", st.prompt_tokens != null || st.completion_tokens != null
+      ? `prompt ${fmtNum(st.prompt_tokens)}` +
+        ` (кэш ${fmtNum(st.cached_tokens)})` +
+        ` + completion ${fmtNum(st.completion_tokens)}` : null],
+    ["Шагов сессии", st.steps != null ? fmtNum(st.steps) : null],
+    ["Сессия", st.session || null],
+  ].filter(([, v]) => v != null && v !== "");
   // «копировать» у статус-чипа — весь текст задачи в буфер обмена;
   // обрезанное превью догружаем перед копированием
   const copyPrompt = async () => {
@@ -291,6 +311,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 ✖ удалить
               </Button>
             )}
+            {t.status === "done" && (
+              <Tooltip title="статистика задачи">
+                <IconButton size="small" onClick={() => setInfo(true)}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  <InfoOutlinedIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title="скопировать текст задачи">
               <IconButton size="small" onClick={copyPrompt}
                 sx={{ p: "3px", color: copied ? "#2e7d32"
@@ -343,6 +371,48 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             fontSize: 16, transition: "transform .25s",
             transform: open ? "rotate(180deg)" : "none" }} />
         </Box>
+        <Dialog open={info} onClose={() => setInfo(false)}
+                maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
+            Статистика задачи
+            <IconButton size="small" onClick={() => setInfo(false)}
+              sx={{ position: "absolute", right: 12, top: 10,
+                    color: "text.secondary" }}>
+              <CloseIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent sx={{ pb: 2.5 }}>
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ fontFamily: MONO, fontSize: 11.5,
+                              wordBreak: "break-all" }}>
+              {t.name}
+            </Typography>
+            <Box sx={{ mt: 1 }}>
+              {infoRows.map(([k, v]) => (
+                <Box key={k} sx={{ display: "flex",
+                                  justifyContent: "space-between",
+                                  gap: 2, py: 0.7,
+                                  borderBottom: "1px solid",
+                                  borderColor: "divider" }}>
+                  <Typography variant="body2" color="text.secondary"
+                              sx={{ fontSize: 13, flexShrink: 0 }}>
+                    {k}</Typography>
+                  <Typography variant="body2"
+                              sx={{ fontSize: 12.5, fontFamily: MONO,
+                                    textAlign: "right",
+                                    wordBreak: "break-all" }}>
+                    {v}</Typography>
+                </Box>
+              ))}
+            </Box>
+            {st.prompt_tokens == null && st.completion_tokens == null && (
+              <Typography variant="caption" color="text.secondary"
+                          sx={{ display: "block", mt: 1.2 }}>
+                детальные метрики сессии не собраны (задача до
+                появления статистики или export-файл недоступен)
+              </Typography>)}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

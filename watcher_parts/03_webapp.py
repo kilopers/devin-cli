@@ -116,6 +116,19 @@ def api_tasks(project: str | None = None, limit: int = 5,
             o = json.loads(kv_get(f"opts:{stem}") or "{}")
         except ValueError:
             o = {}
+        # статистика завершённой задачи (кнопка «инфо» на карточке):
+        # сохранённый json + длительность из started/finished — она есть
+        # и у старых задач без снапшота
+        try:
+            st_json = json.loads(r["stats"]) if r.get("stats") else None
+        except (TypeError, ValueError):
+            st_json = None
+        if not isinstance(st_json, dict):
+            st_json = None
+        dur = int((r.get("finished") or 0) - (r.get("started") or 0)) \
+            if r.get("finished") and r.get("started") else 0
+        if dur > 0:
+            st_json = {**(st_json or {}), "duration": dur}
         items.append({
             "name": _task_name(stem),
             "stem": stem,
@@ -130,6 +143,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "task_status": r["task_status"] or "",
             "commit_offered": bool(r["commit_offered"]),
             "tag": kv_get(f"tag:{stem}"),
+            "stats": st_json,
             "created": int(r["created"]),
             "prompt": (r["prompt"] or "")[:2000],
             "output": out,

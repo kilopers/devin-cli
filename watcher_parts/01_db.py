@@ -145,7 +145,8 @@ def init_db() -> None:
                      ("reply_mode", "reply_mode VARCHAR(8) NULL"),
                      ("user", "user VARCHAR(64) NULL"),
                      ("bot", "bot VARCHAR(80) NULL"),
-                     ("instr", "instr MEDIUMTEXT NULL")):
+                     ("instr", "instr MEDIUMTEXT NULL"),
+                     ("stats", "stats MEDIUMTEXT NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -527,6 +528,36 @@ def _digest_new_steps(path: Path, last_id: int) -> tuple:
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
 
 
+def _collect_task_stats(export_path: Path, started: float,
+                        finished: float) -> dict:
+    """Метрики завершённой задачи для кнопки «инфо» на карточке и
+    телеграм-сообщения: длительность + final_metrics сессии. Источник —
+    export-файл ЭТОЙ задачи (точнее, чем поиск транскрипта по mtime),
+    фолбэк — session_stats(started)."""
+    st = {}
+    try:
+        for d in _load_transcript_docs(export_path):
+            fm = d.get("final_metrics") if isinstance(d, dict) else None
+            if fm:
+                st = {"session": d.get("session_id"),
+                      "model": (d.get("agent") or {}).get("model_name"),
+                      "prompt_tokens": fm.get("total_prompt_tokens"),
+                      "completion_tokens":
+                          fm.get("total_completion_tokens"),
+                      "cached_tokens": fm.get("total_cached_tokens"),
+                      "steps": fm.get("total_steps")}
+    except Exception:
+        pass
+    if not st and started:
+        try:
+            st = session_stats(started) or {}
+        except Exception:
+            st = {}
+    if started and finished:
+        st["duration"] = max(0, int(finished - started))
+    return st
+
+
 def progress_loop(chat_id, export_path: Path, out_path: Path,
                   proc: subprocess.Popen, since: float) -> None:
     """While the task runs, send live progress to telegram.
@@ -796,8 +827,15 @@ def run_task(task: dict) -> None:
     finally:
         mcp_restore()
 
+    finished_ts = time.time()
+    tstats = _collect_task_stats(export_path,
+                                 task.get("started") or started_ts,
+                                 finished_ts)
     db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
-            " finished=%s WHERE stem=%s", (body, status, time.time(), stem))
+            " finished=%s, stats=%s WHERE stem=%s",
+            (body, status, finished_ts,
+             json.dumps(tstats, ensure_ascii=False) if tstats else None,
+             stem))
     with _run_lock:
         RUNNING_PROJS.discard(tproj or "")
         RUNNING_STEMS.discard(stem)
@@ -834,7 +872,7 @@ def run_task(task: dict) -> None:
     if TG_TOKEN:
         notify_chat(stem, f"{name}\n{status}\n\n{body[-3500:]}")
         if chat_id:
-            send_task_stats(chat_id, started_ts)
+            send_task_stats(chat_id, tstats)
 
 
 def _tail_json(text: str):
