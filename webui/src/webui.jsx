@@ -35,6 +35,8 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import CloseIcon from "@mui/icons-material/Close";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import CheckIcon from "@mui/icons-material/Check";
 import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
@@ -150,17 +152,44 @@ const branchSuggest = prompt => {
   return `task/${slug}-${mmdd}`;
 };
 
-const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
+const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
+                                               toast }) {
   // свёрнута: заголовок + ~3 строки задачи; «подробнее» — slide-down
   const [open, setOpen] = useState(false);
   // prompt с бэкенда — превью (2000): полный текст догружаем по кнопке
   const [full, setFull] = useState(null);
+  const [copied, setCopied] = useState(false);
   const loadFull = () =>
     apiJson("/api/task/" + t.stem + "/prompt")
       .then(d => { if (d.ok) setFull(d.prompt); })
       .catch(() => {});
   const promptShown = full !== null ? full : t.prompt;
   const maybeCut = full === null && (t.prompt || "").length >= 2000;
+  // «копировать» у статус-чипа — весь текст задачи в буфер обмена;
+  // обрезанное превью догружаем перед копированием
+  const copyPrompt = async () => {
+    let text = promptShown || "";
+    if (full === null && maybeCut) {
+      try {
+        const d = await apiJson("/api/task/" + t.stem + "/prompt");
+        if (d.ok) { setFull(d.prompt); text = d.prompt; }
+      } catch { /* сеть — копируем что есть */ }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch { // http/старый браузер — fallback через textarea
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(true);
+    toast?.("Текст задачи скопирован");
+    setTimeout(() => setCopied(false), 1500);
+  };
   // мелкие мета-чипы шапки: один стиль, воздух вокруг текста
   const metaSx = { height: 22, fontSize: 11, fontWeight: 500,
                    borderRadius: "7px",
@@ -223,6 +252,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel }) {
                 ✖ удалить
               </Button>
             )}
+            <Tooltip title="скопировать текст задачи">
+              <IconButton size="small" onClick={copyPrompt}
+                sx={{ p: "3px", color: copied ? "#2e7d32"
+                                            : "text.secondary" }}>
+                {copied ? <CheckIcon sx={{ fontSize: 15 }} />
+                        : <ContentCopyIcon sx={{ fontSize: 15 }} />}
+              </IconButton>
+            </Tooltip>
             <StatusChip t={t} />
           </Box>
         </Box>
@@ -1015,7 +1052,7 @@ export default function App() {
             {items.length
               ? items.map(t => <TaskCard key={t.stem} t={t}
                     onStop={askStop}
-                    onCancel={askCancel} />)
+                    onCancel={askCancel} toast={setToast} />)
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
             {/* части собираемой задачи — после последней карточки,
