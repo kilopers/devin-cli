@@ -198,10 +198,15 @@ function Elapsed({ started, finished }) {
         ss = s % 60;
   const pad = n => String(n).padStart(2, "0");
   return (
-    <Typography component="span" variant="caption"
-                color="text.secondary" sx={{ fontSize: 12 }}>
-      &nbsp;({hh ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`})
-    </Typography>);
+    <Tooltip title="время выполнения — от старта Devin до готовности, очередь не считается">
+      <Chip size="small" variant="outlined"
+            color={finished ? "default" : "info"}
+            sx={{ height: 18, fontSize: 10, fontWeight: 600, ml: 0.4,
+                  borderRadius: "7px", fontFamily: MONO,
+                  "& .MuiChip-label": { px: "5px" } }}
+            label={hh ? `${hh}:${pad(mm)}:${pad(ss)}`
+                      : `${mm}:${pad(ss)}`} />
+    </Tooltip>);
 }
 
 function StatusChip({ t }) {
