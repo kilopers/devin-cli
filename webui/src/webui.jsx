@@ -2840,8 +2840,14 @@ export default function App() {
 
         {/* десктоп: лента+сайдбар на всю ширину экрана — боковые
             отступы дают паддинги колонок (~12–16px от краёв) */}
-        <Box sx={{ flex: 1, display: "flex", width: "100%",
-                   minHeight: 0 }}>
+        {/* flexGrow+flexBasis:0 вместо flex:1: «flex:1» даёт
+            flex-basis:0%, а процентный basis при indefinite-высоте
+            родителя (min-height:100vh, а не height) по спеке
+            резолвится в auto = высоте контента — после подгрузки
+            карточек ряд растягивал страницу. 0 (px) — абсолютный,
+            резолвить нечего */}
+        <Box sx={{ flexGrow: 1, flexBasis: 0, display: "flex",
+                   width: "100%", minHeight: 0 }}>
           {view === "models"
             ? <ModelsPage accent={accent} toast={setToast}
                           onClose={() => setView("feed")} />
