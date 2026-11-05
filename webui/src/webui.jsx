@@ -40,6 +40,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArticleIcon from "@mui/icons-material/Article";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import ReplayIcon from "@mui/icons-material/Replay";
 import ForumIcon from "@mui/icons-material/Forum";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -278,6 +279,33 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     } catch (e) { toast?.("Сеть: " + e); }
     setWorkBusy(false);
   };
+  // «повторить» на упавшей карточке: та же задача новой записью в
+  // очередь — промпт/проект/тема/режим/модель/автокоммит сохраняются
+  const [retryBusy, setRetryBusy] = useState(false);
+  const retry = async () => {
+    if (retryBusy) return;
+    let text = promptShown || "";
+    if (full === null && maybeCut) {
+      try {
+        const d = await apiJson("/api/task/" + t.stem + "/prompt");
+        if (d.ok) { setFull(d.prompt); text = d.prompt; }
+      } catch { /* сеть — отправим превью */ }
+    }
+    if (!text.trim()) return;
+    setRetryBusy(true);
+    try {
+      const body = { text,
+        ...(t.project ? { project: t.project } : {}),
+        ...(t.tid ? { topic: String(t.tid) } : {}),
+        ...(t.mode === "ask" ? { mode: "ask" } : {}),
+        ...(t.model ? { model: t.model } : {}),
+        ...(t.ac === "0" || t.ac === "1" ? { auto_commit: t.ac } : {}) };
+      const d = await post("/api/tasks", body);
+      toast?.(d.ok ? "🔁 Задача поставлена в очередь"
+                  : "Ошибка: " + (d.error || "?"));
+    } catch (e) { toast?.("Сеть: " + e); }
+    setRetryBusy(false);
+  };
   // раскрывать есть что, только если текст задачи обрезан тремя
   // строками — вывод живёт в модалке 📄, «подробнее» его не дублирует
   const txtRef = useRef(null);
@@ -458,6 +486,15 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 <IconButton size="small" onClick={() => setInfo(true)}
                   sx={{ p: "3px", color: "text.secondary" }}>
                   <InfoOutlinedIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {t.status === "done" && !succeeded && (
+              <Tooltip title="повторить задачу — в очередь с теми же параметрами">
+                <IconButton size="small" onClick={retry}
+                  disabled={retryBusy}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  <ReplayIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </Tooltip>
             )}
