@@ -750,6 +750,27 @@ export default function App() {
   });
   // one SSE connection — shared by the desktop dot & the mobile bar
   const conn = useConnStatus(status.version);
+  // мобильная версия: двойной тап по открытой модалке закрывает её —
+  // MUI-диалоги реагируют на Escape, шлём его на корни всех модалок
+  const mob = useMediaQuery(t2 => t2.breakpoints.down("md"));
+  useEffect(() => {
+    if (!mob) return;
+    let lastT = 0, lastX = 0, lastY = 0;
+    const h = e => {
+      const t0 = e.changedTouches[0];
+      if (!t0) return;
+      const now = Date.now(), x = t0.clientX, y = t0.clientY;
+      const dbl = now - lastT < 350 &&
+                  Math.hypot(x - lastX, y - lastY) < 32;
+      lastT = now; lastX = x; lastY = y;
+      if (dbl)
+        document.querySelectorAll(".MuiModal-root").forEach(m =>
+          m.dispatchEvent(new KeyboardEvent("keydown",
+            { key: "Escape", bubbles: true })));
+    };
+    document.addEventListener("touchend", h);
+    return () => document.removeEventListener("touchend", h);
+  }, [mob]);
   const modelFocus = useRef(false), modeFocus = useRef(false);
   const firstLoad = useRef(true);
 
