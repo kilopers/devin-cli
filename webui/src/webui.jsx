@@ -43,6 +43,8 @@ import ReplayIcon from "@mui/icons-material/Replay";
 import RedoIcon from "@mui/icons-material/Redo";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -222,7 +224,7 @@ const saveTopicSel = (p, v) => {
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
-                                               sel, onNote, onCont }) {
+                                               sel, onNote, onCont, cols }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -254,18 +256,25 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // же карточка уходит в очередь code-задачей — бэк приписывает
   // «реализуй предложение» к промпту, прячет ответ в instr и
   // резюмит ту же сессию темы (новых карточек не создаётся).
-  // Кнопку подсвечиваем, когда в ответе Devin есть предложение
-  // реализации («если хочешь — сделаем» и т.п.)
+  // Кнопка открывает селект code-тем: выбранная колонка забирает
+  // карточку и запускает её (move с повышением уровня).
+  // Подсвечиваем, когда в ответе Devin есть предложение реализации
+  // («если хочешь — сделаем» и т.п.)
   const [workBusy, setWorkBusy] = useState(false);
+  const [workMenu, setWorkMenu] = useState(null);
   const offersWork = t.mode === "ask" && succeeded &&
     /если хочешь|могу (сделать|реализовать|добавить|исправить|помочь)|скажи[^\n.]{0,30}сделаю|давай сделаем|готов (сделать|реализовать)|предлагаю|shall i|could implement|can implement/i
       .test(t.output || "");
-  const sendToWork = async () => {
+  const codeCols = (cols || []).filter(c => c.mode === "code");
+  const sendToWork = async (key, name) => {
     if (workBusy) return;
     setWorkBusy(true);
     try {
-      const d = await post("/api/task/towork", { stem: t.stem });
-      if (d.ok) { toast?.("Отправлено в работу — та же карточка");
+      const d = await post("/api/task/move",
+                           { stem: t.stem, topic: key });
+      if (d.ok) { toast?.(d.started
+                    ? "Отправлена в работу — «" + name + "»"
+                    : "Перемещена — «" + name + "»");
                   setOutOpen(false); }
       else toast?.("Ошибка: " + (d.error || "?"));
     } catch (e) { toast?.("Сеть: " + e); }
@@ -418,29 +427,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   };
   // карточка-заметка («сказать», status=note): не уходит Devin, клик
   // по карточке «нажимает» её — композер переходит в режим заметки и
-  // дописывает текст в неё; «▶ начать выполнение» ставит её в
-  // очередь с настройками своей колонки
+  // дописывает текст в неё. В работу заметка уходит только переносом
+  // в колонку уровня «спросить»/«код» (dnd или «переместить»)
   const isNote = t.status === "note";
-  const [runBusy, setRunBusy] = useState(false);
-  // лоадер держим до смены статуса (поллинг привезёт 'queued') —
-  // иначе кнопка успевает «моргнуть» обратно в «начать выполнение»
-  useEffect(() => {
-    if (t.status !== "note") setRunBusy(false);
-  }, [t.status]);
-  const runNote = async () => {
-    if (runBusy) return;
-    setRunBusy(true);
-    try {
-      const d = await post("/api/task/run", { stem: t.stem });
-      if (d.ok) {
-        toast?.("▶ Заметка отправлена в работу");
-        if (sel) onNote?.(t);   // ушла в очередь — отжать выбор
-        return;                 // busy сбросится эффектом выше
-      }
-      toast?.("Ошибка: " + (d.error || "?"));
-    } catch (e) { toast?.("Сеть: " + e); }
-    setRunBusy(false);
-  };
   // «✨ оформить» — devin переоформляет текст заметки в markdown:
   // результат падает в output (поллинг привезёт) → кнопка «вариант»
   // открывает превью с «применить». Спиннер держим до смены output
@@ -490,6 +479,28 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     } catch (e) { toast?.("Сеть: " + e); }
     setEditBusy(false);
   };
+  // «переместить»: иконка открывает диалог выбора колонки (на
+  // мобильной dnd нет — это основной путь; на десктопе карту тащат
+  // за ручку-гриппер). Уровень целевой колонки выше уровня карты →
+  // бэк сразу запускает её (заметка→спросить/код, вопрос→код)
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const cardLvl = isNote ? 0 : (t.mode === "ask" ? 1 : 2);
+  const curColKey = t.tid ? String(t.tid) : "main";
+  const moveTo = async (key, name) => {
+    if (moveBusy) return;
+    setMoveBusy(true);
+    try {
+      const d = await post("/api/task/move", { stem: t.stem, topic: key });
+      if (d.ok) {
+        setMoveOpen(false);
+        toast?.(d.started ? "▶ Запущена в «" + name + "»"
+                         : "Перемещена в «" + name + "»");
+        if (isNote && sel) onNote?.(t);  // ушла в работу — отжать
+      } else toast?.("Ошибка: " + (d.error || "?"));
+    } catch (e) { toast?.("Сеть: " + e); }
+    setMoveBusy(false);
+  };
   // мелкие мета-чипы шапки: один стиль, воздух вокруг текста
   const metaSx = { height: 22, fontSize: 11, fontWeight: 500,
                    borderRadius: "7px",
@@ -498,7 +509,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // колонки (ov из /api/tasks); у старых записей без ov — показываем
   const ov = t.ov || { mode: true, model: true, ac: true };
   return (
-    <Card elevation={0}
+    <Card elevation={0} data-stem={t.stem}
       onClick={isNote ? () => onNote?.(t) : undefined}
       sx={{
       mb: 1.6, borderRadius: "14px",
@@ -518,6 +529,24 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                    flexWrap: "wrap", mb: 1.2 }}>
           <Box sx={{ display: "flex", alignItems: "center",
                      gap: 0.8, flexWrap: "wrap", minWidth: 0 }}>
+            {/* ручка dnd (только десктоп): тащим карту между
+                колонками — место вставки подсвечивается пунктирным
+                плейсхолдером; на мобильной вместо этого — иконка
+                «переместить» с диалогом */}
+            {!dlgMobile && (
+              <Tooltip title="перетащить в другую колонку или на другое место">
+                <Box component="span" draggable
+                     onDragStart={e => {
+                       e.dataTransfer.setData("text/plain", t.stem);
+                       e.dataTransfer.effectAllowed = "move"; }}
+                     onClick={e => e.stopPropagation()}
+                     sx={{ cursor: "grab", display: "inline-flex",
+                           mr: -0.3, color: "text.disabled",
+                           "&:hover": { color: "text.secondary" },
+                           "&:active": { cursor: "grabbing" } }}>
+                  <DragIndicatorIcon sx={{ fontSize: 15 }} />
+                </Box>
+              </Tooltip>)}
             <Typography variant="caption" color="text.secondary"
                         sx={{ fontSize: 12, mr: 0.2 }}>
               {new Date(t.created * 1000).toLocaleString("ru-RU")}
@@ -652,6 +681,15 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         : <ContentCopyIcon sx={{ fontSize: 15 }} />}
               </IconButton>
             </Tooltip>
+            {(cols || []).some(c => c.key !== curColKey) && (
+              <Tooltip title="переместить в другую тему — уровень колонки выше запустит карточку">
+                <IconButton size="small"
+                  onClick={() => setMoveOpen(true)}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  <DriveFileMoveIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             {isNote && !editing && (
               <Tooltip title="редактировать текст заметки">
                 <IconButton size="small"
@@ -684,38 +722,18 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               wrap-ряда: не влезает в ширину — группа уходит на новую
               строку, внутри себя тоже переносится */}
           {isNote
-            ? <Box sx={{ display: "flex", alignItems: "center",
+            ? !!t.output && (
+              <Box sx={{ display: "flex", alignItems: "center",
                          gap: 0.8, flexWrap: "wrap" }}>
-                {!!t.output && (
-                  <Button size="small" variant="outlined"
-                    onClick={e => { e.stopPropagation();
-                                    setFmtOpen(true); }}
-                    sx={{ fontSize: 11, px: 1, height: 26,
-                          borderRadius: "7px", whiteSpace: "nowrap",
-                          textTransform: "none" }}>
-                    ✨ вариант
-                  </Button>)}
-                <Tooltip title="отправить в работу с настройками её колонки">
-                  <Button size="small" variant="outlined"
-                          onClick={runNote} disabled={runBusy}
-                          startIcon={runBusy
-                            ? <Box component="span" sx={{
-                                width: 11, height: 11,
-                                border: "2px solid #5e6ad2",
-                                borderTopColor: "transparent",
-                                borderRadius: "50%",
-                                animation: "rot .8s linear infinite",
-                                "@keyframes rot":
-                                  { to: { transform:
-                                          "rotate(360deg)" } } }} />
-                            : undefined}
-                          sx={{ fontSize: 11, px: 1.2, height: 26,
-                                borderRadius: "7px", whiteSpace: "nowrap",
-                                textTransform: "none" }}>
-                    {runBusy ? "запускаю…" : "▶ начать выполнение"}
-                  </Button>
-                </Tooltip>
-              </Box>
+                <Button size="small" variant="outlined"
+                  onClick={e => { e.stopPropagation();
+                                  setFmtOpen(true); }}
+                  sx={{ fontSize: 11, px: 1, height: 26,
+                        borderRadius: "7px", whiteSpace: "nowrap",
+                        textTransform: "none" }}>
+                  ✨ вариант
+                </Button>
+              </Box>)
             : <StatusChip t={t} />}
         </Box>
         {isNote ? (
@@ -888,19 +906,34 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             {isNote ? "Заметка"
                    : succeeded ? "Результат задачи" : "Вывод задачи"}
-            {t.mode === "ask" && t.status === "done" && (
-              <Tooltip title="создать code-задачу по предложению из ответа">
+            {t.mode === "ask" && t.status === "done" && (<>
+              <Tooltip title="в работу той же карточкой — выбрать code-тему">
                 <span>
                   <Button size="small"
                           variant={offersWork ? "contained" : "outlined"}
-                          onClick={sendToWork} disabled={workBusy}
+                          onClick={e => setWorkMenu(e.currentTarget)}
+                          disabled={workBusy}
                           sx={{ ml: 1.2, fontSize: 11.5, px: 1.2, py: 0.1,
                                 textTransform: "none",
                                 whiteSpace: "nowrap" }}>
                     {workBusy ? "отправляю…" : "▶ в работу"}
                   </Button>
                 </span>
-              </Tooltip>)}
+              </Tooltip>
+              <Menu anchorEl={workMenu} open={!!workMenu}
+                    onClose={() => setWorkMenu(null)}>
+                {codeCols.length
+                  ? codeCols.map(c => (
+                    <MenuItem key={c.key} dense sx={{ fontSize: 13 }}
+                      onClick={() => { setWorkMenu(null);
+                                       sendToWork(c.key, c.name); }}>
+                      🛠 {c.name}
+                    </MenuItem>))
+                  : <MenuItem dense disabled sx={{ fontSize: 13 }}>
+                      нет темы с режимом «код»
+                    </MenuItem>}
+              </Menu>
+            </>)}
             <Tooltip title="закрыть">
               <IconButton size="small" onClick={() => setOutOpen(false)}
                 sx={{ position: "absolute", right: 12, top: 10,
@@ -932,6 +965,50 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                           ? "в очереди — вывод ещё пуст"
                           : "вывод пока пуст"}</Typography>)}
             </Box>
+          </DialogContent>
+        </Dialog>
+        {/* «переместить» — выбор целевой колонки; у неё подписан
+            уровень и станет ли перенос запуском (уровни: заметка <
+            спросить < код — повышение уровня стартует карточку) */}
+        <Dialog open={moveOpen} onClose={() => setMoveOpen(false)}
+                maxWidth="xs" fullWidth slotProps={dlgSlotProps}>
+          <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
+            Переместить карточку
+            <Tooltip title="закрыть">
+              <IconButton size="small" onClick={() => setMoveOpen(false)}
+                sx={{ position: "absolute", right: 12, top: 10,
+                      color: "text.secondary" }}>
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 0 }}>
+            {(cols || []).filter(c => c.key !== curColKey).map(c => {
+              const lvl = c.mode === "say" ? 0
+                                   : c.mode === "ask" ? 1 : 2;
+              const up = lvl > cardLvl;
+              return (
+                <ListItemButton key={c.key} dense disabled={moveBusy}
+                  onClick={() => moveTo(c.key, c.name)}
+                  sx={{ px: 2, py: 0.9 }}>
+                  <Typography noWrap
+                              sx={{ flex: 1, minWidth: 0,
+                                    fontSize: 13, fontWeight: 500 }}>
+                    {c.name}</Typography>
+                  <Chip size="small" variant="outlined"
+                        label={c.mode === "say" ? "📝 заметка"
+                               : c.mode === "ask" ? "💬 спросить"
+                                                  : "🛠 код"}
+                        sx={{ height: 17, fontSize: 9.5, flexShrink: 0,
+                              borderRadius: "6px" }} />
+                  <Typography variant="caption"
+                        color={up ? "primary" : "text.secondary"}
+                        sx={{ ml: 1, fontSize: 11, flexShrink: 0,
+                              fontWeight: up ? 600 : 400 }}>
+                    {up ? "запустится" : "просто перенос"}
+                  </Typography>
+                </ListItemButton>);
+            })}
           </DialogContent>
         </Dialog>
       </CardContent>
@@ -1098,7 +1175,8 @@ const boostColor = hex => {
 function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       eff, onSelect, onNewTask, onDelete,
                       onSettings, onMoveL, onMoveR,
-                      empty, children, more, busy, onMore }) {
+                      empty, children, more, busy, onMore,
+                      onBodyOver, onBodyDrop }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{
@@ -1209,7 +1287,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             </Tooltip>))}
         </Box>}
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
-                 gap: 0.8 }}>
+                 gap: 0.8, minHeight: 60 }}
+           onDragOver={onBodyOver} onDrop={onBodyDrop}>
         {(() => { const btnC = boostColor(color) || accent
                                 || "#5e6ad2";
           return (
@@ -1337,9 +1416,12 @@ export default function App() {
   }, [mob]);
   const modelFocus = useRef(false), modeFocus = useRef(false);
 
-  // свежие сверху: в колонках новые задачи первыми
+  // свежие сверху: порядок в колонке — tasks.sort (dnd-перестановка),
+  // у записей до появления поля он равен created
   const items = useMemo(() =>
-    [...feed.values()].sort((a, b) => b.created - a.created), [feed]);
+    [...feed.values()].sort((a, b) =>
+      ((b.sort ?? b.created) - (a.sort ?? a.created))
+      || b.created - a.created), [feed]);
   // канбан: главная колонка — задачи без темы; именованные — по tid
   const mainItems = items.filter(t => !t.tid);
   const byTopic = id => items.filter(t => t.tid === id);
@@ -1359,6 +1441,19 @@ export default function App() {
   // композера и быстрого режима
   const selTdef = topicSel === "main" ? mainDef
     : (topics.find(t => String(t.id) === topicSel) || {});
+  // все колонки доски в порядке показа (sort): key, имя и
+  // эффективный режим — для диалогов «переместить»/«в работу»
+  const boardCols = useMemo(() => [
+    { key: "main", sort: mainDef.sort || 0,
+      name: mainDef.name ? "⭐ " + mainDef.name : "⭐ Главная",
+      mode: (mainDef.eff || {}).reply_mode || "code" },
+    ...topics.map(t => ({
+      key: String(t.id), sort: t.sort || t.id,
+      name: t.name || ("тема #" + t.id),
+      mode: ((t.eff || {}).reply_mode) || "code" })),
+  ].sort((a, b) => (a.sort - b.sort)
+           || String(a.key).localeCompare(String(b.key))),
+  [topics, mainDef]);
   // быстрый режим: сессионный оверрайд → дефолт колонки → проект
   const effFast = fastOv ?? (selTdef.fast === "1" ? true
                   : selTdef.fast === "0" ? false : fast);
@@ -1488,6 +1583,83 @@ export default function App() {
     .color || "#5e6ad2";
   // акцент приложения: превью из диалога → цвет проекта → цвет пространства
   const accent = (colorPreview ?? projColor) || wsColor;
+
+  // drag&drop карточек по канбану (десктоп): карту тащат за
+  // ручку-гриппер, колонка ловит dragover/drop — место вставки видно
+  // по пунктирному плейсхолдеру; drop уходит в /api/task/move —
+  // там же решается уровневый переход (повышение уровня = запуск)
+  const [dropAt, setDropAt] = useState(null);  // {col, idx}
+  const dropAtRef = useRef(null);
+  const setDrop = d => { dropAtRef.current = d; setDropAt(d); };
+  // отпустили карту вне колонки — спрятать плейсхолдер
+  useEffect(() => {
+    const clear = () => setDrop(null);
+    document.addEventListener("dragend", clear);
+    document.addEventListener("drop", clear);
+    return () => { document.removeEventListener("dragend", clear);
+                   document.removeEventListener("drop", clear); };
+  }, []);
+  const overCol = (e, key) => {
+    const types = e.dataTransfer ? [...e.dataTransfer.types] : [];
+    if (!types.includes("text/plain")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    // место вставки = индекс первой карты, чья середина ниже курсора
+    const cards = [...e.currentTarget.querySelectorAll("[data-stem]")];
+    let idx = cards.length;
+    for (let i = 0; i < cards.length; i++) {
+      const r = cards[i].getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) { idx = i; break; }
+    }
+    const d = dropAtRef.current;
+    if (!d || d.col !== key || d.idx !== idx)
+      setDrop({ col: key, idx });
+  };
+  const dropCol = (e, key) => {
+    e.preventDefault();
+    const stem = e.dataTransfer.getData("text/plain");
+    const d = dropAtRef.current;
+    setDrop(null);
+    if (!stem) return;
+    const stems = (key === "main" ? mainItems : byTopic(+key))
+      .map(t => t.stem);
+    let idx = d && d.col === key ? d.idx : stems.length;
+    // перетаскиваемую карту убираем из списка соседей — если она
+    // стояла выше точки вставки, индекс сдвигается
+    const si = stems.indexOf(stem);
+    const fl = stems.filter(s => s !== stem);
+    if (si !== -1 && si < idx) idx -= 1;
+    idx = Math.max(0, Math.min(idx, fl.length));
+    const body = { stem, topic: key };
+    if (fl[idx - 1]) body.above = fl[idx - 1];
+    if (fl[idx]) body.below = fl[idx];
+    post("/api/task/move", body).then(res => {
+      if (!res.ok) setToast("Перенос: " + (res.error || "?"));
+      else if (res.started) setToast("▶ Карточка запущена");
+      loadTasks();
+    }).catch(() => setToast("Сеть: не перенёс карточку"));
+  };
+  // карточки колонки с пунктирным плейсхолдером в месте вставки
+  const colCards = (list, key) => {
+    const out = [];
+    const mark = (
+      <Box key="__drop" sx={{
+        height: 54, borderRadius: "12px",
+        border: "1.5px dashed", borderColor: accent || "primary.main",
+        bgcolor: "rgba(94,106,210,.05)" }} />);
+    list.forEach((t, i) => {
+      if (dropAt?.col === key && dropAt.idx === i) out.push(mark);
+      out.push(
+        <TaskCard key={t.stem} t={t} hideTopic
+          sel={noteSel === t.stem || contSel === t.stem}
+          onNote={toggleNote} onCont={toggleCont}
+          onStop={askStop} onCancel={askCancel}
+          onDel={askDel} toast={setToast} cols={boardCols} />);
+    });
+    if (dropAt?.col === key && dropAt.idx >= list.length)
+      out.push(mark);
+    return out;
+  };
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
@@ -2007,22 +2179,15 @@ export default function App() {
                   главная — такая же колонка: двигается, но не
                   удаляется */}
               {(() => {
-                const cols = [
-                  { key: "main", sort: mainDef.sort || 0 },
-                  ...topics.map(t =>
-                    ({ key: String(t.id), sort: t.sort || t.id })),
-                ].sort((a, b) => (a.sort - b.sort)
-                       || String(a.key).localeCompare(String(b.key)));
-                return cols.map((c, ci) => {
+                return boardCols.map((c, ci) => {
                   const mvL = ci > 0
                     ? () => moveTopic(c.key, "left") : null;
-                  const mvR = ci < cols.length - 1
+                  const mvR = ci < boardCols.length - 1
                     ? () => moveTopic(c.key, "right") : null;
                   if (c.key === "main")
                     return (
                       <TopicColumn key="main" sess={false}
-                        name={mainDef.name ? "⭐ " + mainDef.name
-                                           : "⭐ Главная"}
+                        name={c.name}
                         count={mainItems.length}
                         sel={topicSel === "main"}
                         accent={accent} color={mainDef.color}
@@ -2034,15 +2199,12 @@ export default function App() {
                         onMoveL={mvL} onMoveR={mvR}
                         more={colMore.main} busy={!!colBusy.main}
                         onMore={() => loadColMore("main")}
+                        onBodyOver={e => overCol(e, "main")}
+                        onBodyDrop={e => dropCol(e, "main")}
                         empty={!items.length
                           ? "Задач пока нет — напиши первую внизу."
                           : "нет задач"}>
-                        {mainItems.map(t =>
-                          <TaskCard key={t.stem} t={t} hideTopic
-                            sel={noteSel === t.stem || contSel === t.stem}
-                            onNote={toggleNote} onCont={toggleCont}
-                            onStop={askStop} onCancel={askCancel}
-                            onDel={askDel} toast={setToast} />)}
+                        {colCards(mainItems, "main")}
                       </TopicColumn>);
                   const tp = topics.find(
                     t => String(t.id) === c.key);
@@ -2063,13 +2225,10 @@ export default function App() {
                         { kind: "edit", topic: tp })}
                       onMoveL={mvL} onMoveR={mvR}
                       onDelete={() =>
-                        askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
-                      {byTopic(tp.id).map(t =>
-                        <TaskCard key={t.stem} t={t} hideTopic
-                          sel={noteSel === t.stem || contSel === t.stem}
-                            onNote={toggleNote} onCont={toggleCont}
-                          onStop={askStop} onCancel={askCancel}
-                          onDel={askDel} toast={setToast} />)}
+                        askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}
+                      onBodyOver={e => overCol(e, String(tp.id))}
+                      onBodyDrop={e => dropCol(e, String(tp.id))}>
+                      {colCards(byTopic(tp.id), String(tp.id))}
                     </TopicColumn>);
                 });
               })()}
@@ -2084,13 +2243,10 @@ export default function App() {
                   onNewTask={() => newTaskIn(String(tid))}
                   more={colMore[String(tid)]}
                   busy={!!colBusy[String(tid)]}
-                  onMore={() => loadColMore(String(tid))}>
-                  {byTopic(tid).map(t =>
-                    <TaskCard key={t.stem} t={t} hideTopic
-                              sel={noteSel === t.stem || contSel === t.stem}
-                            onNote={toggleNote} onCont={toggleCont}
-                              onStop={askStop} onCancel={askCancel}
-                              onDel={askDel} toast={setToast} />)}
+                  onMore={() => loadColMore(String(tid))}
+                  onBodyOver={e => overCol(e, String(tid))}
+                  onBodyDrop={e => dropCol(e, String(tid))}>
+                  {colCards(byTopic(tid), String(tid))}
                 </TopicColumn>)}
               {project && project !== "workspace" &&
                 <Paper variant="outlined" onClick={createTopic}

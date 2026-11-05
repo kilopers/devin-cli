@@ -173,11 +173,17 @@ def init_db() -> None:
                      ("bot", "bot VARCHAR(80) NULL"),
                      ("instr", "instr MEDIUMTEXT NULL"),
                      ("stats", "stats MEDIUMTEXT NULL"),
-                     ("topic_id", "topic_id INT NULL")):
+                     ("topic_id", "topic_id INT NULL"),
+                     # порядок карточки в колонке канбана (dnd-
+                     # перестановка): стартовый = время создания,
+                     # место — среднее между соседями (sort DESC =
+                     # свежие сверху)
+                     ("sort", "sort DOUBLE NOT NULL DEFAULT 0")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
             db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
+    db_exec("UPDATE tasks SET sort=created WHERE sort=0")
     # карточки-заметки («сказать»): статус note — запись в колонке,
     # не идёт в очередь; «начать выполнение» переводит её в queued
     st_type = db_query("SELECT COLUMN_TYPE AS ct"
@@ -396,11 +402,12 @@ def _insert_task(stem: str, prompt: str, source: str,
                  instr: str | None = None,
                  topic_id: int | None = None) -> None:
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
-            " model, reply_mode, user, bot, instr, topic_id, created) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            " model, reply_mode, user, bot, instr, topic_id, created,"
+            " sort) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
             (stem, source, project, chat_id, prompt, model, reply_mode,
-             user, bot, instr, topic_id, created))
+             user, bot, instr, topic_id, created, created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -498,12 +505,13 @@ def migrate_files_to_db() -> None:
                         out = (raw.split("=" * 60, 1)[1].strip()
                                if "=" * 60 in raw else raw)
                 db_exec("INSERT INTO tasks (stem, source, project, chat_id,"
-                        " status, prompt, output, task_status, created)"
-                        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                        " status, prompt, output, task_status, created,"
+                        " sort)"
+                        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
                         " ON DUPLICATE KEY UPDATE stem=stem",
                         (stem, src, projs.get(stem), chats.get(stem), st,
                          f.read_text(errors="replace"), out, status,
-                         f.stat().st_mtime))
+                         f.stat().st_mtime, f.stat().st_mtime))
         # .processing files were running when the container died — requeue
         for f in INBOX.glob("*.txt.processing"):
             db_exec("UPDATE tasks SET status='queued' WHERE stem=%s",

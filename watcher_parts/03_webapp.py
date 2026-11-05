@@ -106,7 +106,9 @@ def api_tasks(project: str | None = None, limit: int = 5,
         elif str(topic).isdigit():
             sql += " AND topic_id=%s"
             params.append(int(topic))
-    rows = db_query(sql + " ORDER BY created", params)
+    # порядок внутри колонки — tasks.sort (dnd-перестановка);
+    # изначально он = created, так что старые задачи не прыгают
+    rows = db_query(sql + " ORDER BY sort, created", params)
     trows = (db_query("SELECT id, name, model, reply_mode, auto_commit"
                       " FROM topics WHERE project=%s", (project,))
              if project else [])
@@ -200,6 +202,8 @@ def api_tasks(project: str | None = None, limit: int = 5,
                       or (f"тема #{r['topic_id']}" if r["topic_id"]
                           else "")),
             "created": int(r["created"]),
+            # место карточки в колонке канбана (dnd-перестановка)
+            "sort": float(r.get("sort") or 0),
             "prompt": (r["prompt"] or "")[:2000],
             "output": out,
             # per-item content hash — the feed re-renders a card only when
@@ -207,7 +211,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "h": hashlib.md5(
                 f"{st}|{r['task_status']}|{r['commit_offered']}|{out}"
                 f"|{len(r['prompt'] or '')}|{r['prompt'][-64:]}"
-                f"|{bool(kv_get(f'fmt:{stem}'))}"
+                f"|{bool(kv_get(f'fmt:{stem}'))}|{r.get('sort') or 0}"
                 .encode()).hexdigest()[:12],
         })
     if before:

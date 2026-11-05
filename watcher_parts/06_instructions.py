@@ -833,6 +833,24 @@ def _api_task_append():
     return jsonify({"ok": True, "stem": stem})
 
 
+def _opts_for_column(stem: str, eff: dict) -> None:
+    """Заметка уходит в работу со свежими дефолтами ЦЕЛЕВОЙ колонки:
+    разовые оверрайды opts.mode/model смываем (не притащить say/
+    старую модель), автокоммит ставим из дефолта колонки."""
+    try:
+        o = json.loads(kv_get(f"opts:{stem}") or "{}")
+    except ValueError:
+        o = {}
+    o.pop("mode", None)
+    o.pop("model", None)
+    if eff.get("auto_commit") in ("0", "1"):
+        o["ac"] = eff["auto_commit"]
+    if o:
+        kv_set(f"opts:{stem}", json.dumps(o, ensure_ascii=False))
+    else:
+        db_exec("DELETE FROM kv WHERE k=%s", (f"opts:{stem}",))
+
+
 @app.post("/api/task/run")
 @login_required
 def _api_task_run():
@@ -855,18 +873,7 @@ def _api_task_run():
         else "code"
     db_exec("UPDATE tasks SET status='queued', reply_mode=%s, model=%s"
             " WHERE stem=%s", (rmode, eff.get("model") or None, stem))
-    try:
-        o = json.loads(kv_get(f"opts:{stem}") or "{}")
-    except ValueError:
-        o = {}
-    o.pop("mode", None)
-    o.pop("model", None)
-    if eff.get("auto_commit") in ("0", "1"):
-        o["ac"] = eff["auto_commit"]
-    if o:
-        kv_set(f"opts:{stem}", json.dumps(o))
-    else:
-        db_exec("DELETE FROM kv WHERE k=%s", (f"opts:{stem}",))
+    _opts_for_column(stem, eff)
     log(f"note {stem} -> queued (mode={rmode}, "
         f"model={eff.get('model')}, ac={eff.get('auto_commit')})")
     return jsonify({"ok": True, "stem": stem})
@@ -905,26 +912,12 @@ def _api_task_continue():
     return jsonify({"ok": True, "stem": stem})
 
 
-@app.post("/api/task/towork")
-@login_required
-def _api_task_towork():
-    """«▶ в работу» на done-задаче-вопросе: та же запись уходит в
-    queued уже code-задачей (механика «↻ продолжить») — сессия темы
-    резюмится, контекст не теряется, карточек не плодится. Ответ
-    Devin копим в instr (скрыто от юзера), перед prompt добавляем
-    «реализуй предложение», вывод копится под разделителем."""
-    stem = (_req_json().get("stem") or "").strip()
-    row = task_row(stem)
-    if not row:
-        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
-    if row["project"] and not _owns_project(row["project"]):
-        abort(403)
-    if row["status"] != "done":
-        return jsonify({"ok": False,
-                        "error": "в работу — только завершённую"}), 409
-    if (row.get("reply_mode") or "") != "ask":
-        return jsonify({"ok": False,
-                        "error": "в работу — только из «вопроса»"}), 409
+def _ask_to_work(row: dict) -> None:
+    """done-задача «вопрос» → queued code той же записью (условия
+    проверил вызывающий): ответ Devin прячем в instr, к промпту
+    приписываем «реализуй предложение», вывод копится под
+    разделителем, сессия темы резюмится."""
+    stem = row["stem"]
     instr = (((row.get("instr") or "")
               + "\n\n## Результат предыдущего ответа Devin\n"
               + (row.get("output") or "").strip()[:6000])
@@ -948,8 +941,117 @@ def _api_task_towork():
             ("Давай сделаем по твоему предложению из предыдущего "
              "ответа — реализуй его.\n\nИсходный вопрос: ",
              instr, stem))
+
+
+@app.post("/api/task/towork")
+@login_required
+def _api_task_towork():
+    """«▶ в работу» на done-задаче-вопросе: та же запись уходит в
+    queued уже code-задачей (механика «↻ продолжить») — сессия темы
+    резюмится, контекст не теряется, карточек не плодится. Ответ
+    Devin копим в instr (скрыто от юзера), перед prompt добавляем
+    «реализуй предложение», вывод копится под разделителем."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "done":
+        return jsonify({"ok": False,
+                        "error": "в работу — только завершённую"}), 409
+    if (row.get("reply_mode") or "") != "ask":
+        return jsonify({"ok": False,
+                        "error": "в работу — только из «вопроса»"}), 409
+    _ask_to_work(row)
     log(f"task {stem} sent to work (ask -> code)")
     return jsonify({"ok": True, "stem": stem})
+
+
+@app.post("/api/task/move")
+@login_required
+def _api_task_move():
+    """Перенос карточки по канбану (dnd / «переместить»): смена темы
+    и/или места в колонке. Уровни карточек заметка<вопрос<код
+    (0/1/2), уровень колонки = её эффективный reply_mode
+    (say/ask/code). Повышение уровня = запуск: заметка → queued с
+    режимом целевой колонки и её свежими дефолтами; done-вопрос →
+    code-колонка — переход «▶ в работу». Равный или понижение —
+    просто перестановка (уже идущие задачи тоже только едут).
+    Позиция: above/below — stem соседа, ПОСЛЕ которого / ПЕРЕД
+    которым по экрану встаём (sort DESC — свежие сверху); без них —
+    наверх колонки."""
+    b = _req_json()
+    stem = (b.get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    tkey = str(b.get("topic") if b.get("topic") is not None else "main")
+    if tkey in ("", "main"):
+        new_tid = None
+    elif tkey.isdigit():
+        new_tid = int(tkey)
+        if not db_query("SELECT 1 FROM topics WHERE id=%s AND project<=>%s",
+                        (new_tid, row["project"])):
+            return jsonify({"ok": False, "error": "нет такой темы"}), 404
+    else:
+        return jsonify({"ok": False, "error": "bad topic"}), 400
+    proj = row["project"]
+    w = "project<=>%s AND topic_id<=>%s AND stem<>%s"
+    wp = (proj, new_tid, stem)
+    new_sort = None
+    above = (b.get("above") or "").strip()
+    if above:
+        ar = db_query(f"SELECT sort FROM tasks WHERE stem=%s AND {w}",
+                      (above,) + wp)
+        if ar:
+            s_a = float(ar[0]["sort"])
+            dn = db_query(f"SELECT MAX(sort) s FROM tasks WHERE {w}"
+                          " AND sort<%s", wp + (s_a,))
+            s_dn = dn[0]["s"] if dn and dn[0]["s"] is not None else None
+            new_sort = s_a - 1 if s_dn is None else (s_a + s_dn) / 2
+    below = (b.get("below") or "").strip()
+    if new_sort is None and below:
+        br = db_query(f"SELECT sort FROM tasks WHERE stem=%s AND {w}",
+                      (below,) + wp)
+        if br:
+            s_b = float(br[0]["sort"])
+            up = db_query(f"SELECT MIN(sort) s FROM tasks WHERE {w}"
+                          " AND sort>%s", wp + (s_b,))
+            s_up = up[0]["s"] if up and up[0]["s"] is not None else None
+            new_sort = s_b + 1 if s_up is None else (s_b + s_up) / 2
+    if new_sort is None:
+        top = db_query(f"SELECT MAX(sort) s FROM tasks WHERE {w}", wp)
+        new_sort = (float(top[0]["s"] or 0) + 1) \
+            if top and top[0]["s"] is not None else 1.0
+    cl = 0 if row["status"] == "note" else \
+        (1 if (row.get("reply_mode") or "") == "ask" else 2)
+    eff = _eff_topic_defaults(proj, new_tid)
+    erm = eff.get("reply_mode") or "code"
+    tl = 0 if erm == "say" else (1 if erm == "ask" else 2)
+    started = False
+    if tl > cl and cl == 0:
+        # заметка поднялась уровнем — сразу в работу с режимом и
+        # свежими дефолтами целевой колонки (как «▶ начать выполнение»)
+        db_exec("UPDATE tasks SET status='queued', reply_mode=%s,"
+                " model=%s WHERE stem=%s",
+                ("ask" if tl == 1 else "code",
+                 eff.get("model") or None, stem))
+        _opts_for_column(stem, eff)
+        started = True
+    elif tl > cl and cl == 1 and row["status"] == "done":
+        # done-вопрос в code-колонку — переход «▶ в работу»
+        _ask_to_work(row)
+        started = True
+    db_exec("UPDATE tasks SET topic_id=%s, sort=%s WHERE stem=%s",
+            (new_tid, new_sort, stem))
+    log(f"task {stem} moved -> topic={new_tid} sort={new_sort} "
+        f"(lvl {cl}->{tl}, started={started})")
+    return jsonify({"ok": True, "stem": stem, "started": started,
+                    "mode": ("ask" if tl == 1 else "code") if started
+                            else None})
 
 
 def _fmt_worker(stem: str) -> None:
