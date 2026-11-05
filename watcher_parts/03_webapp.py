@@ -145,8 +145,9 @@ def api_tasks(project: str | None = None, limit: int = 5,
             try:
                 with open(outp, "rb") as fh:
                     head = fh.read(65536)
-                pos = head.find(b"all set")
-                starting = True
+                marker = agent_def(r)["start_marker"]
+                pos = head.find(marker) if marker else -1
+                starting = bool(marker)
                 if pos != -1:
                     eol = head.find(b"\n", pos)
                     # «выполняется» — только когда ПОСЛЕ строки

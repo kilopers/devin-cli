@@ -117,28 +117,30 @@ _MCP_CFG = os.path.expanduser("~/.config/devin/mcp_config.json")
 _MCP_LOCK = threading.Lock()
 
 
-def _mcp_cfg_read() -> dict:
+def _mcp_cfg_read(path: str = _MCP_CFG) -> dict:
     try:
-        with open(_MCP_CFG, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f) or {}
     except (OSError, ValueError):
         return {}
 
 
-def _mcp_cfg_write(cfg: dict) -> None:
-    os.makedirs(os.path.dirname(_MCP_CFG), exist_ok=True)
-    tmp = _MCP_CFG + ".tmp"
+def _mcp_cfg_write(cfg: dict, path: str = _MCP_CFG) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, _MCP_CFG)
+    os.replace(tmp, path)
 
 
-def _mcp_apply(proj: str):
+def _mcp_apply(proj: str, ag: dict | None = None):
     """Подмешать проектные MCP-серверы (pj:<proj>.mcp, JSON-объект
     name → def, формат как в mcp_config.json) в mcpServers на время
-    задачи. Возвращает restore(), откатывающий конфиг."""
+    задачи. Путь к конфигу берётся из движка задачи (ag["mcp_config"]),
+    дефолт — конфиг Devin. Возвращает restore(), откатывающий конфиг."""
     if not proj:
         return lambda: None
+    cfg_path = (ag or {}).get("mcp_config") or _MCP_CFG
     try:
         extra = json.loads(pj_get(proj, "mcp") or "{}")
     except ValueError:
@@ -147,16 +149,16 @@ def _mcp_apply(proj: str):
     if not isinstance(extra, dict) or not extra:
         return lambda: None
     _MCP_LOCK.acquire()          # конфиг держим до restore() задачи
-    cfg = _mcp_cfg_read()
+    cfg = _mcp_cfg_read(cfg_path)
     backup = json.dumps(cfg, ensure_ascii=False)
     srvs = cfg.setdefault("mcpServers", {})
     srvs.update(extra)
-    _mcp_cfg_write(cfg)
+    _mcp_cfg_write(cfg, cfg_path)
     log(f"{proj}: применено {len(extra)} проектных MCP-сервер(а)")
 
     def restore():
         try:
-            _mcp_cfg_write(json.loads(backup))
+            _mcp_cfg_write(json.loads(backup), cfg_path)
         except Exception as e:
             log(f"{proj}: не смог откатить mcp_config: {e}")
         finally:

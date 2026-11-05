@@ -201,7 +201,10 @@ def init_db() -> None:
                      # перестановка): стартовый = время создания,
                      # место — среднее между соседями (sort DESC =
                      # свежие сверху)
-                     ("sort", "sort DOUBLE NOT NULL DEFAULT 0")):
+                     ("sort", "sort DOUBLE NOT NULL DEFAULT 0"),
+                     # движок выполнения задачи (devin | …) — NULL =
+                     # цепочка дефолтов тема→проект→devin
+                     ("agent", "agent VARCHAR(32) NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -237,7 +240,10 @@ def init_db() -> None:
                      ("session_topic_id", "session_topic_id INT NULL"),
                      # порядок колонки на канбан-доске («◀/▶» в меню ⋯;
                      # «главная» всегда первая, сортируем только темы)
-                     ("sort", "sort INT NOT NULL DEFAULT 0")):
+                     ("sort", "sort INT NOT NULL DEFAULT 0"),
+                     # движок задач колонки по умолчанию; NULL —
+                     # наследовать из настроек проекта
+                     ("agent", "agent VARCHAR(32) NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='topics'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -438,7 +444,8 @@ def task_row(stem: str) -> dict | None:
     return rows[0] if rows else None
 
 
-TOPIC_SET_KEYS = ("color", "model", "reply_mode", "auto_commit", "fast")
+TOPIC_SET_KEYS = ("color", "model", "reply_mode", "auto_commit", "fast",
+                  "agent")
 
 
 def _topic_defaults(project: str, topic_id: int | None) -> dict:
@@ -448,8 +455,8 @@ def _topic_defaults(project: str, topic_id: int | None) -> dict:
     if not project:
         return {}
     if topic_id:
-        r = db_query("SELECT color, model, reply_mode, auto_commit, fast"
-                     " FROM topics WHERE id=%s AND project=%s",
+        r = db_query("SELECT color, model, reply_mode, auto_commit, fast,"
+                     " agent FROM topics WHERE id=%s AND project=%s",
                      (topic_id, project))
         if not r:
             return {}
@@ -479,6 +486,8 @@ def _eff_topic_defaults(project: str | None, topic_id: int | None,
         "auto_commit": td.get("auto_commit") or pj("auto_commit") or "0",
         "fast": td.get("fast") or pj("fast") or "0",
         "color": td.get("color") or "",
+        # движок задач колонки: пусто = дефолтный (devin)
+        "agent": td.get("agent") or pj("agent") or "",
     }
 
 
@@ -777,16 +786,17 @@ def _task_cost(st: dict) -> float | None:
 
 
 def progress_loop(chat_id, export_path: Path, out_path: Path,
-                  proc: subprocess.Popen, since: float) -> None:
+                  proc: subprocess.Popen, since: float,
+                  transcripts: Path) -> None:
     """While the task runs, send live progress to telegram.
 
-    Primary source: devin-task's stdout/stderr captured to out_path (tail).
-    Bonus source: the --export file, or the live session transcript if the
-    export only lands at session end — parsed into step digests.
+    Primary source: the launcher's stdout/stderr captured to out_path
+    (tail). Bonus source: the export file, or the live session
+    transcript if the export only lands at session end — parsed into
+    step digests.
     """
     last_id, last_sent, tick = 0, 0.0, 0
     offset, buf, seen_sizes = 0, [], {}
-    transcripts = Path.home() / ".local/share/devin/cli/transcripts"
     live_transcript = None
     while proc.poll() is None:
         time.sleep(10)
@@ -960,6 +970,7 @@ def run_task(task: dict) -> None:
         opts = json.loads(kv_get(f"opts:{stem}") or "{}")
     except ValueError:
         opts = {}
+    ag = agent_def(task, opts)
     instr = (task.get("instr") or "").strip()
     body_txt = (instr + "\n\n---\n\n" + task["prompt"]) if instr \
         else task["prompt"]
@@ -1029,7 +1040,8 @@ def run_task(task: dict) -> None:
                                else "false"),
                DEVIN_EXTRA_ARGS=(
                    (os.environ.get("DEVIN_EXTRA_ARGS") or "") +
-                   (f" --resume {resume_id}" if resume_id else "")),
+                   (f" {ag['resume_arg'](resume_id)}"
+                    if resume_id else "")),
                REPLY_MODE=(opts.get("mode") or task.get("reply_mode")
                            or reply_mode()),
                # сессия неинтерактивная — подтверждать вызовы некому,
@@ -1067,7 +1079,7 @@ def run_task(task: dict) -> None:
             # kills the whole tree (devin-task -> devin -> children)
             out_f = open(out_path, "w", errors="replace")
             proc = subprocess.Popen(
-                [DEVIN_TASK], env=env2,
+                [ag["bin"]], env=env2,
                 stdout=out_f, stderr=subprocess.STDOUT,
                 text=True, start_new_session=True,
             )
@@ -1077,7 +1089,8 @@ def run_task(task: dict) -> None:
                 threading.Thread(
                     target=progress_loop, daemon=True,
                     args=(chat_id, export_path, out_path,
-                          proc, started_ts)).start()
+                          proc, started_ts,
+                          ag["transcripts"])).start()
             try:
                 proc.wait(timeout=TASK_TIMEOUT)
                 st = f"exit code: {proc.returncode}"
@@ -1092,7 +1105,7 @@ def run_task(task: dict) -> None:
             with _procs_lock:
                 _task_procs.pop(stem, None)
 
-    mcp_restore = _mcp_apply(tproj)
+    mcp_restore = _mcp_apply(tproj, ag)
     try:
         status, body = _run_once(env)
 
@@ -1123,9 +1136,9 @@ def run_task(task: dict) -> None:
 
     body = _clean_task_output(body)
     finished_ts = time.time()
-    tstats = _collect_task_stats(export_path,
-                                 task.get("started") or started_ts,
-                                 finished_ts)
+    tstats = ag["stats"](export_path,
+                         task.get("started") or started_ts,
+                         finished_ts)
     if tstats:
         cost = _task_cost(tstats)
         if cost is not None:

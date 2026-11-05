@@ -203,6 +203,8 @@ def _topic_settings_from(b: dict) -> dict:
     for k in ("auto_commit", "fast"):
         if k in b and (b.get(k) or "") in ("", "0", "1"):
             st[k] = (b.get(k) or "")
+    if "agent" in b and (b.get("agent") or "") in ("",) + tuple(AGENTS):
+        st["agent"] = (b.get("agent") or "")
     return st
 
 
@@ -1156,7 +1158,7 @@ def _fmt_worker(stem: str) -> None:
         out_f = open(out_path, "w", errors="replace")
         started_ts = time.time()
         proc = subprocess.Popen(
-            [DEVIN_TASK], env=env,
+            [agent_def(row)["bin"]], env=env,
             stdout=out_f, stderr=subprocess.STDOUT,
             text=True, start_new_session=True)
         with _procs_lock:
@@ -1176,8 +1178,8 @@ def _fmt_worker(stem: str) -> None:
         # «✨ Оформить» — тоже прогон Devin: его токены и стоимость
         # считаем в статистику темы заметки (row['topic_id'])
         try:
-            fst = _collect_task_stats(progress_dir / f"{fstem}.json",
-                                      started_ts, time.time())
+            fst = agent_def(row)["stats"](
+                progress_dir / f"{fstem}.json", started_ts, time.time())
             if fst:
                 db_exec("INSERT INTO topic_stats"
                         " (project, topic_id, stem, created, model,"
