@@ -408,14 +408,22 @@ def enqueue_task(text: str, chat_id: int | None = None,
     aname = re.sub(r"[^a-z0-9_-]+", "-",
                    author.lower()).strip("-") or "user"
     stem = f"{prefix}-{pname}-{aname}-{time.strftime('%m%d-%H%M%S')}"
-    model = pj_get(proj, "model") if proj else ""
-    model = model or current_model(scope)
+    # дефолты колонки канбана: задачи темы наследуют её настройки,
+    # проект (pj) — запасной уровень перед юзерскими/глобальными
+    tdef = _topic_defaults(proj, topic_id) if proj else {}
+    model = (tdef.get("model")
+             or (pj_get(proj, "model") if proj else "")
+             or current_model(scope))
     if scope == "web":
-        rmode = pj_get(proj, "reply_mode") if proj else ""
-        rmode = rmode or reply_mode(scope)
+        rmode = (tdef.get("reply_mode")
+                 or (pj_get(proj, "reply_mode") if proj else "")
+                 or reply_mode(scope))
     else:
-        # телеграм: /mode — явный выбор юзера, важнее дефолта проекта
-        rmode = us_get(author, "reply_mode") or             (pj_get(proj, "reply_mode") if proj else "")             or reply_mode(scope)
+        # телеграм: /mode — явный выбор юзера, важнее дефолтов темы/проекта
+        rmode = (us_get(author, "reply_mode")
+                 or tdef.get("reply_mode")
+                 or (pj_get(proj, "reply_mode") if proj else "")
+                 or reply_mode(scope))
     if override_mode in ("ask", "code"):
         rmode = override_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
     bot = getattr(_tg_tls, "token", "") or \

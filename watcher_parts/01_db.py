@@ -177,6 +177,18 @@ def init_db() -> None:
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
             db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
+    # настройки колонок канбана: цвет колонки и дефолты её задач
+    # (модель/режим/автокоммит/быстрый) — NULL/пусто = наследовать
+    # из настроек проекта
+    for col, ddl in (("color", "color VARCHAR(24) NULL"),
+                     ("model", "model VARCHAR(80) NULL"),
+                     ("reply_mode", "reply_mode VARCHAR(8) NULL"),
+                     ("auto_commit", "auto_commit VARCHAR(4) NULL"),
+                     ("fast", "fast VARCHAR(4) NULL")):
+        if not db_query("SELECT 1 FROM information_schema.COLUMNS"
+                        " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='topics'"
+                        " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
+            db_exec(f"ALTER TABLE topics ADD COLUMN {ddl}")
     # инструкции: системная (одна, неизменяемая) + пустая общая каждому
     # юзеру — миграция по существующим
     # {public}/{port} — глобальные, подставляем при хранении, чтобы в
@@ -368,6 +380,50 @@ def _insert_task(stem: str, prompt: str, source: str,
 def task_row(stem: str) -> dict | None:
     rows = db_query("SELECT * FROM tasks WHERE stem=%s", (stem,))
     return rows[0] if rows else None
+
+
+TOPIC_SET_KEYS = ("color", "model", "reply_mode", "auto_commit", "fast")
+
+
+def _topic_defaults(project: str, topic_id: int | None) -> dict:
+    """Дефолты колонки канбана (color/model/reply_mode/auto_commit/fast):
+    именованная тема — колонки topics.*; «главная» — JSON в pj:<p>.tmain.
+    Пустые значения = наследовать из настроек проекта."""
+    if not project:
+        return {}
+    if topic_id:
+        r = db_query("SELECT color, model, reply_mode, auto_commit, fast"
+                     " FROM topics WHERE id=%s AND project=%s",
+                     (topic_id, project))
+        if not r:
+            return {}
+        return {k: (r[0][k] or "") for k in TOPIC_SET_KEYS}
+    try:
+        d = json.loads(pj_get(project, "tmain") or "{}")
+    except ValueError:
+        d = {}
+    if not isinstance(d, dict):
+        return {}
+    return {k: (d.get(k) or "") for k in TOPIC_SET_KEYS}
+
+
+def _eff_topic_defaults(project: str | None, topic_id: int | None,
+                      scope: str = "web") -> dict:
+    """Итоговые дефолты колонки канбана по цепочке
+    тема → проект (pj:<p>) → юзерские/глобальные настройки."""
+    td = _topic_defaults(project, topic_id) if project else {}
+
+    def pj(k: str) -> str:
+        return pj_get(project, k) if project else ""
+
+    return {
+        "model": td.get("model") or pj("model") or current_model(scope),
+        "reply_mode": td.get("reply_mode") or pj("reply_mode")
+                      or reply_mode(scope),
+        "auto_commit": td.get("auto_commit") or pj("auto_commit") or "0",
+        "fast": td.get("fast") or pj("fast") or "0",
+        "color": td.get("color") or "",
+    }
 
 
 def ingest_inbox_files() -> None:
@@ -836,7 +892,8 @@ def run_task(task: dict) -> None:
                GIT_AUTO_COMMIT=(
                    "true" if (opts.get("ac") == "1"
                               or (opts.get("ac") is None
-                                  and pj_get(tproj, "auto_commit") == "1"))
+                                  and _eff_topic_defaults(
+                                      tproj, tid)["auto_commit"] == "1"))
                    else "false"),
                WINDSURF_API_KEY=uset("devin.api_key", task_user,
                                      "WINDSURF_API_KEY"),

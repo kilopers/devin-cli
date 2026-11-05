@@ -182,8 +182,26 @@ def _api_instr_set():
 # --- темы проекта: именованные ветки работы со своей devin-сессией ----
 
 def _topic_rows(project: str) -> list:
-    return db_query("SELECT id, name, session_id, user, created, updated"
+    return db_query("SELECT id, name, session_id, user, created, updated,"
+                    " color, model, reply_mode, auto_commit, fast"
                     " FROM topics WHERE project=%s ORDER BY id", (project,))
+
+
+def _topic_settings_from(b: dict) -> dict:
+    """Присланные поля настроек темы с валидацией — пропущенные ключи
+    не трогаем (частичное обновление)."""
+    st = {}
+    if "color" in b:
+        c = (b.get("color") or "").strip()[:24]
+        st["color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
+    if "model" in b:
+        st["model"] = (b.get("model") or "").strip()[:80]
+    if "reply_mode" in b and (b.get("reply_mode") or "") in ("", "code", "ask"):
+        st["reply_mode"] = (b.get("reply_mode") or "")
+    for k in ("auto_commit", "fast"):
+        if k in b and (b.get(k) or "") in ("", "0", "1"):
+            st[k] = (b.get(k) or "")
+    return st
 
 
 @app.get("/api/topics")
@@ -192,9 +210,12 @@ def _api_topics_get():
     p = (request.args.get("project") or "").strip()
     if not p or not _owns_project(p):
         return jsonify({"ok": False, "error": "нет доступа"}), 403
-    return jsonify({"ok": True, "topics": [
-        dict(r, has_session=bool(r["session_id"]))
-        for r in _topic_rows(p)]})
+    return jsonify({"ok": True,
+                    # настройки «главной» колонки — pj:<p>.tmain
+                    "main": _topic_defaults(p, None),
+                    "topics": [
+                        dict(r, has_session=bool(r["session_id"]))
+                        for r in _topic_rows(p)]})
 
 
 @app.post("/api/topics")
@@ -213,12 +234,24 @@ def _api_topics_set():
                              " AND name=%s", (p, name)):
             return jsonify({"ok": False,
                             "error": "тема с таким именем уже есть"}), 409
-        db_exec("INSERT INTO topics(project,user,name,created,updated)"
-                " VALUES(%s,%s,%s,%s,%s)",
-                (p, u, name, time.time(), time.time()))
+        st = _topic_settings_from(b)
+        db_exec("INSERT INTO topics(project,user,name,color,model,"
+                "reply_mode,auto_commit,fast,created,updated)"
+                " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (p, u, name, st.get("color") or None,
+                 st.get("model") or None, st.get("reply_mode") or None,
+                 st.get("auto_commit") or None, st.get("fast") or None,
+                 time.time(), time.time()))
         return jsonify({"ok": True,
                         "id": db_query(
                             "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
+    if act == "settings" and b.get("main"):
+        # «главная» колонка — не строка topics: настройки лежат
+        # JSON-объектом в pj:<p>.tmain (те же ключи, что у колонок)
+        cur = _topic_defaults(p, None)
+        cur.update(_topic_settings_from(b))
+        pj_set(p, "tmain", json.dumps(cur, ensure_ascii=False))
+        return jsonify({"ok": True})
     tid = int(b.get("id") or 0)
     if not db_query("SELECT 1 FROM topics WHERE id=%s AND project=%s",
                     (tid, p)):
@@ -229,6 +262,30 @@ def _api_topics_set():
             return jsonify({"ok": False, "error": "пустое имя"}), 400
         db_exec("UPDATE topics SET name=%s, updated=%s WHERE id=%s",
                 (name, time.time(), tid))
+        return jsonify({"ok": True})
+    if act == "settings":
+        # настройки именованной темы: имя (необяз.) + цвет + дефолты
+        # задач колонки; неприсланные ключи не трогаем
+        sets, vals = [], []
+        new_name = (b.get("name") or "").strip()[:190]
+        if new_name and db_query(
+                "SELECT 1 FROM topics WHERE project=%s AND name=%s"
+                " AND id!=%s", (p, new_name, tid)):
+            return jsonify({"ok": False,
+                            "error": "тема с таким именем уже есть"}), 409
+        if new_name:
+            sets.append("name=%s")
+            vals.append(new_name)
+        st = _topic_settings_from(b)
+        for k in TOPIC_SET_KEYS:
+            if k in st:
+                sets.append(f"{k}=%s")
+                vals.append(st[k] or None)
+        if sets:
+            sets.append("updated=%s")
+            vals += [time.time(), tid]
+            db_exec(f"UPDATE topics SET {', '.join(sets)} WHERE id=%s",
+                    vals)
         return jsonify({"ok": True})
     if act == "delete":
         # задачи темы возвращаются в «главную»

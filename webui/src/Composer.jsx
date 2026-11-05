@@ -31,8 +31,9 @@ const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
 
 export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
-                                   fast, onFast, topic,
-                                   topicName, topics, onTopic, onNewTopic }) {
+                                   fast, fastOv, onFast, topic,
+                                   topicName, topics, mainDef,
+                                   onTopic, onNewTopic }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -65,9 +66,16 @@ export default function Composer({ project, sttStatus, toast, onSent,
     setOv({});
   }, [project]);
 
-  const curMode = ov.mode ?? eff.mode;
-  const curAc = ov.ac ?? eff.ac;
-  const curModel = ov.model ?? eff.model;
+  // настройки целевой колонки: её дефолты идут после разовых
+  // оверрайдов, но раньше проектных (eff.*)
+  const tset = (topic && topic !== "main"
+    ? (topics || []).find(t => String(t.id) === topic)
+    : mainDef) || {};
+  const pick = (...vs) =>
+    vs.find(v => v !== undefined && v !== null && v !== "");
+  const curMode = pick(ov.mode, tset.reply_mode, eff.mode) || "code";
+  const curAc = pick(ov.ac, tset.auto_commit, eff.ac) || "0";
+  const curModel = pick(ov.model, tset.model, eff.model) || "";
 
   const pickFile = async e => {
     const fl = e.target.files && e.target.files[0];
@@ -166,6 +174,15 @@ export default function Composer({ project, sttStatus, toast, onSent,
             {m.id}
           </MenuItem>))}
       </Menu>
+      <Tooltip title={"быстрый режим — голосовая задача без " +
+                      "подтверждения" +
+                      (fastOv ? " — переопределено разово" : "")}>
+        <Chip size="small" clickable sx={chipSx}
+          label={fast ? "⚡ Быстрый" : "Обычный"}
+          color={fastOv ? "primary" : "default"}
+          variant={fastOv ? "filled" : "outlined"}
+          onClick={() => onFast?.()} />
+      </Tooltip>
     </Box>
   );
 
@@ -331,7 +348,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                 color: text.trim() ? "#fff" : "rgba(255,255,255,.4)" }} />
         <BottomNavigationAction label={fast ? "Быстрый" : "Обычный"}
           icon={fast ? <FlashOnIcon /> : <FlashOffIcon />}
-          onClick={() => onFast && onFast(fast ? "0" : "1")}
+          onClick={() => onFast && onFast()}
           disabled={!project}
           sx={{ minWidth: 0,
                 color: fast ? "#ffd54f" : "rgba(255,255,255,.72)" }} />

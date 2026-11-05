@@ -107,9 +107,28 @@ def api_tasks(project: str | None = None, limit: int = 5,
             sql += " AND topic_id=%s"
             params.append(int(topic))
     rows = db_query(sql + " ORDER BY created", params)
-    tmap = ({r["id"]: r["name"] for r in db_query(
-        "SELECT id, name FROM topics WHERE project=%s", (project,))}
-        if project else {})
+    trows = (db_query("SELECT id, name, model, reply_mode, auto_commit"
+                      " FROM topics WHERE project=%s", (project,))
+             if project else [])
+    tmap = {r["id"]: r["name"] for r in trows}
+    # эффективные дефолты каждой колонки (тема → проект → глобальные):
+    # карточка рисует чипы настроек только когда значение задачи
+    # отличается от дефолта её колонки (поле ov)
+    coldefs = {}
+    if project:
+        coldefs[None] = _eff_topic_defaults(project, None)
+        for tr in trows:
+            td = {k: (tr.get(k) or "")
+                  for k in ("model", "reply_mode", "auto_commit")}
+            coldefs[tr["id"]] = {
+                "model": td["model"] or pj_get(project, "model")
+                         or current_model("web"),
+                "reply_mode": td["reply_mode"]
+                              or pj_get(project, "reply_mode")
+                              or reply_mode("web"),
+                "auto_commit": td["auto_commit"]
+                               or pj_get(project, "auto_commit") or "0",
+            }
     items = []
     for r in rows:
         stem = r["stem"]
@@ -142,15 +161,27 @@ def api_tasks(project: str | None = None, limit: int = 5,
             if r.get("finished") and r.get("started") else 0
         if dur > 0:
             st_json = {**(st_json or {}), "duration": dur}
+        # дефолт колонки этой задачи; без темы/проекта — «главная»/пусто
+        cd = (coldefs.get(r["topic_id"]) or coldefs.get(None) or {}) \
+            if r["project"] == project else {}
+        emode = o.get("mode") or r["reply_mode"] or "code"
+        emodel = r["model"] or ""
+        eac = (o.get("ac") if o.get("ac") is not None
+               else (cd.get("auto_commit") or "0"))
         items.append({
             "name": _task_name(stem),
             "stem": stem,
             "project": r["project"] or "",
-            "model": r["model"] or "",
-            "mode": o.get("mode") or r["reply_mode"] or "",
-            "ac": o.get("ac") if o.get("ac") is not None else
-                  (pj_get(r["project"], "auto_commit")
-                   if r["project"] else ""),
+            "model": emodel,
+            "mode": emode,
+            "ac": eac,
+            # чипы настроек на карточке — только отличия от дефолта
+            # колонки (опцию меняли разово для этой задачи)
+            "ov": {
+                "mode": emode != (cd.get("reply_mode") or "code"),
+                "model": bool(emodel) and emodel != cd.get("model"),
+                "ac": eac != (cd.get("auto_commit") or "0"),
+            },
             "source": r["source"],
             "status": st,
             "task_status": r["task_status"] or "",

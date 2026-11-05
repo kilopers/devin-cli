@@ -54,6 +54,7 @@ import FileEditor from "./FileEditor.jsx";
 import AddProject from "./AddProject.jsx";
 import RepoBrowse from "./RepoBrowse.jsx";
 import Composer from "./Composer.jsx";
+import TopicSettings from "./TopicSettings.jsx";
 import { ConnBadge, useConnStatus } from "./ConnDot.jsx";
 
 // Render crashes used to blank the whole page (white screen) — a
@@ -302,12 +303,17 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     if (!text.trim()) return;
     setRetryBusy(true);
     try {
+      // пересылаем только опции, которые отличались от дефолта колонки
+      // (ov из /api/tasks); у старых записей без ov — как раньше, всё
+      const rov = t.ov || { mode: t.mode === "ask", model: !!t.model,
+                            ac: t.ac === "0" || t.ac === "1" };
       const body = { text, retry_of: t.stem,
         ...(t.project ? { project: t.project } : {}),
         ...(t.tid ? { topic: String(t.tid) } : {}),
-        ...(t.mode === "ask" ? { mode: "ask" } : {}),
-        ...(t.model ? { model: t.model } : {}),
-        ...(t.ac === "0" || t.ac === "1" ? { auto_commit: t.ac } : {}) };
+        ...(rov.mode && t.mode ? { mode: t.mode } : {}),
+        ...(rov.model && t.model ? { model: t.model } : {}),
+        ...(rov.ac && (t.ac === "0" || t.ac === "1")
+            ? { auto_commit: t.ac } : {}) };
       const d = await post("/api/tasks", body);
       toast?.(d.ok ? "🔁 Задача поставлена заново — старая удалена"
                   : "Ошибка: " + (d.error || "?"));
@@ -420,6 +426,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const metaSx = { height: 22, fontSize: 11, fontWeight: 500,
                    borderRadius: "7px",
                    "& .MuiChip-label": { px: "8px" } };
+  // чипы настроек — только когда значение отличается от дефолта
+  // колонки (ov из /api/tasks); у старых записей без ov — показываем
+  const ov = t.ov || { mode: true, model: true, ac: true };
   return (
     <Card elevation={0} sx={{
       mb: 1.6, borderRadius: "14px",
@@ -442,20 +451,24 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               <Chip size="small" variant="outlined" sx={metaSx}
                     label={SRC_RU[t.source] || t.source || ""} />
             </Tooltip>
-            {t.model &&
-              <Tooltip title="модель задачи">
+            {ov.model && t.model &&
+              <Tooltip title="модель задачи — отличается от дефолта колонки">
                 <Chip size="small" variant="outlined" sx={metaSx}
                       label={t.model} />
               </Tooltip>}
-            <Tooltip title={t.mode === "ask"
+            {ov.mode &&
+            <Tooltip title={(t.mode === "ask"
               ? "режим «вопрос» — только чтение"
-              : "режим «код» — полный доступ"}>
+              : "режим «код» — полный доступ") +
+              " — отличается от дефолта колонки"}>
               <Chip size="small" variant="outlined" sx={metaSx}
                     label={t.mode === "ask" ? "💬 вопрос" : "🛠 код"} />
-            </Tooltip>
-            <Tooltip title={t.ac === "1"
+            </Tooltip>}
+            {ov.ac &&
+            <Tooltip title={(t.ac === "1"
               ? "автокоммит и пуш после задачи"
-              : "изменения не коммитятся автоматически"}>
+              : "изменения не коммитятся автоматически") +
+              " — отличается от дефолта колонки"}>
               <Chip size="small" variant="outlined"
                     sx={{ ...metaSx,
                           color: t.ac === "1" ? "#2e7d32" : undefined,
@@ -463,7 +476,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                   : undefined }}
                     label={t.ac === "1" ? "⚡ автокоммит"
                                         : "✋ коммит вручную"} />
-            </Tooltip>
+            </Tooltip>}
             {t.topic && !hideTopic &&
               <Tooltip title="тема задачи">
                 <Chip size="small" variant="outlined" sx={metaSx}
@@ -816,11 +829,12 @@ function Panel({ icon, title, chip, right, open, onToggle, children }) {
 // Колонка канбан-доски тем: заголовок (имя, 🔁-сессия, счётчик задач,
 // меню ⋯) + карточки задач своей темы + кнопка «＋ задача сюда».
 // Клик по заголовку делает колонку «целевой» — новые задачи из
-// композера падают в неё (выделена акцентной рамкой). «Главная»
-// (tid = null) не переименовывается и не удаляется — меню ей не даём.
-function TopicColumn({ name, sess, count, sel, accent, onSelect,
-                      onNewTask, onRename, onDelete, empty, children,
-                      more, busy, onMore }) {
+// композера падают в неё (выделена акцентной рамкой). color — цвет
+// колонки из настроек темы; «Главная» не переименовывается и не
+// удаляется — в её меню только «⚙ Настройки».
+function TopicColumn({ name, sess, count, sel, accent, color, onSelect,
+                      onNewTask, onRename, onDelete, onSettings, empty,
+                      children, more, busy, onMore }) {
   const [menu, setMenu] = useState(null);
   const [edit, setEdit] = useState(null);   // null или редактируемое имя
   const saveEdit = () => {
@@ -834,7 +848,7 @@ function TopicColumn({ name, sess, count, sel, accent, onSelect,
       borderRadius: "12px", scrollSnapAlign: "start",
       borderColor: sel ? (accent || "primary.main") : "divider",
       borderWidth: sel ? 2 : 1,
-      bgcolor: "background.paper" }}>
+      bgcolor: color || "background.paper" }}>
       <Box onClick={onSelect}
            sx={{ display: "flex", alignItems: "center", gap: 0.6,
                  px: 1.1, py: 0.7, cursor: "pointer",
@@ -869,7 +883,7 @@ function TopicColumn({ name, sess, count, sel, accent, onSelect,
           </Tooltip>}
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
-        {(onRename || onDelete) &&
+        {(onRename || onDelete || onSettings) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -881,6 +895,11 @@ function TopicColumn({ name, sess, count, sel, accent, onSelect,
             <Menu anchorEl={menu} open={!!menu}
                   onClose={() => setMenu(null)}
                   onClick={e => e.stopPropagation()}>
+              {onSettings &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onSettings(); }}>
+                  ⚙ Настройки
+                </MenuItem>}
               {onRename &&
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); setEdit(name); }}>
@@ -940,7 +959,10 @@ export default function App() {
   const [status, setStatus] = useState({});
   const [models, setModels] = useState({ models: [], current: "" });
   const [mode, setMode] = useState("code");
-  const [fast, setFast] = useState(false);
+  const [fast, setFast] = useState(false);       // дефолт проекта (pj)
+  const [fastOv, setFastOv] = useState(null);    // сессионный оверрайд
+  const [mainDef, setMainDef] = useState({});    // настройки «Главной»
+  const [tSetDlg, setTSetDlg] = useState(null);  // диалог настроек темы
   const [panels, setPanels] = useState({ files: true, changes: true,
                                         builds: true, hooks: true,
                                         ws: true, branches: true,
@@ -1025,6 +1047,20 @@ export default function App() {
   const topicName = topicSel === "main" ? "Главная"
     : (topics.find(t => String(t.id) === topicSel)?.name
        || "тема #" + topicSel);
+  // настройки выбранной колонки (тема → «главная») — дефолты чипов
+  // композера и быстрого режима
+  const selTdef = topicSel === "main" ? mainDef
+    : (topics.find(t => String(t.id) === topicSel) || {});
+  // быстрый режим: сессионный оверрайд → дефолт колонки → проект
+  const effFast = fastOv ?? (selTdef.fast === "1" ? true
+                  : selTdef.fast === "0" ? false : fast);
+  const toggleFast = () => {
+    setFastOv(!effFast);
+    setToast(!effFast ? "Быстрый режим — голос сразу в работу"
+                      : "Обычный режим");
+  };
+  // смена целевой колонки/проекта — берём её дефолт быстрого режима
+  useEffect(() => { setFastOv(null); }, [topicSel, project]);
 
   const loadTasks = useCallback(async () => {
     const p = projRef.current;
@@ -1039,6 +1075,7 @@ export default function App() {
         if (td.ok) {
           topicsLoaded.current = true;
           setTopics(td.topics || []);
+          setMainDef(td.main || {});
           tkeys = ["main",
             ...(td.topics || []).map(t => String(t.id))];
         }
@@ -1178,16 +1215,9 @@ export default function App() {
         !topics.some(t => String(t.id) === topicSel))
       selectTopic("main");
   }, [topics]);
-  const createTopic = async () => {
-    const p = projRef.current;
-    if (!p) return;
-    try {
-      const d = await post("/api/topics",
-                           { action: "create", project: p });
-      if (d.ok) selectTopic(String(d.id));
-      else setToast("Тема: " + (d.error || "?"));
-    } catch (e) { setToast("Сеть: " + e); }
-  };
+  // «＋ Новая тема» — диалог настроек колонки (название, цвет,
+  // дефолты задач); сохранение выбирает её целевой
+  const createTopic = () => setTSetDlg({ kind: "create" });
   const renameTopic = (id, name) =>
     post("/api/topics", { action: "rename", project: projRef.current,
                           id, name })
@@ -1512,24 +1542,18 @@ export default function App() {
                              onSettings={p => setPSetOpen(p)} />
             )}
             {multiMode && (
-              <Tooltip title={fast
-                ? "Быстрый режим ВКЛ — распознанный голос сразу уходит в задачу"
-                : "Быстрый режим — голосовая задача без подтверждения"}>
+              <Tooltip title={effFast
+                ? "Быстрый режим ВКЛ — распознанный голос сразу уходит в задачу (дефолт — в настройках темы)"
+                : "Быстрый режим — голосовая задача без подтверждения (дефолт — в настройках темы)"}>
                 <Button size="small" variant="outlined" color="inherit"
                   disabled={!project}
-                  onClick={() => post("/api/project/settings",
-                      { project, fast: fast ? "0" : "1" }).then(d => {
-                    setToast(d.ok
-                      ? (fast ? "Обычный режим" : "Быстрый режим — голос сразу в работу")
-                      : "Ошибка: " + (d.error || "?"));
-                    if (d.ok) setFast(!fast);
-                  }).catch(() => setToast("Сеть: не сохранил режим"))}
-                  startIcon={fast ? <FlashOnIcon /> : <FlashOffIcon />}
+                  onClick={toggleFast}
+                  startIcon={effFast ? <FlashOnIcon /> : <FlashOffIcon />}
                   sx={{ display: { xs: "none", md: "inline-flex" },
-                        color: fast ? "#ffd54f" : "rgba(255,255,255,.75)",
+                        color: effFast ? "#ffd54f" : "rgba(255,255,255,.75)",
                         borderColor: "rgba(255,255,255,.35)", fontSize: 12,
                         textTransform: "none" }}>
-                {fast ? "Быстрый" : "Обычный"}
+                {effFast ? "Быстрый" : "Обычный"}
               </Button>
               </Tooltip>
             )}
@@ -1666,8 +1690,11 @@ export default function App() {
                        "&::-webkit-scrollbar": { height: 8 } }}>
               <TopicColumn name="⭐ Главная" sess={false}
                 count={mainItems.length} sel={topicSel === "main"}
-                accent={accent} onSelect={() => selectTopic("main")}
+                accent={accent} color={mainDef.color}
+                onSelect={() => selectTopic("main")}
                 onNewTask={() => newTaskIn("main")}
+                onSettings={() => setTSetDlg(
+                  { kind: "main", current: mainDef })}
                 more={colMore.main} busy={!!colBusy.main}
                 onMore={() => loadColMore("main")}
                 empty={!items.length
@@ -1684,11 +1711,14 @@ export default function App() {
                   sess={tp.has_session}
                   count={byTopic(tp.id).length}
                   sel={topicSel === String(tp.id)} accent={accent}
+                  color={tp.color}
                   onSelect={() => selectTopic(String(tp.id))}
                   onNewTask={() => newTaskIn(String(tp.id))}
                   more={colMore[String(tp.id)]}
                   busy={!!colBusy[String(tp.id)]}
                   onMore={() => loadColMore(String(tp.id))}
+                  onSettings={() => setTSetDlg(
+                    { kind: "edit", topic: tp })}
                   onRename={n => renameTopic(tp.id, n)}
                   onDelete={() =>
                     askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
@@ -1829,18 +1859,12 @@ export default function App() {
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={accent}
                   topic={topicSel} topicName={topicName} topics={topics}
+                  mainDef={mainDef}
                   onTopic={selectTopic} onNewTopic={createTopic}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
                   mode={mode}
-                  fast={fast}
-                  onFast={v => post("/api/project/settings",
-                      { project, fast: v }).then(d => {
-                    setToast(d.ok
-                      ? (v === "1" ? "Быстрый режим — модель на low effort"
-                                   : "Обычный режим")
-                      : "Ошибка: " + (d.error || "?"));
-                    if (d.ok) setFast(v === "1");
-                  }).catch(() => setToast("Сеть: не сохранил режим"))}
+                  fast={effFast} fastOv={fastOv !== null}
+                  onFast={toggleFast}
                   onMode={m => post("/api/project/settings",
                       { project, reply_mode: m }).then(d => {
                     setToast(d.ok
@@ -1851,6 +1875,11 @@ export default function App() {
                   }).catch(() => setToast("Сеть: не сохранил режим"))} />
       </Box>
 
+      <TopicSettings project={project} dlg={tSetDlg}
+                     onClose={() => setTSetDlg(null)}
+                     onSaved={id => { loadTasks();
+                       if (id) selectTopic(String(id)); }}
+                     toast={setToast} />
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
       <Settings open={setOpen} onClose={() => setSetOpen(false)}

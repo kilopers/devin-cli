@@ -15,6 +15,7 @@ export default function ProjectSettings({ project, onClose, toast,
   const [askDel, setAskDel] = useState(false);
   const [mode, setMode] = useState("");
   const [autoCommit, setAutoCommit] = useState(false);
+  const [fast, setFast] = useState("");
   const [mainBranch, setMainBranch] = useState("");
   const [branches, setBranches] = useState([]);
   const [models, setModels] = useState([]);
@@ -28,6 +29,7 @@ export default function ProjectSettings({ project, onClose, toast,
     get("/api/project/settings?project=" + encodeURIComponent(project))
       .then(j => { setModel(j.model || ""); setMode(j.reply_mode || "");
                    setAutoCommit(j.auto_commit === "1");
+                   setFast(j.fast || "");
                    setMainBranch(j.main_branch || "");
                    setMcp(j.mcp || ""); setIcon(j.icon || "");
                    setColor(j.color || ""); });
@@ -40,7 +42,7 @@ export default function ProjectSettings({ project, onClose, toast,
     setBusy(true);
     const j = await post("/api/project/settings", {
       project, model, reply_mode: mode,
-      auto_commit: autoCommit ? "1" : "0",
+      auto_commit: autoCommit ? "1" : "0", fast,
       main_branch: mainBranch.trim(), mcp: mcp.trim(),
       icon: icon.trim(), color: color.trim() });
     setBusy(false);
@@ -85,6 +87,13 @@ export default function ProjectSettings({ project, onClose, toast,
             control={<Checkbox checked={autoCommit}
                      onChange={e => setAutoCommit(e.target.checked)} />}
             label="Автокоммит + push после задачи" />
+          <TextField select label="Быстрый режим" size="small" fullWidth
+                     value={fast}
+                     onChange={e => setFast(e.target.value)}
+                     helperText="голосовая задача без подтверждения; дефолт для всех колонок — у темы свой">
+            <MenuItem value="">— обычный —</MenuItem>
+            <MenuItem value="1">⚡ быстрый</MenuItem>
+          </TextField>
           <TextField select label="Рабочая ветка" size="small" fullWidth
                      value={mainBranch}
                      onChange={e => setMainBranch(e.target.value)}
