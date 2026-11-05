@@ -38,7 +38,8 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     if (!dlg) return;
     const src = dlg.kind === "edit" ? (dlg.topic || {})
               : dlg.kind === "main" ? (dlg.current || {}) : {};
-    setName(dlg.kind === "edit" ? (dlg.topic?.name || "") : "");
+    setName(dlg.kind === "edit" ? (dlg.topic?.name || "")
+          : dlg.kind === "main" ? (dlg.current?.name || "") : "");
     setColor(src.color || "");
     setModel(src.model || "");
     setMode(src.reply_mode || "");
@@ -60,7 +61,8 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                      session_topic_id:
                        sess !== "own" && sess !== "main"
                          ? Number(sess) : null }
-        : isMain ? { ...body, action: "settings", main: true }
+        : isMain ? { ...body, action: "settings", main: true,
+                     name: name.trim() }
         : { ...body, action: "settings", id: dlg.topic.id,
             name: name.trim() });
       setBusy(false);
@@ -86,7 +88,8 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     <Dialog open={!!dlg} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle sx={{ fontSize: 16 }}>
         {isCreate ? "＋ Новая тема"
-         : isMain ? "Настройки: ⭐ Главная"
+         : isMain ? "Настройки: " + (dlg?.current?.name
+                     ? "⭐ " + dlg.current.name : "⭐ Главная")
          : `Настройки: ${dlg?.topic?.name || "тема #" + dlg?.topic?.id}`}
       </DialogTitle>
       <DialogContent>
@@ -95,13 +98,14 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
           наследуются из настроек проекта.
         </Typography>
         <Stack spacing={2} sx={{ mt: 1.5 }}>
-          {!isMain &&
-            <TextField label="Название темы" size="small" fullWidth
-                       value={name}
-                       onChange={e => setName(e.target.value)}
-                       helperText={isCreate
-                         ? "пусто — агент назовёт по первой задаче"
-                         : ""} />}
+          <TextField label={isMain ? "Название колонки"
+                                   : "Название темы"}
+                     size="small" fullWidth
+                     value={name}
+                     onChange={e => setName(e.target.value)}
+                     helperText={isCreate
+                       ? "пусто — агент назовёт по первой задаче"
+                       : isMain ? "пусто — «Главная»" : ""} />
           {isCreate &&
             <TextField select label="Сессия" size="small" fullWidth
                        value={sess}

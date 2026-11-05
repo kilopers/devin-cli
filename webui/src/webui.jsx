@@ -927,8 +927,8 @@ const boostColor = hex => {
 // глобальные; залитый чип = задано у самой темы) + карточки задач +
 // кнопка «＋ задача сюда». Клик по заголовку делает колонку «целевой»
 // — новые задачи падают в неё (рамка — яркая версия цвета темы).
-// «Главная» не переименовывается и не удаляется — в её меню только
-// «⚙ Настройки».
+// «Главная» не удаляется, но переименовывается — имя в «⚙ Настройки»
+// (ключ name в pj:<p>.tmain).
 function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       eff, onSelect, onNewTask, onDelete,
                       onSettings, empty, children, more, busy, onMore }) {
@@ -1164,7 +1164,7 @@ export default function App() {
     return [...s];
   }, [items, topics]);
   // имя целевой темы — показываем в чипе композера
-  const topicName = topicSel === "main" ? "Главная"
+  const topicName = topicSel === "main" ? (mainDef.name || "Главная")
     : (topics.find(t => String(t.id) === topicSel)?.name
        || "тема #" + topicSel);
   // настройки выбранной колонки (тема → «главная») — дефолты чипов
@@ -1790,7 +1790,9 @@ export default function App() {
                        px: { xs: 0.6, md: 0 },
                        scrollSnapType: { xs: "x proximity", md: "none" },
                        "&::-webkit-scrollbar": { height: 8 } }}>
-              <TopicColumn name="⭐ Главная" sess={false}
+              <TopicColumn sess={false}
+                name={mainDef.name ? "⭐ " + mainDef.name
+                                   : "⭐ Главная"}
                 count={mainItems.length} sel={topicSel === "main"}
                 accent={accent} color={mainDef.color}
                 tset={mainDef} eff={mainDef.eff}

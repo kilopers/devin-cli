@@ -205,6 +205,17 @@ def _topic_settings_from(b: dict) -> dict:
     return st
 
 
+def _main_col_name(p: str) -> str:
+    """Своё имя «главной» колонки — ключ name в pj:<p>.tmain
+    (переименовать можно, удалить нельзя)."""
+    try:
+        d = json.loads(pj_get(p, "tmain") or "{}")
+    except ValueError:
+        return ""
+    return ((d.get("name") or "").strip() if isinstance(d, dict)
+            else "")
+
+
 @app.get("/api/topics")
 @login_required
 def _api_topics_get():
@@ -231,6 +242,7 @@ def _api_topics_get():
                     # eff — итоговые дефолты (тема → проект → глобальные),
                     # их чипами рисует шапка колонки
                     "main": dict(_topic_defaults(p, None),
+                                 name=_main_col_name(p),
                                  eff=_eff_topic_defaults(p, None)),
                     "topics": out})
 
@@ -284,9 +296,22 @@ def _api_topics_set():
                             "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
     if act == "settings" and b.get("main"):
         # «главная» колонка — не строка topics: настройки лежат
-        # JSON-объектом в pj:<p>.tmain (те же ключи, что у колонок)
-        cur = _topic_defaults(p, None)
+        # JSON-объектом в pj:<p>.tmain (ключи колонок + name — её
+        # переименование); читаем сырой JSON, чтобы не затирать
+        # лишние ключи при обычном сохранении
+        try:
+            cur = json.loads(pj_get(p, "tmain") or "{}")
+        except ValueError:
+            cur = {}
+        if not isinstance(cur, dict):
+            cur = {}
         cur.update(_topic_settings_from(b))
+        if "name" in b:
+            nm = (b.get("name") or "").strip()[:190]
+            if nm:
+                cur["name"] = nm
+            else:
+                cur.pop("name", None)
         pj_set(p, "tmain", json.dumps(cur, ensure_ascii=False))
         return jsonify({"ok": True})
     tid = int(b.get("id") or 0)

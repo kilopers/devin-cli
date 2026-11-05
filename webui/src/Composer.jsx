@@ -127,7 +127,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         <MenuItem dense selected={!topic || topic === "main"}
           sx={{ fontSize: 13 }}
           onClick={() => { onTopic?.("main"); setTAnchor(null); }}>
-          ⭐ Главная
+          {mainDef?.name ? "⭐ " + mainDef.name : "⭐ Главная"}
         </MenuItem>
         {(topics || []).map(t => (
           <MenuItem key={t.id} dense
