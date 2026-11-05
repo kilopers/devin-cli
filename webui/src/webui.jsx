@@ -220,10 +220,11 @@ function StatusChip({ t }) {
   return <Chip size="small" color={color}
     variant={starting ? "outlined" : "filled"}
     sx={{ height: 24, fontSize: 12,
-          // у running слева спиннер — текст визуально ближе к краю:
-          // чуть больше левый паддинг лейбла, чтобы слева/справа ровно
+          // у running слева спиннер (margin-right -4px у MUI) —
+          // зазор иконка→текст выходит меньше правого паддинга:
+          // pl лейбла 12px — внутри бейджа слева/справа ровно
           ...(t.status === "running"
-            ? { "& .MuiChip-label": { pl: "10px" } } : {}) }}
+            ? { "& .MuiChip-label": { pl: "12px" } } : {}) }}
     label={failed ? "ошибка"
                 : starting ? "запускается"
                            : (STATUS_RU[t.status] || t.status)}
