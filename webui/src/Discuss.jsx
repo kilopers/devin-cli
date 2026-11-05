@@ -11,6 +11,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Select from "@mui/material/Select";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import CloseIcon from "@mui/icons-material/Close";
 import MicIcon from "@mui/icons-material/Mic";
@@ -193,15 +194,22 @@ export default function Discuss({ open, onClose, project, models,
         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
           💭 Обсудить задачу{project ? ` — «${project}»` : ""}
         </Typography>
-        <Button size="small" variant="outlined"
-                disabled={!msgs.length || busy}
-                onClick={clearDiscuss}
-                sx={{ ml: "auto", textTransform: "none", mr: 0.5,
-                      fontSize: 12 }}>
-          Новое обсуждение
-        </Button>
-        <IconButton size="small" onClick={onClose}
-                    title="закрыть"><CloseIcon /></IconButton>
+        <Tooltip title="очистить историю и начать заново">
+          <span>
+            <Button size="small" variant="outlined"
+                    disabled={!msgs.length || busy}
+                    onClick={clearDiscuss}
+                    sx={{ ml: "auto", textTransform: "none", mr: 0.5,
+                          fontSize: 12 }}>
+              Новое обсуждение
+            </Button>
+          </span>
+        </Tooltip>
+        <Tooltip title="закрыть">
+          <IconButton size="small" onClick={onClose}>
+            <CloseIcon />
+          </IconButton>
+        </Tooltip>
       </Box>
 
       <Box ref={listRef} sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 1 }}>
@@ -239,18 +247,25 @@ export default function Discuss({ open, onClose, project, models,
                 e.preventDefault(); send();
               } }}
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px" } }} />
-          <IconButton size="small" onClick={micClick}
-                      color={recording ? "error" : "default"}
-                      title="надиктовать"
-                      sx={recording ? { animation: "pulse 1s infinite",
-                            "@keyframes pulse": { "50%": { opacity: .35 } } }
-                                   : {}}>
-            {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
-          </IconButton>
-          <IconButton size="small" onClick={send}
-                      disabled={busy || !input.trim()} title="отправить">
-            <SendIcon />
-          </IconButton>
+          <Tooltip title={recognizing ? "распознаю запись…"
+                          : recording ? "остановить запись"
+                          : "надиктовать голосом"}>
+            <IconButton size="small" onClick={micClick}
+                        color={recording ? "error" : "default"}
+                        sx={recording ? { animation: "pulse 1s infinite",
+                              "@keyframes pulse": { "50%": { opacity: .35 } } }
+                                     : {}}>
+              {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="отправить — Ctrl+Enter">
+            <span>
+              <IconButton size="small" onClick={send}
+                          disabled={busy || !input.trim()}>
+                <SendIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1,
                    mt: 0.8 }}>
@@ -262,13 +277,17 @@ export default function Discuss({ open, onClose, project, models,
             {(models.length ? models : [{ id: model }]).map(m =>
               <MenuItem key={m.id} value={m.id}>{m.id}</MenuItem>)}
           </Select>
-          <Button variant="contained" size="small"
-                  disabled={!lastPlan}
-                  startIcon={<PlayArrowIcon sx={{ fontSize: 16 }} />}
-                  onClick={() => onSubmit(lastPlan.text, model)}
-                  sx={{ textTransform: "none", whiteSpace: "nowrap" }}>
-            В работу
-          </Button>
+          <Tooltip title="поставить задачу в работу с выбранной моделью">
+            <span>
+              <Button variant="contained" size="small"
+                      disabled={!lastPlan}
+                      startIcon={<PlayArrowIcon sx={{ fontSize: 16 }} />}
+                      onClick={() => onSubmit(lastPlan.text, model)}
+                      sx={{ textTransform: "none", whiteSpace: "nowrap" }}>
+                В работу
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
     </Dialog>

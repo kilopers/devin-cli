@@ -76,16 +76,20 @@ export default function Workspaces({ open, onClose, onChanged }) {
                 primary={<><Dot color={w.color} />{w.name}</>}
                 secondary={w.default ? "по умолчанию" : ""} />
               <ListItemSecondaryAction>
-                <IconButton edge="end" size="small"
-                  onClick={e => { e.stopPropagation();
-                                  setEdit({ ...w }); }}>
-                  <EditIcon fontSize="small" />
-                </IconButton>
-                {!w.default &&
+                <Tooltip title="редактировать пространство">
                   <IconButton edge="end" size="small"
-                    onClick={e => { e.stopPropagation(); del(w); }}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>}
+                    onClick={e => { e.stopPropagation();
+                                    setEdit({ ...w }); }}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                {!w.default &&
+                  <Tooltip title="удалить пространство">
+                    <IconButton edge="end" size="small"
+                      onClick={e => { e.stopPropagation(); del(w); }}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>}
               </ListItemSecondaryAction>
             </ListItem>
           ))}

@@ -430,49 +430,68 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         sx={{ fontSize: 12, mr: 0.2 }}>
               {new Date(t.created * 1000).toLocaleString("ru-RU")}
             </Typography>
-            <Chip size="small" variant="outlined" sx={metaSx}
-                  label={SRC_RU[t.source] || t.source || ""} />
-            {t.model &&
+            <Tooltip title="откуда поставлена задача">
               <Chip size="small" variant="outlined" sx={metaSx}
-                    label={t.model} />}
-            <Chip size="small" variant="outlined" sx={metaSx}
-                  label={t.mode === "ask" ? "💬 вопрос" : "🛠 код"} />
-            <Chip size="small" variant="outlined"
-                  sx={{ ...metaSx,
-                        color: t.ac === "1" ? "#2e7d32" : undefined,
-                        borderColor: t.ac === "1" ? "#a5d6a7" : undefined }}
-                  label={t.ac === "1" ? "⚡ автокоммит"
-                                      : "✋ коммит вручную"} />
+                    label={SRC_RU[t.source] || t.source || ""} />
+            </Tooltip>
+            {t.model &&
+              <Tooltip title="модель задачи">
+                <Chip size="small" variant="outlined" sx={metaSx}
+                      label={t.model} />
+              </Tooltip>}
+            <Tooltip title={t.mode === "ask"
+              ? "режим «вопрос» — только чтение"
+              : "режим «код» — полный доступ"}>
+              <Chip size="small" variant="outlined" sx={metaSx}
+                    label={t.mode === "ask" ? "💬 вопрос" : "🛠 код"} />
+            </Tooltip>
+            <Tooltip title={t.ac === "1"
+              ? "автокоммит и пуш после задачи"
+              : "изменения не коммитятся автоматически"}>
+              <Chip size="small" variant="outlined"
+                    sx={{ ...metaSx,
+                          color: t.ac === "1" ? "#2e7d32" : undefined,
+                          borderColor: t.ac === "1" ? "#a5d6a7"
+                                                  : undefined }}
+                    label={t.ac === "1" ? "⚡ автокоммит"
+                                        : "✋ коммит вручную"} />
+            </Tooltip>
             {t.topic &&
               <Tooltip title="тема задачи">
                 <Chip size="small" variant="outlined" sx={metaSx}
                       label={"🧵 " + t.topic} />
               </Tooltip>}
             {t.tag &&
-              <Chip size="small" color="primary"
-                    sx={{ ...metaSx,
-                          bgcolor: "#eceefc", color: "#4c57b8" }}
-                    label={t.tag} />}
+              <Tooltip title="тег задачи — версия/прогресс от воркера">
+                <Chip size="small" color="primary"
+                      sx={{ ...metaSx,
+                            bgcolor: "#eceefc", color: "#4c57b8" }}
+                      label={t.tag} />
+              </Tooltip>}
           </Box>
           <Box sx={{ display: "flex", alignItems: "center",
                      gap: 0.8, flexShrink: 0 }}>
             {t.status === "running" && onStop && (
-              <Button size="small" variant="outlined" color="error"
-                      onClick={() => onStop(t)}
-                      sx={{ fontSize: 11, px: 1.2, height: 26,
-                            borderRadius: "7px", whiteSpace: "nowrap",
-                            textTransform: "none" }}>
-                ⛔ стоп
-              </Button>
+              <Tooltip title="остановить выполнение задачи">
+                <Button size="small" variant="outlined" color="error"
+                        onClick={() => onStop(t)}
+                        sx={{ fontSize: 11, px: 1.2, height: 26,
+                              borderRadius: "7px", whiteSpace: "nowrap",
+                              textTransform: "none" }}>
+                  ⛔ стоп
+                </Button>
+              </Tooltip>
             )}
             {t.status === "queued" && onCancel && (
-              <Button size="small" variant="outlined" color="error"
-                      onClick={() => onCancel(t)}
-                      sx={{ fontSize: 11, px: 1.2, height: 26,
-                            borderRadius: "7px", whiteSpace: "nowrap",
-                            textTransform: "none" }}>
-                ✖ удалить
-              </Button>
+              <Tooltip title="убрать задачу из очереди">
+                <Button size="small" variant="outlined" color="error"
+                        onClick={() => onCancel(t)}
+                        sx={{ fontSize: 11, px: 1.2, height: 26,
+                              borderRadius: "7px", whiteSpace: "nowrap",
+                              textTransform: "none" }}>
+                  ✖ удалить
+                </Button>
+              </Tooltip>
             )}
             <Tooltip title={succeeded ? "результат задачи"
                                       : "вывод задачи"}>
@@ -615,13 +634,18 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             {succeeded ? "Результат задачи" : "Вывод задачи"}
             {t.mode === "ask" && t.status === "done" && (
-              <Button size="small"
-                      variant={offersWork ? "contained" : "outlined"}
-                      onClick={sendToWork} disabled={workBusy}
-                      sx={{ ml: 1.2, fontSize: 11.5, px: 1.2, py: 0.1,
-                            textTransform: "none", whiteSpace: "nowrap" }}>
-                {workBusy ? "отправляю…" : "▶ в работу"}
-              </Button>)}
+              <Tooltip title="создать code-задачу по предложению из ответа">
+                <span>
+                  <Button size="small"
+                          variant={offersWork ? "contained" : "outlined"}
+                          onClick={sendToWork} disabled={workBusy}
+                          sx={{ ml: 1.2, fontSize: 11.5, px: 1.2, py: 0.1,
+                                textTransform: "none",
+                                whiteSpace: "nowrap" }}>
+                    {workBusy ? "отправляю…" : "▶ в работу"}
+                  </Button>
+                </span>
+              </Tooltip>)}
             <Tooltip title="закрыть">
               <IconButton size="small" onClick={() => setOutOpen(false)}
                 sx={{ position: "absolute", right: 12, top: 10,
@@ -1372,14 +1396,16 @@ export default function App() {
               {statusText}
             </Typography>
             {status.current_task && (
-              <Button size="small" variant="outlined" color="inherit"
-                      onClick={() => setConfirm({ kind: "stop",
-                        name: status.current_task })}
-                      sx={{ borderColor: "rgba(255,255,255,.55)",
-                            color: "#ffcdd2", fontSize: 11, px: 1,
-                            whiteSpace: "nowrap" }}>
-                ⛔ Стоп
-              </Button>
+              <Tooltip title="остановить текущую задачу">
+                <Button size="small" variant="outlined" color="inherit"
+                        onClick={() => setConfirm({ kind: "stop",
+                          name: status.current_task })}
+                        sx={{ borderColor: "rgba(255,255,255,.55)",
+                              color: "#ffcdd2", fontSize: 11, px: 1,
+                              whiteSpace: "nowrap" }}>
+                  ⛔ Стоп
+                </Button>
+              </Tooltip>
             )}
             <Tooltip title="профиль">
               <IconButton color="inherit"

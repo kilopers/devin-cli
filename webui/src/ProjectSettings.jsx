@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
   Stack, Typography, TextField, MenuItem, Alert, Box,
-  FormControlLabel, Checkbox,
+  FormControlLabel, Checkbox, Tooltip,
 } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
@@ -102,16 +102,17 @@ export default function ProjectSettings({ project, onClose, toast,
                      placeholder="🚀 или https://…/icon.png" />
           <Box sx={{ display: "flex", gap: 1.2,
                      alignItems: "flex-start" }}>
-            <input type="color"
-                   value={/^#[0-9a-fA-F]{6}$/.test(color)
-                          ? color : "#5e6ad2"}
-                   onChange={e => { setColor(e.target.value);
-                                    onPreview?.(e.target.value); }}
-                   title="выбрать цвет"
-                   style={{ width: 44, height: 38, marginTop: 1,
-                            border: "1px solid rgba(0,0,0,.23)",
-                            borderRadius: 8, padding: 2,
-                            background: "none", cursor: "pointer" }} />
+            <Tooltip title="выбрать цвет">
+              <input type="color"
+                     value={/^#[0-9a-fA-F]{6}$/.test(color)
+                            ? color : "#5e6ad2"}
+                     onChange={e => { setColor(e.target.value);
+                                      onPreview?.(e.target.value); }}
+                     style={{ width: 44, height: 38, marginTop: 1,
+                              border: "1px solid rgba(0,0,0,.23)",
+                              borderRadius: 8, padding: 2,
+                              background: "none", cursor: "pointer" }} />
+            </Tooltip>
             <TextField label="Цвет проекта" size="small" fullWidth
                        value={color}
                        onChange={e => { setColor(e.target.value);

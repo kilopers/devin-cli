@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, AppBar, Box, Chip,
   CircularProgress, Dialog, IconButton, ListItemButton, TextField,
-  Toolbar, Typography,
+  Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -50,7 +50,11 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
                     bgcolor: "rgba(255,255,255,.15)", fontSize: 13 },
                   "& input::placeholder": { color: "rgba(255,255,255,.7)",
                     opacity: 1 } }} />
-          <IconButton color="inherit" onClick={onClose}><CloseIcon /></IconButton>
+          <Tooltip title="закрыть">
+            <IconButton color="inherit" onClick={onClose}>
+              <CloseIcon />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
       {repos === null ? (
@@ -105,9 +109,10 @@ export default function RepoBrowse({ open, onClose, onAdd }) {
               {r.added
                 ? <Chip size="small" label="добавлен" variant="outlined"
                         sx={{ height: 18, fontSize: 10 }} />
-                : <IconButton size="small" color="primary"
-                              title="клонировать">
-                    <AddIcon fontSize="small" /></IconButton>}
+                : <Tooltip title="клонировать и добавить проект">
+                    <IconButton size="small" color="primary">
+                      <AddIcon fontSize="small" /></IconButton>
+                  </Tooltip>}
             </ListItemButton>))}
           </AccordionDetails>
         </Accordion>

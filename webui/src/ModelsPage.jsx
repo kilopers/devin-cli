@@ -5,7 +5,8 @@
 import { useEffect, useState } from "react";
 import {
   AppBar, Box, Card, CardContent, Chip, CircularProgress, Collapse,
-  IconButton, ListItemButton, Radio, TextField, Toolbar, Typography,
+  IconButton, ListItemButton, Radio, TextField, Toolbar, Tooltip,
+  Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
@@ -125,9 +126,11 @@ export default function ModelsPage({ accent, onClose, toast }) {
             <Chip size="small" label="живой список"
                   sx={{ bgcolor: "rgba(255,255,255,.2)", color: "#fff",
                         mr: 1 }} />}
-          <IconButton color="inherit" onClick={onClose}>
-            <CloseIcon />
-          </IconButton>
+          <Tooltip title="закрыть">
+            <IconButton color="inherit" onClick={onClose}>
+              <CloseIcon />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
       <Box sx={{ p: 1.5, pb: "150px", maxWidth: 900,

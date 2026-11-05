@@ -7,7 +7,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
   Stack, Typography, IconButton, TextField, List, ListItem,
   ListItemText, ListItemIcon, ListItemSecondaryAction, Alert,
-  FormControl, InputLabel, Select, MenuItem,
+  FormControl, InputLabel, Select, MenuItem, Tooltip,
 } from "@mui/material";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -61,9 +61,11 @@ export default function RepoKeys({ open, onClose }) {
                   secondary={(c.kind === "github" ? "GitHub" : "GitLab") +
                     " · " + c.mask} />
                 <ListItemSecondaryAction>
-                  <IconButton edge="end" onClick={() => del(c.host)}>
-                    <DeleteIcon />
-                  </IconButton>
+                  <Tooltip title="удалить доступ">
+                    <IconButton edge="end" onClick={() => del(c.host)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
                 </ListItemSecondaryAction>
               </ListItem>
             ))}

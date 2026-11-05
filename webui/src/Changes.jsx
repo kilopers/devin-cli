@@ -471,14 +471,17 @@ export function Branches({ project, open, onToggle, toast }) {
       <Chip size="small" label={branches.length}
             sx={{ ml: "auto", height: 18, fontSize: 11 }} />
       {data && !onMain &&
-        <IconButton size="small" sx={{ ml: "auto" }}
-          title={"слить " + data.current + " в " + data.main}
-          disabled={busy}
-          onClick={e => { e.stopPropagation();
-            act("/api/branch/merge", {},
-                "Слито в " + data.main); }}>
-          <CallMergeIcon sx={{ fontSize: 16 }} />
-        </IconButton>}
+        <Tooltip title={"слить " + data.current + " в " + data.main}>
+          <span>
+            <IconButton size="small" sx={{ ml: "auto" }}
+              disabled={busy}
+              onClick={e => { e.stopPropagation();
+                act("/api/branch/merge", {},
+                    "Слито в " + data.main); }}>
+              <CallMergeIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>}
     </ListItemButton>
     <Collapse in={open}>
       <Box>
@@ -495,12 +498,15 @@ export function Branches({ project, open, onToggle, toast }) {
               {b.name}
             </Typography>
             {b.dirty > 0 &&
-              <Chip size="small" label={b.dirty + " изм."}
-                    sx={{ height: 16, fontSize: 10, mr: 0.5 }} />}
+              <Tooltip title={"нескоммиченных изменений: " + b.dirty}>
+                <Chip size="small" label={b.dirty + " изм."}
+                      sx={{ height: 16, fontSize: 10, mr: 0.5 }} />
+              </Tooltip>}
             {b.stash > 0 &&
-              <Chip size="small" label={"📦" + b.stash}
-                    title={"автостэшей: " + b.stash}
-                    sx={{ height: 16, fontSize: 10, mr: 0.5 }} />}
+              <Tooltip title={"автостэшей: " + b.stash}>
+                <Chip size="small" label={"📦" + b.stash}
+                      sx={{ height: 16, fontSize: 10, mr: 0.5 }} />
+              </Tooltip>}
             {(b.ahead > 0 || b.behind > 0) &&
               <Typography variant="caption" color="text.secondary"
                           sx={{ fontSize: 10, mr: 0.5 }}>
@@ -508,17 +514,21 @@ export function Branches({ project, open, onToggle, toast }) {
                 {b.behind ? "↓" + b.behind : ""}
               </Typography>}
             {b.remote
-              ? <CloudDoneIcon sx={{ fontSize: 14, color: "#2e7d32",
-                                     flexShrink: 0 }}
-                               titleAccess="на remote" />
-              : <IconButton size="small" disabled={busy}
-                    title={"отправить " + b.name + " на remote"}
-                    onClick={e => { e.stopPropagation();
-                      act("/api/branch/push", { branch: b.name },
-                          "Запушено: " + b.name); }}>
-                  <CloudUploadIcon sx={{ fontSize: 14,
-                                         color: "#9aa0a6" }} />
-                </IconButton>}
+              ? <Tooltip title="уже на remote">
+                  <CloudDoneIcon sx={{ fontSize: 14, color: "#2e7d32",
+                                       flexShrink: 0 }} />
+                </Tooltip>
+              : <Tooltip title={"отправить " + b.name + " на remote"}>
+                  <span>
+                    <IconButton size="small" disabled={busy}
+                        onClick={e => { e.stopPropagation();
+                          act("/api/branch/push", { branch: b.name },
+                              "Запушено: " + b.name); }}>
+                      <CloudUploadIcon sx={{ fontSize: 14,
+                                             color: "#9aa0a6" }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>}
           </ListItemButton>))}
       </Box>
     </Collapse>
@@ -694,9 +704,11 @@ export default function Changes({ project, toast, open, onToggle,
       <Dialog fullScreen open={!!diff} onClose={() => setDiff(null)}>
         <AppBar position="sticky" color="primary">
           <Toolbar variant="dense" sx={{ gap: 1 }}>
-            <IconButton color="inherit" onClick={() => setDiff(null)}>
-              <CloseIcon />
-            </IconButton>
+            <Tooltip title="закрыть">
+              <IconButton color="inherit" onClick={() => setDiff(null)}>
+                <CloseIcon />
+              </IconButton>
+            </Tooltip>
             <Typography variant="body2" noWrap sx={{
               fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13 }}>
               {diff?.path}

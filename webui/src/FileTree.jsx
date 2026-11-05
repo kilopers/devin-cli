@@ -7,6 +7,7 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import { SimpleTreeView } from "@mui/x-tree-view/SimpleTreeView";
 import { TreeItem } from "@mui/x-tree-view/TreeItem";
+import Tooltip from "@mui/material/Tooltip";
 import FolderIcon from "@mui/icons-material/Folder";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import { apiJson } from "./api.js";
@@ -121,17 +122,18 @@ export default function FileTree({ project, onError, onOpenFile }) {
     <Label name={name}
            icon={<FolderIcon sx={{ fontSize: 17, color: "#5f6368" }} />} />
   ) : (
-    <Box onClick={ev => { ev.stopPropagation(); onOpenFile?.(p); }}
-         title="открыть в редакторе"
-         sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0,
-               cursor: "pointer",
-               "&:hover": { textDecoration: "underline" } }}>
-      <InsertDriveFileIcon sx={{ fontSize: 15, color: "#9aa0a6",
-                                 ml: "2px" }} />
-      <Typography variant="body2" noWrap sx={{ color: "#3c4043" }}>
-        {name}
-      </Typography>
-    </Box>
+    <Tooltip title="открыть в редакторе">
+      <Box onClick={ev => { ev.stopPropagation(); onOpenFile?.(p); }}
+           sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0,
+                 cursor: "pointer",
+                 "&:hover": { textDecoration: "underline" } }}>
+        <InsertDriveFileIcon sx={{ fontSize: 15, color: "#9aa0a6",
+                                   ml: "2px" }} />
+        <Typography variant="body2" noWrap sx={{ color: "#3c4043" }}>
+          {name}
+        </Typography>
+      </Box>
+    </Tooltip>
   );
 
   const renderLevel = (path, entries) => {

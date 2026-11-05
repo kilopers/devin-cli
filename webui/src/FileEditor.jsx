@@ -4,7 +4,8 @@
 // /api/file, which writes atomically server-side.
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert, AppBar, Box, Button, Dialog, IconButton, Toolbar, Typography,
+  Alert, AppBar, Box, Button, Dialog, IconButton, Toolbar, Tooltip,
+  Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SaveIcon from "@mui/icons-material/Save";
@@ -93,9 +94,11 @@ export default function FileEditor({ project, path, onClose, toast }) {
     <Dialog fullScreen open={path !== null} onClose={onClose}>
       <AppBar position="sticky" color="primary">
         <Toolbar variant="dense" sx={{ gap: 1 }}>
-          <IconButton color="inherit" onClick={onClose}>
-            <CloseIcon />
-          </IconButton>
+          <Tooltip title="закрыть">
+            <IconButton color="inherit" onClick={onClose}>
+              <CloseIcon />
+            </IconButton>
+          </Tooltip>
           <Typography variant="body2" noWrap sx={{
             flex: 1, fontSize: 13,
             fontFamily: "ui-monospace, Menlo, monospace" }}>

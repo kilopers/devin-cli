@@ -6,7 +6,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Box, Checkbox, Chip, Collapse, Dialog, DialogActions,
-  DialogContent, DialogTitle, ListItemButton, Typography, Button,
+  DialogContent, DialogTitle, ListItemButton, Tooltip, Typography,
+  Button,
 } from "@mui/material";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
@@ -105,9 +106,12 @@ export default function Instr({ project, open, onToggle, toast }) {
         {common && (
           <ListItemButton dense onClick={() => setView(common)}
                           sx={{ px: 1.5, py: 0.3 }}>
-            <Checkbox size="small" checked disabled
-                      sx={{ p: 0.3, mr: 0.5 }}
-                      title="подключается ко всем проектам" />
+            <Tooltip title="подключается ко всем проектам">
+              <span>
+                <Checkbox size="small" checked disabled
+                          sx={{ p: 0.3, mr: 0.5 }} />
+              </span>
+            </Tooltip>
             <Typography variant="body2" noWrap
                         sx={{ flex: 1, fontSize: 12.5 }}>
               {common.name}
@@ -118,9 +122,12 @@ export default function Instr({ project, open, onToggle, toast }) {
         {projInstr && (
           <ListItemButton dense onClick={() => setView(projInstr)}
                           sx={{ px: 1.5, py: 0.3 }}>
-            <Checkbox size="small" checked disabled
-                      sx={{ p: 0.3, mr: 0.5 }}
-                      title="проектная — отцепить нельзя" />
+            <Tooltip title="проектная — отцепить нельзя">
+              <span>
+                <Checkbox size="small" checked disabled
+                          sx={{ p: 0.3, mr: 0.5 }} />
+              </span>
+            </Tooltip>
             <Typography variant="body2" noWrap
                         sx={{ flex: 1, fontSize: 12.5 }}>
               {projInstr.name}
@@ -131,14 +138,17 @@ export default function Instr({ project, open, onToggle, toast }) {
         {customs.map(r => (
           <ListItemButton key={r.id} dense onClick={() => setView(r)}
                           sx={{ px: 1.5, py: 0.3 }}>
-            <Checkbox size="small" checked={!!r.attached}
-                      disabled={!r.mine}
-                      sx={{ p: 0.3, mr: 0.5 }}
-                      title={r.mine
-                        ? "подключена к проекту"
-                        : "инструкция владельца — нельзя править"}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => attach(r, e.target.checked)} />
+            <Tooltip title={r.mine
+                      ? "подключена к проекту"
+                      : "инструкция владельца — нельзя править"}>
+              <span>
+                <Checkbox size="small" checked={!!r.attached}
+                          disabled={!r.mine}
+                          sx={{ p: 0.3, mr: 0.5 }}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => attach(r, e.target.checked)} />
+              </span>
+            </Tooltip>
             <Typography variant="body2" noWrap
                         sx={{ flex: 1, fontSize: 12.5 }}>
               {r.name}
@@ -170,9 +180,11 @@ export default function Instr({ project, open, onToggle, toast }) {
                            pb: { xs: 1, md: 2 } }}>
         <Box sx={{ display: "flex", alignItems: "center" }}>
           {view?.kind === "custom" && view?.mine &&
-            <IconButton onClick={del} title="удалить" sx={{ mr: "auto" }}>
-              <DeleteIcon fontSize="small" />
-            </IconButton>}
+            <Tooltip title="удалить инструкцию">
+              <IconButton onClick={del} sx={{ mr: "auto" }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>}
           <Box sx={{ ml: "auto" }}>
             <Button onClick={() => setView(null)}>Закрыть</Button>
           </Box>

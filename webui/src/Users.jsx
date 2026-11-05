@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
   Stack, Typography, IconButton, TextField, List, ListItem,
-  ListItemText, ListItemSecondaryAction, Alert,
+  ListItemText, ListItemSecondaryAction, Alert, Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
@@ -73,9 +73,11 @@ export default function Users({ open, onClose, me }) {
                   (u.admin ? "" : " · клик — права на проекты")} />
               {!u.admin && u.user !== me &&
                 <ListItemSecondaryAction>
-                  <IconButton edge="end" onClick={() => del(u.user)}>
-                    <DeleteIcon />
-                  </IconButton>
+                  <Tooltip title="удалить пользователя">
+                    <IconButton edge="end" onClick={() => del(u.user)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
                 </ListItemSecondaryAction>}
             </ListItem>
           ))}
