@@ -736,15 +736,86 @@ def is_failed_task(row: dict | None) -> bool:
         "exit code: 0" not in (row["task_status"] or "")
 
 
-@app.post("/api/task/delete")
+@app.post("/api/task/append")
 @login_required
-def _api_task_delete():
-    """Web «удалить» на карточке упавшей задачи: стирает запись done-
-    задачи (статус «ошибка») вместе с прогресс-файлами и kv-метками."""
+def _api_task_append():
+    """Дописать текст в карточку-заметку («сказать»): выбранная
+    карточка + ввод в композере → POST {stem, text} дописывает
+    к tasks.prompt, статус остаётся 'note'."""
+    body = _req_json()
+    stem = (body.get("stem") or "").strip()
+    text = (body.get("text") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "note":
+        return jsonify({"ok": False,
+                        "error": "дописывать можно только заметку"}), 409
+    if not text:
+        return jsonify({"ok": False, "error": "пустой текст"}), 400
+    if len(text) > 20000:
+        return jsonify({"ok": False, "error": "text too long"}), 400
+    db_exec("UPDATE tasks SET prompt=CONCAT(prompt,'\\n\\n',%s)"
+            " WHERE stem=%s", (text, stem))
+    log(f"note {stem} appended +{len(text)} chars")
+    return jsonify({"ok": True, "stem": stem})
+
+
+@app.post("/api/task/run")
+@login_required
+def _api_task_run():
+    """«▶ начать выполнение» на карточке-заметке: переводит её из
+    'note' в 'queued' — дальше её забирает обычная очередь.
+    Настройки берутся СВЕЖИЕ из дефолтов её колонки (тема → проект →
+    юзерские): разовые оверрайды заметки (opts.mode/model/ac) смываем,
+    чтобы не притащить say/старую модель в запуск."""
     stem = (_req_json().get("stem") or "").strip()
     row = task_row(stem)
     if not row:
         return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "note":
+        return jsonify({"ok": False,
+                        "error": "запускать можно только заметку"}), 409
+    eff = _eff_topic_defaults(row["project"], row["topic_id"])
+    rmode = eff.get("reply_mode") if eff.get("reply_mode") in ("ask", "code") \
+        else "code"
+    db_exec("UPDATE tasks SET status='queued', reply_mode=%s, model=%s"
+            " WHERE stem=%s", (rmode, eff.get("model") or None, stem))
+    try:
+        o = json.loads(kv_get(f"opts:{stem}") or "{}")
+    except ValueError:
+        o = {}
+    o.pop("mode", None)
+    o.pop("model", None)
+    if eff.get("auto_commit") in ("0", "1"):
+        o["ac"] = eff["auto_commit"]
+    if o:
+        kv_set(f"opts:{stem}", json.dumps(o))
+    else:
+        db_exec("DELETE FROM kv WHERE k=%s", (f"opts:{stem}",))
+    log(f"note {stem} -> queued (mode={rmode}, "
+        f"model={eff.get('model')}, ac={eff.get('auto_commit')})")
+    return jsonify({"ok": True, "stem": stem})
+
+
+@app.post("/api/task/delete")
+@login_required
+def _api_task_delete():
+    """Web «удалить» на карточке упавшей задачи или заметки: стирает
+    запись (done + ошибка либо status='note') вместе с прогресс-
+    файлами и kv-метками."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["status"] == "note":
+        drop_failed_task(stem)
+        log(f"web delete removed note {stem}")
+        return jsonify({"ok": True, "stem": stem})
     if row["status"] != "done":
         return jsonify({"ok": False,
                         "error": "удалять можно только завершённые"}), 409

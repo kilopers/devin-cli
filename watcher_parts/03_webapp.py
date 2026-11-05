@@ -199,6 +199,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             # this changes (no flicker on identical polls)
             "h": hashlib.md5(
                 f"{st}|{r['task_status']}|{r['commit_offered']}|{out}"
+                f"|{len(r['prompt'] or '')}|{r['prompt'][-64:]}"
                 .encode()).hexdigest()[:12],
         })
     if before:

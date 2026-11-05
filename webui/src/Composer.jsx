@@ -33,6 +33,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
                                    fast, fastOv, onFast, topic,
                                    topicName, topics, mainDef,
+                                   note, onNoteDone,
                                    onTopic, onNewTopic }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
@@ -76,6 +77,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const curMode = pick(ov.mode, tset.reply_mode, eff.mode) || "code";
   const curAc = pick(ov.ac, tset.auto_commit, eff.ac) || "0";
   const curModel = pick(ov.model, tset.model, eff.model) || "";
+  // «сказать» — карточка-заметка в колонке (Devin её не получает).
+  // Выбранная («нажатая») заметка принудительно включает режим:
+  // ввод дописывается в её текст; чипы настроек при say не нужны
+  const effMode = note ? "say" : curMode;
+  const say = effMode === "say";
 
   const pickFile = async e => {
     const fl = e.target.files && e.target.files[0];
@@ -139,30 +145,44 @@ export default function Composer({ project, sttStatus, toast, onSent,
             ＋ Новая тема
           </MenuItem>}
       </Menu>
-      <Tooltip title={"режим следующей задачи" +
-                      (ov.mode ? " — переопределено разово" : "")}>
+      <Tooltip title={note
+                ? "карточка выбрана — смена режима отожмёт её"
+                : "режим следующей задачи" +
+                  (ov.mode ? " — переопределено разово" : "")}>
         <Chip size="small" clickable sx={chipSx}
-          label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
-          color={ov.mode ? "primary" : "default"}
-          variant={ov.mode ? "filled" : "outlined"}
-          onClick={() => setOv({ ...ov,
-            mode: curMode === "ask" ? "code" : "ask" })} />
+          label={say ? "📝 Сказать"
+                 : effMode === "ask" ? "💬 Спросить" : "🛠 Код"}
+          color={ov.mode || note ? "primary" : "default"}
+          variant={ov.mode || note ? "filled" : "outlined"}
+          onClick={() => {
+            if (note) { onNoteDone?.();
+                        setOv({ ...ov, mode: "code" }); return; }
+            setOv({ ...ov,
+              mode: curMode === "code" ? "ask"
+                    : curMode === "ask" ? "say" : "code" }); }} />
       </Tooltip>
-      <Tooltip title={"коммит после задачи" +
-                      (ov.ac ? " — переопределено разово" : "")}>
-        <Chip size="small" clickable sx={chipSx}
-          label={curAc === "1" ? "Автокоммит" : "Ручной коммит"}
-          color={ov.ac ? "primary" : "default"}
-          variant={ov.ac ? "filled" : "outlined"}
-          onClick={() => setOv({ ...ov, ac: curAc === "1" ? "0" : "1" })} />
+      <Tooltip title={say ? "у заметки не применяется"
+                : "коммит после задачи" +
+                  (ov.ac ? " — переопределено разово" : "")}>
+        <span>
+          <Chip size="small" clickable={!say} disabled={say} sx={chipSx}
+            label={curAc === "1" ? "Автокоммит" : "Ручной коммит"}
+            color={ov.ac ? "primary" : "default"}
+            variant={ov.ac ? "filled" : "outlined"}
+            onClick={() => setOv({ ...ov,
+              ac: curAc === "1" ? "0" : "1" })} />
+        </span>
       </Tooltip>
-      <Tooltip title={"модель следующей задачи" +
-                      (ov.model ? " — переопределено разово" : "")}>
-        <Chip size="small" clickable sx={chipSx}
-          label={"Модель: " + (curModel || "—")}
-          color={ov.model ? "primary" : "default"}
-          variant={ov.model ? "filled" : "outlined"}
-          onClick={e => setMAnchor(e.currentTarget)} />
+      <Tooltip title={say ? "у заметки не применяется"
+                : "модель следующей задачи" +
+                  (ov.model ? " — переопределено разово" : "")}>
+        <span>
+          <Chip size="small" clickable={!say} disabled={say} sx={chipSx}
+            label={"Модель: " + (curModel || "—")}
+            color={ov.model ? "primary" : "default"}
+            variant={ov.model ? "filled" : "outlined"}
+            onClick={e => setMAnchor(e.currentTarget)} />
+        </span>
       </Tooltip>
       <Menu anchorEl={mAnchor} open={!!mAnchor}
             onClose={() => setMAnchor(null)}>
@@ -174,15 +194,28 @@ export default function Composer({ project, sttStatus, toast, onSent,
             {m.id}
           </MenuItem>))}
       </Menu>
-      <Tooltip title={"быстрый режим — голосовая задача без " +
-                      "подтверждения" +
-                      (fastOv ? " — переопределено разово" : "")}>
-        <Chip size="small" clickable sx={chipSx}
-          label={fast ? "⚡ Быстрый" : "Обычный"}
-          color={fastOv ? "primary" : "default"}
-          variant={fastOv ? "filled" : "outlined"}
-          onClick={() => onFast?.()} />
+      <Tooltip title={say ? "у заметки не применяется"
+                : "быстрый режим — голосовая задача без " +
+                  "подтверждения" +
+                  (fastOv ? " — переопределено разово" : "")}>
+        <span>
+          <Chip size="small" clickable={!say} disabled={say} sx={chipSx}
+            label={fast ? "⚡ Быстрый" : "Обычный"}
+            color={fastOv ? "primary" : "default"}
+            variant={fastOv ? "filled" : "outlined"}
+            onClick={() => onFast?.()} />
+        </span>
       </Tooltip>
+      {note &&
+        <Tooltip title={"ввод допишется в выбранную карточку — " +
+                        "крестик отжимает её"}>
+          <Chip size="small" color="primary" variant="outlined"
+            sx={chipSx}
+            label={"✎ " +
+                   (((note.prompt || "").trim().split("\n")[0] || "")
+                    .slice(0, 42) || "карточка") + "…"}
+            onDelete={() => onNoteDone?.()} />
+        </Tooltip>}
     </Box>
   );
 
@@ -191,15 +224,25 @@ export default function Composer({ project, sttStatus, toast, onSent,
     if (!s) return;
     setBusy(true);
     try {
-      const d = await post("/api/tasks", {
-        project: project === "workspace" ? null : project, text: s,
-        topic: topic || "main",
-        ...(ov.mode ? { mode: ov.mode } : {}),
-        ...(ov.ac !== undefined ? { auto_commit: ov.ac } : {}),
-        ...(ov.model ? { model: ov.model } : {}),
-        ...(att ? { attach: att.id } : {}) });
-      if (d.ok) { setText(""); setOv({}); setAtt(null); onSent?.(); }
-      else toast("Ошибка: " + (d.error || "?"));
+      if (note) {
+        // «нажатая» карточка-заметка: ввод дописывается в её текст
+        // (POST /api/task/append, статус остаётся note) и она сразу
+        // отжимается
+        const d = await post("/api/task/append",
+                             { stem: note.stem, text: s });
+        if (d.ok) { setText(""); onNoteDone?.(); onSent?.(); }
+        else toast("Ошибка: " + (d.error || "?"));
+      } else {
+        const d = await post("/api/tasks", {
+          project: project === "workspace" ? null : project, text: s,
+          topic: topic || "main",
+          ...(say || ov.mode ? { mode: say ? "say" : ov.mode } : {}),
+          ...(ov.ac !== undefined ? { auto_commit: ov.ac } : {}),
+          ...(ov.model ? { model: ov.model } : {}),
+          ...(att ? { attach: att.id } : {}) });
+        if (d.ok) { setText(""); setOv({}); setAtt(null); onSent?.(); }
+        else toast("Ошибка: " + (d.error || "?"));
+      }
     } catch (e) { toast("Сеть: " + e); }
     setBusy(false);
   };
@@ -297,7 +340,10 @@ export default function Composer({ project, sttStatus, toast, onSent,
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                           overflowY: "auto" } }}
-          placeholder={curMode === "ask"
+          placeholder={say
+                            ? (note ? "Дописать в карточку…"
+                                    : "Заметка в колонку…")
+                            : curMode === "ask"
                             ? `Вопрос по «${project || "…"}»`
                             : `Задача для «${project || "…"}»`}
           value={text}
@@ -341,7 +387,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
             sx={{ minWidth: 0, color: "warning.light" }} />
         )}
         <BottomNavigationAction
-          label={curMode === "ask" ? "Спросить" : "Делай"}
+          label={say ? "Сохранить"
+                 : curMode === "ask" ? "Спросить" : "Делай"}
           icon={<SendIcon />}
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
@@ -375,7 +422,10 @@ export default function Composer({ project, sttStatus, toast, onSent,
             multiline minRows={1} maxRows={50} fullWidth size="small"
             sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                             overflowY: "auto" } }}
-            placeholder={(curMode === "ask"
+            placeholder={(say
+             ? (note ? "Дописать в карточку…"
+                     : "Заметка в колонку — Devin её не получит")
+             : curMode === "ask"
              ? `Вопрос по «${project || "…"}»`
              : `Задача для Devin по проекту «${project || "…"}»`) +
                          " — Ctrl+Enter чтобы отправить"}
@@ -439,7 +489,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                           textTransform: "none", fontWeight: 600,
                           boxShadow: "none",
                           "&:hover": { boxShadow: "none" } }}>
-                  {curMode === "ask" ? "Спросить" : "В работу"}
+                  {say ? "Сохранить"
+                       : curMode === "ask" ? "Спросить" : "В работу"}
                 </Button>
               </span>
             </Tooltip>

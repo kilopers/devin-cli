@@ -56,7 +56,8 @@ def init_db() -> None:
         source VARCHAR(16) NOT NULL DEFAULT 'file',
         project VARCHAR(255) NULL,
         chat_id BIGINT NULL,
-        status ENUM('queued','running','done') NOT NULL DEFAULT 'queued',
+        status ENUM('queued','running','done','note')
+               NOT NULL DEFAULT 'queued',
         prompt MEDIUMTEXT NOT NULL,
         output MEDIUMTEXT NULL,
         task_status VARCHAR(255) NULL,
@@ -177,6 +178,16 @@ def init_db() -> None:
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
             db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
+    # карточки-заметки («сказать»): статус note — запись в колонке,
+    # не идёт в очередь; «начать выполнение» переводит её в queued
+    st_type = db_query("SELECT COLUMN_TYPE AS ct"
+                       " FROM information_schema.COLUMNS"
+                       " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
+                       " AND COLUMN_NAME='status'", (MYSQL["database"],))
+    if st_type and "'note'" not in (st_type[0]["ct"] or ""):
+        db_exec("ALTER TABLE tasks MODIFY status"
+                " ENUM('queued','running','done','note')"
+                " NOT NULL DEFAULT 'queued'")
     # настройки колонок канбана: цвет колонки и дефолты её задач
     # (модель/режим/автокоммит/быстрый) — NULL/пусто = наследовать
     # из настроек проекта

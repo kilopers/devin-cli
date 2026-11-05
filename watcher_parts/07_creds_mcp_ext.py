@@ -265,7 +265,8 @@ def _api_task_new():
         return jsonify({"ok": False, "error": "text too long"}), 400
     if multi_mode() and project not in _user_projects(_current_user()):
         return jsonify({"ok": False, "error": "unknown project"}), 400
-    mode = body.get("mode") if body.get("mode") in ("ask", "code") else None
+    mode = body.get("mode") if body.get("mode") in ("ask", "code", "say") \
+        else None
     att = body.get("attach")
     atts = ([a.strip() for a in att] if isinstance(att, list)
             else ([att.strip()] if isinstance(att, str) and att.strip()
@@ -297,7 +298,14 @@ def _api_task_new():
                 tid = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
             topic_id = tid
     name = enqueue_task(text, project=project, prefix="web",
-                        override_mode=mode, topic_id=topic_id)
+                        override_mode=mode if mode != "say" else None,
+                        topic_id=topic_id)
+    if mode == "say":
+        # заметка «сказать»: карточка в колонке, но не в очереди —
+        # Devin её не получает; «начать выполнение» на карточке
+        # переводит её в queued (см. /api/task/run)
+        db_exec("UPDATE tasks SET status='note', reply_mode='say'"
+                " WHERE stem=%s", (name.removesuffix(".txt"),))
     # «повторить» упавшую: новая запись уже в очереди — старая
     # (done + ошибка) стирается, если она ещё существует
     retry_of = (body.get("retry_of") or "").strip()

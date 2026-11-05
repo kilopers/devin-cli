@@ -125,7 +125,8 @@ const theme = createTheme({
   },
 });
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
-const STATUS_RU = { queued: "в очереди", running: "выполняется", done: "готово" };
+const STATUS_RU = { queued: "в очереди", running: "выполняется",
+                    done: "готово", note: "заметка" };
 const SRC_RU = { telegram: "telegram", web: "web", file: "файл" };
 const fmtNum = n => (n ?? 0).toLocaleString("ru-RU");
 const fmtDur = s => s == null ? null
@@ -218,7 +219,8 @@ const saveTopicSel = (p, v) => {
 };
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
-                                               onDel, toast, hideTopic }) {
+                                               onDel, toast, hideTopic,
+                                               sel, onNote }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -431,6 +433,23 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     toast?.("Текст задачи скопирован");
     setTimeout(() => setCopied(false), 1500);
   };
+  // карточка-заметка («сказать», status=note): не уходит Devin, клик
+  // по карточке «нажимает» её — композер переходит в режим заметки и
+  // дописывает текст в неё; «▶ начать выполнение» ставит её в
+  // очередь с настройками своей колонки
+  const isNote = t.status === "note";
+  const [runBusy, setRunBusy] = useState(false);
+  const runNote = async () => {
+    if (runBusy) return;
+    setRunBusy(true);
+    try {
+      const d = await post("/api/task/run", { stem: t.stem });
+      toast?.(d.ok ? "▶ Заметка отправлена в работу"
+                  : "Ошибка: " + (d.error || "?"));
+      if (d.ok && sel) onNote?.(t);   // ушла в очередь — отжать выбор
+    } catch (e) { toast?.("Сеть: " + e); }
+    setRunBusy(false);
+  };
   // мелкие мета-чипы шапки: один стиль, воздух вокруг текста
   const metaSx = { height: 22, fontSize: 11, fontWeight: 500,
                    borderRadius: "7px",
@@ -439,12 +458,19 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // колонки (ov из /api/tasks); у старых записей без ov — показываем
   const ov = t.ov || { mode: true, model: true, ac: true };
   return (
-    <Card elevation={0} sx={{
+    <Card elevation={0}
+      onClick={isNote ? () => onNote?.(t) : undefined}
+      sx={{
       mb: 1.6, borderRadius: "14px",
       border: "1px solid", borderColor: "divider",
+      cursor: isNote ? "pointer" : "default",
       transition: "box-shadow .2s ease, border-color .2s ease",
-      "&:hover": { borderColor: "#c9cfda",
-                   boxShadow: "0 4px 18px rgba(16,24,40,.07)" } }}>
+      ...(sel && { borderColor: "#5e6ad2",
+                   bgcolor: "rgba(94,106,210,.05)",
+                   boxShadow: "0 0 0 1px #5e6ad2" }),
+      "&:hover": { borderColor: sel ? "#5e6ad2" : "#c9cfda",
+                   boxShadow: sel ? "0 0 0 1px #5e6ad2"
+                                  : "0 4px 18px rgba(16,24,40,.07)" } }}>
       <CardContent sx={{ p: "14px 20px 10px",
                          "&:last-child": { pb: "10px" } }}>
         <Box sx={{ display: "flex", justifyContent: "space-between",
@@ -468,10 +494,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             {ov.mode &&
             <Tooltip title={(t.mode === "ask"
               ? "режим «вопрос» — только чтение"
+              : t.mode === "say"
+              ? "заметка «сказать» — не уходит Devin"
               : "режим «код» — полный доступ") +
               " — отличается от дефолта колонки"}>
               <Chip size="small" variant="outlined" sx={metaSx}
-                    label={t.mode === "ask" ? "💬 вопрос" : "🛠 код"} />
+                    label={t.mode === "ask" ? "💬 вопрос"
+                           : t.mode === "say" ? "📝 заметка"
+                           : "🛠 код"} />
             </Tooltip>}
             {ov.ac &&
             <Tooltip title={(t.ac === "1"
@@ -499,7 +529,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                       label={t.tag} />
               </Tooltip>}
           </Box>
-          <Box sx={{ display: "flex", alignItems: "center",
+          <Box onClick={e => e.stopPropagation()}
+               sx={{ display: "flex", alignItems: "center",
                      gap: 0.8, flexShrink: 0 }}>
             {t.status === "running" && onStop && (
               <Tooltip title="остановить выполнение задачи">
@@ -523,7 +554,16 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </Button>
               </Tooltip>
             )}
-            <Tooltip title={succeeded ? "результат задачи"
+            {isNote && onDel && (
+              <Tooltip title="удалить заметку">
+                <IconButton size="small" onClick={() => onDel(t)}
+                  sx={{ p: "3px", color: "error.main" }}>
+                  <DeleteOutlinedIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip title={isNote ? "текст заметки"
+                          : succeeded ? "результат задачи"
                                       : "вывод задачи"}>
               <IconButton size="small" onClick={() => setOutOpen(true)}
                 sx={{ p: "3px", color: "text.secondary" }}>
@@ -563,28 +603,40 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         : <ContentCopyIcon sx={{ fontSize: 15 }} />}
               </IconButton>
             </Tooltip>
-            <StatusChip t={t} />
+            {isNote
+              ? <Tooltip title="отправить в работу с настройками её колонки">
+                  <Button size="small" variant="outlined"
+                          onClick={runNote} disabled={runBusy}
+                          sx={{ fontSize: 11, px: 1.2, height: 26,
+                                borderRadius: "7px", whiteSpace: "nowrap",
+                                textTransform: "none" }}>
+                    {runBusy ? "запускаю…" : "▶ начать выполнение"}
+                  </Button>
+                </Tooltip>
+              : <StatusChip t={t} />}
           </Box>
         </Box>
         <Typography variant="body2" ref={txtRef}
-          onClick={canExpand || open ? () => setOpen(o => !o)
-                                     : undefined}
+          onClick={!isNote && (canExpand || open)
+                   ? () => setOpen(o => !o) : undefined}
           sx={{ whiteSpace: "pre-wrap", fontWeight: 500, fontSize: 13.5,
                 lineHeight: 1.62,
-                cursor: canExpand || open ? "pointer" : "default",
+                cursor: !isNote && (canExpand || open) ? "pointer"
+                                                       : "inherit",
                 ...(!open && {
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
                   WebkitLineClamp: 3, overflow: "hidden" }) }}>
           {promptShown}</Typography>
         {maybeCut && (
-          <Typography variant="caption" onClick={loadFull}
+          <Typography variant="caption"
+            onClick={e => { e.stopPropagation(); loadFull(); }}
             sx={{ display: "inline-block", mt: 0.5,
                   color: "#5e6ad2", cursor: "pointer", fontWeight: 500,
                   "&:hover": { textDecoration: "underline" } }}>
             … показать весь текст задачи
           </Typography>)}
         {canExpand && (
-        <Box onClick={() => setOpen(o => !o)}
+        <Box onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
              sx={{ display: "flex", alignItems: "center", gap: 0.4,
                    justifyContent: "center", cursor: "pointer", mt: 1.2,
                    py: 0.3, borderRadius: "8px",
@@ -669,7 +721,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
         <Dialog open={outOpen} onClose={() => setOutOpen(false)}
                 maxWidth="md" fullWidth slotProps={dlgSlotProps}>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
-            {succeeded ? "Результат задачи" : "Вывод задачи"}
+            {isNote ? "Заметка"
+                   : succeeded ? "Результат задачи" : "Вывод задачи"}
             {t.mode === "ask" && t.status === "done" && (
               <Tooltip title="создать code-задачу по предложению из ответа">
                 <span>
@@ -699,7 +752,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               {t.name}
             </Typography>
             <Box sx={{ mt: 1 }}>
-              {t.status === "done"
+              {isNote
+                ? <Markdown text={promptShown} />
+                : t.status === "done"
                 ? (t.output
                     ? <Markdown text={t.output} />
                     : <Typography variant="body2" color="text.secondary">
@@ -1011,6 +1066,9 @@ export default function App() {
   const [topicSel, setTopicSel] = useState("main");
   const topicRef = useRef("main");
   const [topics, setTopics] = useState([]);
+  // выбранная карточка-заметка («нажатая»): композер в режиме
+  // «сказать» дописывает в неё текст — повторный клик отжимает
+  const [noteSel, setNoteSel] = useState(null);
   // список тем текущего проекта уже загружен — можно проверять,
   // не удалили ли сохранённую тему
   const topicsLoaded = useRef(false);
@@ -1261,6 +1319,7 @@ export default function App() {
         .then(() => { loadWs(); refreshProjects(); })
         .catch(() => {});
     setFeed(new Map()); setColMore({}); setColBusy({});
+    setNoteSel(null);
     setDrawerOpen(false);
     loadTasks();
   }, [multiMode, loadTasks, wsmap, wsInfo]);
@@ -1347,6 +1406,15 @@ export default function App() {
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
   const askDel = useCallback(
     t2 => setConfirm({ kind: "del", name: t2.name, stem: t2.stem }), []);
+  // клик по карточке-заметке — «нажать»/«отжать» её
+  const toggleNote = useCallback(
+    t2 => setNoteSel(s => s === t2.stem ? null : t2.stem), []);
+  // карточку запустили/удалили — она перестала быть заметкой:
+  // выбор снимаем, композер возвращается в обычный режим
+  useEffect(() => {
+    if (noteSel && feed.get(noteSel)?.status !== "note")
+      setNoteSel(null);
+  }, [feed, noteSel]);
   const openBranchDlg = useCallback(() => {
     setBranchName(branchSuggest(""));
     setBranchDlg({ new: true });
@@ -1754,6 +1822,7 @@ export default function App() {
                   : "нет задач"}>
                 {mainItems.map(t =>
                   <TaskCard key={t.stem} t={t} hideTopic
+                            sel={noteSel === t.stem} onNote={toggleNote}
                             onStop={askStop} onCancel={askCancel}
                             onDel={askDel} toast={setToast} />)}
               </TopicColumn>
@@ -1775,6 +1844,7 @@ export default function App() {
                     askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
                   {byTopic(tp.id).map(t =>
                     <TaskCard key={t.stem} t={t} hideTopic
+                              sel={noteSel === t.stem} onNote={toggleNote}
                               onStop={askStop} onCancel={askCancel}
                               onDel={askDel} toast={setToast} />)}
                 </TopicColumn>)}
@@ -1792,6 +1862,7 @@ export default function App() {
                   onMore={() => loadColMore(String(tid))}>
                   {byTopic(tid).map(t =>
                     <TaskCard key={t.stem} t={t} hideTopic
+                              sel={noteSel === t.stem} onNote={toggleNote}
                               onStop={askStop} onCancel={askCancel}
                               onDel={askDel} toast={setToast} />)}
                 </TopicColumn>)}
@@ -1909,6 +1980,8 @@ export default function App() {
 
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={accent}
+                  note={noteSel ? feed.get(noteSel) : null}
+                  onNoteDone={() => setNoteSel(null)}
                   topic={topicSel} topicName={topicName} topics={topics}
                   mainDef={mainDef}
                   onTopic={selectTopic} onNewTopic={createTopic}
