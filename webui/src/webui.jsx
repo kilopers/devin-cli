@@ -931,7 +931,8 @@ const boostColor = hex => {
 // (ключ name в pj:<p>.tmain).
 function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       eff, onSelect, onNewTask, onDelete,
-                      onSettings, empty, children, more, busy, onMore }) {
+                      onSettings, onMoveL, onMoveR,
+                      empty, children, more, busy, onMore }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{
@@ -961,7 +962,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
           </Tooltip>}
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
-        {(onDelete || onSettings) &&
+        {(onDelete || onSettings || onMoveL || onMoveR) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -977,6 +978,16 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onSettings(); }}>
                   ⚙ Настройки
+                </MenuItem>}
+              {onMoveL &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onMoveL(); }}>
+                  ◀ Сместить влево
+                </MenuItem>}
+              {onMoveR &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onMoveR(); }}>
+                  ▶ Сместить вправо
                 </MenuItem>}
               {onDelete &&
                 <MenuItem dense sx={{ fontSize: 13, color: "error.main" }}
@@ -1339,6 +1350,19 @@ export default function App() {
   // «＋ Новая тема» — диалог настроек колонки (название, цвет,
   // дефолты задач); сохранение выбирает её целевой
   const createTopic = () => setTSetDlg({ kind: "create" });
+  // «◀/▶» в меню колонки — сдвиг темы на доске; «Главная» всегда
+  // первая и не двигается
+  const moveTopic = (id, dir) =>
+    post("/api/topics", { action: "move", project: projRef.current,
+                          id, dir })
+      .then(async d => {
+        if (!d.ok) return setToast("Тема: " + (d.error || "?"));
+        const td = await apiJson("/api/topics?project=" +
+          encodeURIComponent(projRef.current)).catch(() => null);
+        if (td?.ok) { setTopics(td.topics || []);
+                      setMainDef(td.main || {}); }
+      })
+      .catch(() => setToast("Сеть: не сдвинул тему"));
   const askDelTopic = (id, name) =>
     setConfirm({ kind: "topic_del", tid: id, name });
   // «＋ задача сюда» в колонке: выбирает тему целевой и фокусирует
@@ -1811,7 +1835,7 @@ export default function App() {
                             onStop={askStop} onCancel={askCancel}
                             onDel={askDel} toast={setToast} />)}
               </TopicColumn>
-              {topics.map(tp =>
+              {topics.map((tp, ti) =>
                 <TopicColumn key={tp.id}
                   name={tp.name || `тема #${tp.id}`}
                   sess={tp.has_session}
@@ -1825,6 +1849,10 @@ export default function App() {
                   onMore={() => loadColMore(String(tp.id))}
                   onSettings={() => setTSetDlg(
                     { kind: "edit", topic: tp })}
+                  onMoveL={ti > 0
+                    ? () => moveTopic(tp.id, "left") : null}
+                  onMoveR={ti < topics.length - 1
+                    ? () => moveTopic(tp.id, "right") : null}
                   onDelete={() =>
                     askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
                   {byTopic(tp.id).map(t =>

@@ -347,10 +347,12 @@ Chrome предложит «Установить приложение», на iP
   юзерские/глобальные. Чипы настроек на карточке — только когда
   значение отличается от дефолта колонки (поле `ov` в `/api/tasks`).
   «＋ Новая тема» открывает тот же диалог в режиме создания.
+  Порядок колонок меняется из меню ⋯ темы («◀/▶ Сместить») —
+  хранится в `topics.sort`, «Главная» всегда первая.
   API тем:
   `GET /api/topics` (topics + настройки main), `POST /api/topics`
   (create — в т.ч. `own_session` "0"/"1" и `session_topic_id`
-  /rename/settings/delete).
+  /rename/settings/delete/move).
 
 Старый статус-эндпоинт остался на `/status`. JSON-API: `GET /api/projects`,
 `POST /api/project` (`{"project": "..."}`), `GET /api/status`,

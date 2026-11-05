@@ -205,11 +205,16 @@ def init_db() -> None:
                      # прицепка к сессии другой темы того же проекта
                      # (только с own_session=1); NULL + own_session=0 —
                      # общая сессия проекта
-                     ("session_topic_id", "session_topic_id INT NULL")):
+                     ("session_topic_id", "session_topic_id INT NULL"),
+                     # порядок колонки на канбан-доске («◀/▶» в меню ⋯;
+                     # «главная» всегда первая, сортируем только темы)
+                     ("sort", "sort INT NOT NULL DEFAULT 0")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='topics'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
             db_exec(f"ALTER TABLE topics ADD COLUMN {ddl}")
+    # порядок = первоначальный по id; INSERT'ы ниже в коде тоже добивают
+    db_exec("UPDATE topics SET sort=id WHERE sort=0")
     # инструкции: системная (одна, неизменяемая) + пустая общая каждому
     # юзеру — миграция по существующим
     # {public}/{port} — глобальные, подставляем при хранении, чтобы в

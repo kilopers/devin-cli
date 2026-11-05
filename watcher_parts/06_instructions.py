@@ -185,7 +185,8 @@ def _topic_rows(project: str) -> list:
     return db_query("SELECT id, name, session_id, own_session,"
                     " session_topic_id, user, created, updated,"
                     " color, model, reply_mode, auto_commit, fast"
-                    " FROM topics WHERE project=%s ORDER BY id", (project,))
+                    " FROM topics WHERE project=%s"
+                    " ORDER BY sort, id", (project,))
 
 
 def _topic_settings_from(b: dict) -> dict:
@@ -291,6 +292,7 @@ def _api_topics_set():
                  st.get("model") or None, st.get("reply_mode") or None,
                  st.get("auto_commit") or None, st.get("fast") or None,
                  own, attach, time.time(), time.time()))
+        db_exec("UPDATE topics SET sort=id WHERE sort=0")
         return jsonify({"ok": True,
                         "id": db_query(
                             "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
@@ -357,6 +359,28 @@ def _api_topics_set():
                 " WHERE session_topic_id=%s", (tid,))
         db_exec("DELETE FROM topics WHERE id=%s", (tid,))
         return jsonify({"ok": True})
+    if act == "move":
+        # сдвиг колонки на доске влево/вправо — обмен местом с соседом;
+        # заодно нормализуем sort всей доски (шаг 10)
+        dirn = (b.get("dir") or "").strip()
+        ids = [r["id"] for r in
+               db_query("SELECT id FROM topics WHERE project=%s"
+                        " ORDER BY sort, id", (p,))]
+        try:
+            i = ids.index(tid)
+        except ValueError:
+            return jsonify({"ok": False,
+                            "error": "нет такой темы"}), 404
+        j = i - 1 if dirn == "left" else (
+            i + 1 if dirn == "right" else -1)
+        if not (0 <= j < len(ids)):
+            return jsonify({"ok": False,
+                            "error": "некуда двигать"}), 400
+        ids[i], ids[j] = ids[j], ids[i]
+        for k, tid2 in enumerate(ids):
+            db_exec("UPDATE topics SET sort=%s WHERE id=%s",
+                    ((k + 1) * 10, tid2))
+        return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
 
 
@@ -388,6 +412,7 @@ def _api_topic_int():
         db_exec("INSERT INTO topics(project,user,name,created,updated)"
                 " VALUES(%s,%s,%s,%s,%s)",
                 (p, u, name, time.time(), time.time()))
+        db_exec("UPDATE topics SET sort=id WHERE sort=0")
         return jsonify({"ok": True,
                         "id": db_query(
                             "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
