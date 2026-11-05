@@ -142,10 +142,23 @@ def api_tasks(project: str | None = None, limit: int = 5,
             out = _tail(outp)
             try:
                 with open(outp, "rb") as fh:
-                    # devin CLI печатает «You're all set» в самом
-                    # начале своей работы — до этого момента devin-task
-                    # ещё в подготовке (прокси, git pull, auth)
-                    starting = b"all set" not in fh.read(16384)
+                    head = fh.read(65536)
+                pos = head.find(b"all set")
+                starting = True
+                if pos != -1:
+                    eol = head.find(b"\n", pos)
+                    # «выполняется» — только когда ПОСЛЕ строки
+                    # «You're all set…» пошёл хоть какой-то вывод
+                    # (сам баннер devin печатает ещё при запуске)
+                    rest = head[eol + 1:] if eol != -1 else b""
+                    if not rest.strip() \
+                            and os.path.getsize(outp) > len(head):
+                        # баннер у края прочитанного куска — глянем
+                        # самый хвост лога
+                        with open(outp, "rb") as fh:
+                            fh.seek(-4096, os.SEEK_END)
+                            rest = fh.read()
+                    starting = not rest.strip()
             except OSError:
                 starting = True
         elif st == "done":
