@@ -687,20 +687,59 @@ def _collect_task_stats(export_path: Path, started: float,
             st = {}
     if started and finished:
         st["duration"] = max(0, int(finished - started))
+    # agent.model_name в экспорте — лейбл («Claude Opus 5.5 Low»);
+    # рядом кладём uid каталога — тарифы и потребители работают по uid
+    uid = _model_uid(st.get("model") or "")
+    if uid:
+        st["model_uid"] = uid
     return st
 
 
-def _model_costs(model_uid: str) -> dict | None:
+def _norm_model(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
+
+
+def _model_cache() -> list:
+    try:
+        return json.loads(kv_get("models_cache") or "[]")
+    except Exception:
+        return []
+
+
+def _model_uid(model: str) -> str | None:
+    """uid модели в models_cache по uid ИЛИ по лейблу: в экспорте
+    сессии model_name человекочитаемый («Claude Opus 5.5 Low»),
+    а id каталога — «claude-opus-5-5-low». Сначала точный матч
+    по id/description (нужен для лейблов вида «Fusion (…)», которые
+    в uid не нормализуются), затем нормализованный."""
+    if not model:
+        return None
+    models = _model_cache()
+    def names(m):
+        return (m.get("id"), m.get("description"),
+                (m.get("info") or {}).get("label"),
+                (m.get("info") or {}).get("display_name"))
+    for m in models:
+        if model in names(m):
+            return m.get("id")
+    norm = _norm_model(model)
+    for m in models:
+        if norm and norm in [_norm_model(x) for x in names(m)]:
+            return m.get("id")
+    return None
+
+
+def _model_costs(model: str) -> dict | None:
     """$/1M {input, cached, output} по каталогу models_cache
     (info.cost_summary вида «$0.5 / 1M Input · $0.1 / 1M Cached
     input · $2 / 1M Output») или None — у бесплатной модели
-    summary нет, неизвестная модель тоже."""
-    try:
-        models = json.loads(kv_get("models_cache") or "[]")
-    except Exception:
-        models = []
-    for m in models:
-        if m.get("id") != model_uid:
+    summary нет, неизвестная модель тоже. Аргумент — uid или
+    лейбл, резолвится через _model_uid."""
+    uid = _model_uid(model)
+    if not uid:
+        return None
+    for m in _model_cache():
+        if m.get("id") != uid:
             continue
         cs = (m.get("info") or {}).get("cost_summary") or ""
         out = {}
