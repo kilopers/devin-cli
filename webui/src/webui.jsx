@@ -9,9 +9,12 @@ import {
   Alert, AppBar, Box, Button, Card, CardContent, Chip, Collapse,
   CssBaseline, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, GlobalStyles, IconButton, ListItemButton,
-  ListSubheader, Menu, MenuItem, Paper, Select, Snackbar, SwipeableDrawer,
-  TextField, Toolbar, Tooltip, Typography,
+  ListSubheader, Menu, MenuItem, Paper, Select, Skeleton, Snackbar,
+  SwipeableDrawer, TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
+import MicIcon from "@mui/icons-material/Mic";
+import AddIcon from "@mui/icons-material/Add";
+import { STT_RATE, resample, encodeWav } from "./audio.js";
 import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
 import KeyIcon from "@mui/icons-material/VpnKey";
@@ -224,7 +227,8 @@ const saveTopicSel = (p, v) => {
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
-                                               sel, onNote, onCont, cols }) {
+                                               sel, onNote, onCont, cols,
+                                               onDict }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -702,6 +706,16 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </IconButton>
               </Tooltip>
             )}
+            {isNote && !editing && onDict && (
+              <Tooltip title="надиктовать текст в заметку">
+                <IconButton size="small"
+                  onClick={e => { e.stopPropagation(); onDict(t); }}
+                  sx={{ p: "3px",
+                        color: sel ? "error.main" : "text.secondary" }}>
+                  <MicIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             {isNote && !editing && (
               <Tooltip title="редактировать текст заметки">
                 <IconButton size="small"
@@ -779,6 +793,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           ) : (
           <Box ref={txtRef}
             sx={{ fontSize: 13.5, lineHeight: 1.62,
+                  overflowWrap: "anywhere", overflowX: "hidden",
                   ...(open ? {} : { maxHeight: 76,
                                     overflow: "hidden" }) }}>
             <Markdown text={promptShown} />
@@ -1038,6 +1053,82 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
 
 // Project picker in the header — replaces the old tabs row; selection
 // persists server-side via POST /api/project (kv.project_web).
+// вкладки проектов в шапке: каждая = открытый проект (крестик
+// закрывает), «+» — список всех проектов → новая вкладка
+function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
+                       wsmap, wsList, onWs, onSettings }) {
+  const [menu, setMenu] = useState(null);
+  const [wsMenu, setWsMenu] = useState(null);
+  const wsColor = p => {
+    const w = (wsList || []).find(w => w.id === (wsmap || {})[p]);
+    return w ? w.color : "#999";
+  };
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5,
+               overflowX: "auto", maxWidth: { xs: "52vw", md: 620 },
+               "&::-webkit-scrollbar": { height: 5 } }}>
+      {tabs.map(p => (
+        <Box key={p} onClick={() => onTab(p)}
+             sx={{ display: "flex", alignItems: "center", gap: 0.4,
+                   height: 28, px: 1.1, flexShrink: 0,
+                   borderRadius: "8px 8px 0 0", fontSize: 13,
+                   cursor: "pointer", userSelect: "none",
+                   bgcolor: p === current ? "rgba(255,255,255,.92)"
+                                          : "rgba(255,255,255,.12)",
+                   color: p === current ? "primary.main" : "#fff",
+                   fontWeight: p === current ? 600 : 400 }}>
+          <WsDot color={wsColor(p)} />
+          <Typography component="span" noWrap
+                      sx={{ fontSize: "inherit", maxWidth: 140 }}>
+            {p}
+          </Typography>
+          <IconButton size="small"
+            onClick={e => { e.stopPropagation(); onClose(p); }}
+            sx={{ p: 0.1, color: "inherit", opacity: .65,
+                  "&:hover": { opacity: 1 } }}>
+            <CloseIcon sx={{ fontSize: 13 }} />
+          </IconButton>
+        </Box>))}
+      <Tooltip title="открыть проект в новой вкладке">
+        <IconButton size="small" onClick={e => setMenu(e.currentTarget)}
+                    sx={{ color: "#fff", bgcolor: "rgba(255,255,255,.15)",
+                          width: 28, height: 28, flexShrink: 0 }}>
+          <AddIcon sx={{ fontSize: 17 }} />
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
+        {projects.map(p => (
+          <MenuItem key={p} sx={{ fontSize: 13, display: "flex",
+                                  alignItems: "center" }}
+                    onClick={() => { setMenu(null); onTab(p); }}>
+            <WsDot color={wsColor(p)} />
+            <Box sx={{ flex: 1 }}>{p}</Box>
+            <IconButton size="small" sx={{ p: 0.2, ml: 1 }}
+              onClick={e => { e.stopPropagation();
+                              setWsMenu({ a: e.currentTarget, p }); }}>
+              <WorkspacesIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+            <IconButton size="small" sx={{ p: 0.2 }}
+              onClick={e => { e.stopPropagation(); onSettings?.(p); }}>
+              <TuneIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          </MenuItem>))}
+        <MenuItem sx={{ color: "#5e6ad2", fontSize: 13 }}
+                  onClick={() => { setMenu(null); onAdd?.(); }}>
+          ➕ Добавить проект…
+        </MenuItem>
+      </Menu>
+      <Menu anchorEl={wsMenu?.a} open={!!wsMenu}
+            onClose={() => setWsMenu(null)}>
+        {(wsList || []).map(w => (
+          <MenuItem key={w.id}
+            onClick={() => { onWs(wsMenu.p, w.id); setWsMenu(null); }}>
+            <WsDot color={w.color} />{w.name}
+          </MenuItem>))}
+      </Menu>
+    </Box>);
+}
+
 function ProjectSelect({ projects, current, onChange, onAdd,
                          wsmap, wsList, onWs, onSettings }) {
   const [wsMenu, setWsMenu] = useState(null); // {anchor, project}
@@ -1196,7 +1287,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       eff, onSelect, onNewTask, onDelete,
                       onSettings, onMoveL, onMoveR,
                       empty, children, more, busy, onMore,
-                      onBodyOver, onBodyDrop }) {
+                      onBodyOver, onBodyDrop, loading }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{
@@ -1330,7 +1421,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                  "&::-webkit-scrollbar": { width: 8 } }}
            onDragOver={onBodyOver} onDrop={onBodyDrop}>
         {children}
-        {!React.Children.count(children) &&
+        {loading && !React.Children.count(children) &&
+          [0, 1, 2].map(i => (
+            <Skeleton key={i} variant="rounded" height={76}
+                      sx={{ borderRadius: "10px", flexShrink: 0 }} />))}
+        {!React.Children.count(children) && !loading &&
           <Typography variant="caption" color="text.secondary"
                       align="center" sx={{ py: 2, display: "block" }}>
             {empty || "нет задач"}
@@ -1366,6 +1461,7 @@ export default function App() {
   // не удалили ли сохранённую тему
   const topicsLoaded = useRef(false);
   const [feed, setFeed] = useState(new Map());
+  const [booted, setBooted] = useState(false); // до первой загрузки — скелетон
   // «загрузить ещё» в колонках канбана: ключ (main|tid) → has_more /
   // идёт загрузка следующей страницы
   const [colMore, setColMore] = useState({});
@@ -1540,6 +1636,7 @@ export default function App() {
         pages.forEach(pg => { if (pg) n[pg.k] = pg.hasMore; });
         return n;
       });
+      setBooted(true);   // первая порция — скелетон убираем
     } catch (e) {}
   }, []);
 
@@ -1686,7 +1783,8 @@ export default function App() {
           sel={noteSel === t.stem || contSel === t.stem}
           onNote={toggleNote} onCont={toggleCont}
           onStop={askStop} onCancel={askCancel}
-          onDel={askDel} toast={setToast} cols={boardCols} />);
+          onDel={askDel} toast={setToast} cols={boardCols}
+          onDict={toggleDict} />);
     });
     if (dropAt?.col === key && dropAt.idx >= list.length)
       out.push(mark);
@@ -1759,6 +1857,98 @@ export default function App() {
                  active: act.map(t => t.name),
                  cards: byTopic(id).length });
   };
+  // вкладки проектов: открытые проекты — ряд вкладок слева от «+»;
+  // хранятся в localStorage, закрытая активная → соседняя или пусто
+  const [tabs, setTabs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("devin.ptabs") || "[]"); }
+    catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("devin.ptabs", JSON.stringify(tabs)); }
+    catch {}
+  }, [tabs]);
+  useEffect(() => {
+    if (projects.length)
+      setTabs(ts => ts.filter(t => projects.includes(t)));
+  }, [projects]);
+  useEffect(() => {
+    if (project && !tabs.includes(project))
+      setTabs(ts => [...ts, project]);
+  }, [project]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const closeTab = p => {
+    const nt = tabs.filter(t => t !== p);
+    setTabs(nt);
+    if (p !== project) return;
+    const nxt = nt[nt.length - 1] || null;
+    if (nxt) selectProject(nxt);
+    else { setProject(null); projRef.current = null;
+           setFeed(new Map()); }
+  };
+
+  // диктовка в заметку: 🎙 на note-карточке → запись → /api/stt →
+  // текст дописывается в prompt через /api/task/append; карточка
+  // «нажата» (noteSel) на время записи, по стопу отжимается
+  const dictRef = useRef(null);
+  const [dictStem, setDictStem] = useState(null);
+  const [dictInfo, setDictInfo] = useState("");
+  const stopDict = async () => {
+    const r = dictRef.current;
+    if (!r) return;
+    dictRef.current = null;
+    setDictStem(null); setDictInfo("");
+    clearTimeout(r.timer); clearInterval(r.clock);
+    r.proc.disconnect(); r.src.disconnect(); r.gain.disconnect();
+    r.stream.getTracks().forEach(t => t.stop());
+    const wav = encodeWav(
+      resample(r.chunks, r.ctx.sampleRate, STT_RATE), STT_RATE);
+    r.ctx.close();
+    setNoteSel(null);
+    try {
+      const d = await (await fetch("/api/stt", { method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: wav })).json();
+      if (d.ok && (d.text || "").trim()) {
+        const a = await post("/api/task/append",
+                             { stem: r.stem, text: d.text.trim() });
+        setToast(a.ok ? "Дописано в заметку"
+                      : "append: " + (a.error || "?"));
+        loadTasks();
+      } else {
+        setToast(d.ok ? "Ничего не распознано"
+                      : "STT: " + (d.error || "?"));
+      }
+    } catch (e) { setToast("STT сеть: " + e); }
+  };
+  const toggleDict = t => {
+    if (dictRef.current) { stopDict(); return; }
+    setNoteSel(t.stem); setDictStem(t.stem); setDictInfo("00:00");
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices
+          .getUserMedia({ audio: true });
+        const ctx = new (window.AudioContext
+          || window.webkitAudioContext)({ sampleRate: STT_RATE });
+        const src = ctx.createMediaStreamSource(stream);
+        const proc = ctx.createScriptProcessor(4096, 1, 1);
+        const gain = ctx.createGain(); gain.gain.value = 0;
+        const chunks = [];
+        proc.onaudioprocess = e => chunks.push(
+          new Float32Array(e.inputBuffer.getChannelData(0)));
+        src.connect(proc); proc.connect(gain);
+        gain.connect(ctx.destination);
+        const t0 = Date.now();
+        dictRef.current = { stem: t.stem, ctx, proc, src, gain, stream,
+          chunks,
+          clock: setInterval(() => setDictInfo(
+            new Date(Date.now() - t0).toISOString().substr(14, 5)), 250),
+          timer: setTimeout(stopDict, 300000) };
+      } catch (e) {
+        setToast("Микрофон: " + e);
+        setDictStem(null); setNoteSel(null);
+      }
+    })();
+  };
+
   // «＋ задача сюда» в колонке: выбирает тему целевой и фокусирует
   // поле ввода композера
   const newTaskIn = v => {
@@ -2082,15 +2272,15 @@ export default function App() {
               <ConnBadge conn={conn} showVer={false} />
             </Typography>
             {multiMode && (
-              <ProjectSelect projects={projects} current={project}
-                             onChange={selectProject}
-                             onAdd={() => setAddOpen(true)}
-                             wsmap={wsmap} wsList={wsInfo.ws}
-                             onWs={(p, id) =>
-                               post("/api/project/ws",
-                                    { project: p, ws: id })
-                                 .then(() => refreshProjects())}
-                             onSettings={p => setPSetOpen(p)} />
+              <ProjectTabs projects={projects} tabs={tabs} current={project}
+                           onTab={selectProject} onClose={closeTab}
+                           onAdd={() => setAddOpen(true)}
+                           wsmap={wsmap} wsList={wsInfo.ws}
+                           onWs={(p, id) =>
+                             post("/api/project/ws",
+                                  { project: p, ws: id })
+                               .then(() => refreshProjects())}
+                           onSettings={p => setPSetOpen(p)} />
             )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
@@ -2211,6 +2401,14 @@ export default function App() {
           {view === "models"
             ? <ModelsPage accent={accent} toast={setToast}
                           onClose={() => setView("feed")} />
+          : !project
+            ? <Box sx={{ flex: 1, display: "flex",
+                         alignItems: "center",
+                         justifyContent: "center" }}>
+                <Typography color="text.secondary" sx={{ fontSize: 15 }}>
+                  Выберите проект — «+» слева вверху
+                </Typography>
+              </Box>
           : <>
           <Box sx={{ flex: 1, minWidth: 0,
                      p: { xs: "8px 2px 0", md: "16px 12px 0" } }}>
@@ -2253,7 +2451,8 @@ export default function App() {
                         onBodyDrop={e => dropCol(e, "main")}
                         empty={!items.length
                           ? "Задач пока нет — напиши первую внизу."
-                          : "нет задач"}>
+                          : "нет задач"}
+                        loading={!booted}>
                         {colCards(mainItems, "main")}
                       </TopicColumn>);
                   const tp = topics.find(
@@ -2277,7 +2476,8 @@ export default function App() {
                       onDelete={() =>
                         askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}
                       onBodyOver={e => overCol(e, String(tp.id))}
-                      onBodyDrop={e => dropCol(e, String(tp.id))}>
+                      onBodyDrop={e => dropCol(e, String(tp.id))}
+                      loading={!booted}>
                       {colCards(byTopic(tp.id), String(tp.id))}
                     </TopicColumn>);
                 });
@@ -2295,7 +2495,8 @@ export default function App() {
                   busy={!!colBusy[String(tid)]}
                   onMore={() => loadColMore(String(tid))}
                   onBodyOver={e => overCol(e, String(tid))}
-                  onBodyDrop={e => dropCol(e, String(tid))}>
+                  onBodyDrop={e => dropCol(e, String(tid))}
+                  loading={!booted}>
                   {colCards(byTopic(tid), String(tid))}
                 </TopicColumn>)}
               {project && project !== "workspace" &&
@@ -2410,7 +2611,7 @@ export default function App() {
           </>}
         </Box>
 
-        <Composer project={project} sttStatus={status.stt_status}
+        {project && <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={accent}
                   note={noteSel ? feed.get(noteSel) : null}
                   onNoteDone={() => setNoteSel(null)}
@@ -2430,7 +2631,27 @@ export default function App() {
                                      : "Режим: код")
                       : "Ошибка: " + (d.error || "?"));
                     if (d.ok) setMode(m);
-                  }).catch(() => setToast("Сеть: не сохранил режим"))} />
+                  }).catch(() => setToast("Сеть: не сохранил режим"))} />}
+
+      {dictStem && (
+        <Paper elevation={0} sx={{
+          position: "fixed", left: "50%", transform: "translateX(-50%)",
+          bottom: { xs: 150, md: 130 }, zIndex: 30, px: 1.6, py: 0.7,
+          borderRadius: "12px", display: "flex", alignItems: "center",
+          gap: 1, border: "1px solid", borderColor: "divider",
+          boxShadow: "0 8px 24px rgba(28,33,40,.14)" }}>
+          <Box sx={{ width: 9, height: 9, borderRadius: "50%",
+                     bgcolor: "error.main",
+                     animation: "blink 1s ease-in-out infinite",
+                     "@keyframes blink": { "50%": { opacity: .25 } } }} />
+          <Typography variant="body2" sx={{ fontSize: 13 }}>
+            {dictInfo || "00:00"} — диктую в заметку
+          </Typography>
+          <Button size="small" color="error" onClick={stopDict}
+                  sx={{ textTransform: "none", fontSize: 12 }}>
+            ■ стоп
+          </Button>
+        </Paper>)}
       </Box>
 
       <TopicSettings project={project} dlg={tSetDlg} topics={topics}
