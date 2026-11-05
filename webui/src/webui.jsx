@@ -465,12 +465,15 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const [fmtBusy, setFmtBusy] = useState(false);
   const fmtBase = useRef("");
   const [fmtOpen, setFmtOpen] = useState(false);
+  // t.fmt — серверный флаг «оформление ещё идёт»: спиннер держится и
+  // после перезагрузки страницы, пока фоновый прогон не закончит
+  const fmtOn = fmtBusy || !!t.fmt;
   useEffect(() => {
     if (fmtBusy && (t.output || "") !== fmtBase.current)
       setFmtBusy(false);
   }, [t.output, fmtBusy]);
   const fmtNote = async () => {
-    if (fmtBusy) return;
+    if (fmtOn) return;
     fmtBase.current = t.output || "";
     setFmtBusy(true);
     try {
@@ -653,21 +656,24 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             </Tooltip>
             {isNote && (
               <Tooltip title="оформить текст в markdown через Devin — результат появится кнопкой «✨ вариант»">
-                <IconButton size="small" disabled={fmtBusy}
+                <IconButton size="small" disabled={fmtOn}
                   onClick={e => { e.stopPropagation(); fmtNote(); }}
                   sx={{ p: "3px", color: "text.secondary" }}>
-                  {fmtBusy
+                  {fmtOn
                     ? <Box component="span" sx={{
+                        display: "inline-block",
                         width: 13, height: 13, borderRadius: "50%",
                         border: "2px solid #5e6ad2",
                         borderTopColor: "transparent",
-                        animation: "rot .8s linear infinite" }} />
+                        animation: "rot .8s linear infinite",
+                        "@keyframes rot":
+                          { to: { transform: "rotate(360deg)" } } }} />
                     : <AutoAwesomeIcon sx={{ fontSize: 15 }} />}
                 </IconButton>
               </Tooltip>
             )}
             {isNote && !!t.output && (
-              <Button size="small" variant="text"
+              <Button size="small" variant="outlined"
                 onClick={e => { e.stopPropagation(); setFmtOpen(true); }}
                 sx={{ fontSize: 11, px: 1, height: 26,
                       borderRadius: "7px", whiteSpace: "nowrap",

@@ -191,6 +191,9 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "task_status": r["task_status"] or "",
             "commit_offered": bool(r["commit_offered"]),
             "tag": kv_get(f"tag:{stem}"),
+            # «✨ оформить» ещё идёт — фронт держит спиннер даже
+            # после перезагрузки страницы
+            "fmt": bool(kv_get(f"fmt:{stem}")),
             "stats": st_json,
             "tid": r["topic_id"],
             "topic": (tmap.get(r["topic_id"])
@@ -204,6 +207,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "h": hashlib.md5(
                 f"{st}|{r['task_status']}|{r['commit_offered']}|{out}"
                 f"|{len(r['prompt'] or '')}|{r['prompt'][-64:]}"
+                f"|{bool(kv_get(f'fmt:{stem}'))}"
                 .encode()).hexdigest()[:12],
         })
     if before:
