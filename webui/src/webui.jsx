@@ -7,7 +7,8 @@ import { createRoot } from "react-dom/client";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
   Alert, AppBar, Box, Button, Card, CardContent, Chip, Collapse,
-  CssBaseline, Dialog, DialogActions, DialogContent, DialogTitle,
+  CircularProgress, CssBaseline, Dialog, DialogActions, DialogContent,
+  DialogTitle,
   Divider, GlobalStyles, IconButton, ListItemButton,
   ListSubheader, Menu, MenuItem, Paper, Select, Skeleton, Snackbar,
   SwipeableDrawer, TextField, Toolbar, Tooltip, Typography,
@@ -381,8 +382,8 @@ const PendOverlay = () => (
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
                                                sel, onNote, onCont, cols,
-                                               onDict, dictOn, pending,
-                                               pend, onGone,
+                                               onDict, dictOn, dictBusy,
+                                               pending, pend, onGone,
                                                mergeSel, onMergeOver,
                                                onMergeDrop,
                                                onMergeLeave }) {
@@ -882,16 +883,20 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               </Tooltip>
             )}
             {isNote && !editing && onDict && (
-              <Tooltip title={dictOn ? "стоп запись"
-                                     : "надиктовать текст в заметку"}>
-                <IconButton size="small"
+              <Tooltip title={dictBusy ? "идёт распознавание…"
+                              : dictOn ? "стоп запись"
+                                       : "надиктовать текст в заметку"}>
+                <span><IconButton size="small" disabled={dictBusy}
                   onClick={e => { e.stopPropagation(); onDict(t); }}
                   sx={{ p: "3px",
-                        color: dictOn || sel ? "error.main"
-                                             : "text.secondary" }}>
-                  {dictOn ? <StopIcon sx={{ fontSize: 15 }} />
-                          : <MicIcon sx={{ fontSize: 15 }} />}
-                </IconButton>
+                        color: dictBusy || dictOn || sel
+                                 ? "error.main" : "text.secondary" }}>
+                  {dictBusy
+                    ? <CircularProgress size={13} thickness={6}
+                                        color="inherit" />
+                    : dictOn ? <StopIcon sx={{ fontSize: 15 }} />
+                             : <MicIcon sx={{ fontSize: 15 }} />}
+                </IconButton></span>
               </Tooltip>
             )}
             {isNote && !editing && (
@@ -1593,7 +1598,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onSettings, onMoveL, onMoveR,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
-                      onDict, dictOn, onStats, pending }) {
+                      onDict, dictOn, dictBusy, onStats, pending }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
@@ -1732,18 +1737,23 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 : "＋ задача"}
             </Button>
             {onDict &&
-              <Tooltip title={dictOn
+              <Tooltip title={dictBusy ? "идёт распознавание…"
+                : dictOn
                 ? "стоп запись"
                 : "надиктовать — текст в композер; в быстром режиме задача сразу в эту колонку"}>
-                <IconButton size="small"
+                <span><IconButton size="small" disabled={dictBusy}
                   onClick={e => { e.stopPropagation(); onDict(); }}
                   sx={{ border: "1.5px dashed", borderRadius: "9px",
                         width: 32, flexShrink: 0,
-                        color: dictOn ? "error.main" : btnC,
-                        borderColor: dictOn ? "error.main" : btnC }}>
-                  {dictOn ? <StopIcon sx={{ fontSize: 15 }} />
-                          : <MicIcon sx={{ fontSize: 15 }} />}
-                </IconButton>
+                        color: dictBusy || dictOn ? "error.main" : btnC,
+                        borderColor: dictBusy || dictOn
+                                     ? "error.main" : btnC }}>
+                  {dictBusy
+                    ? <CircularProgress size={13} thickness={6}
+                                        color="inherit" />
+                    : dictOn ? <StopIcon sx={{ fontSize: 15 }} />
+                             : <MicIcon sx={{ fontSize: 15 }} />}
+                </IconButton></span>
               </Tooltip>}
             </Box>); })()}
       </Box>
@@ -2176,6 +2186,8 @@ export default function App() {
           onDel={askDel} toast={setToast} cols={boardCols}
           onDict={toggleDict}
           dictOn={dict?.kind === "note" && dict?.stem === t.stem}
+          dictBusy={dictProc?.kind === "note"
+                    && dictProc?.stem === t.stem}
           pending={pendSet.has(t.stem)}
           pend={pendRun}
           onGone={dropStem}
@@ -2303,6 +2315,10 @@ export default function App() {
   // становится целевой
   const dictRef = useRef(null);
   const [dict, setDict] = useState(null);   // {kind:'note'|'col',...}
+  // «распознаю…»: запись остановлена, ждём /api/stt и отправку
+  // текста — держим лоадер на кнопке 🎙 и в плавающем окошке,
+  // иначе после «стоп» непонятно, что происходит
+  const [dictProc, setDictProc] = useState(null);
   const [dictInfo, setDictInfo] = useState("");
   const [compInj, setCompInj] = useState({ text: "", n: 0 });
   // продиктованная командная фраза в начале речи — «заметка сюда»,
@@ -2323,6 +2339,9 @@ export default function App() {
       resample(r.chunks, r.ctx.sampleRate, STT_RATE), STT_RATE);
     r.ctx.close();
     setNoteSel(null);
+    // до ответа /api/stt и отправки текста — фаза «распознаю»:
+    // кнопка 🎙 источника и окошко показывают лоадер
+    setDictProc(r.target);
     try {
       const d = await (await fetch("/api/stt", { method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
@@ -2351,6 +2370,7 @@ export default function App() {
         document.getElementById("composer-input")?.focus();
       }
     } catch (e) { setToast("STT сеть: " + e); }
+    setDictProc(null);
   };
   const startDict = async target => {
     try {
@@ -2380,11 +2400,13 @@ export default function App() {
   };
   const toggleDict = t => {
     if (dictRef.current) { stopDict(); return; }
+    if (dictProc) return;   // идёт распознавание — ждём
     setNoteSel(t.stem);
     startDict({ kind: "note", stem: t.stem });
   };
   const toggleDictCol = (key, mode) => {
     if (dictRef.current) { stopDict(); return; }
+    if (dictProc) return;
     selectTopic(key);
     startDict({ kind: "col", key, mode });
   };
@@ -2917,6 +2939,8 @@ export default function App() {
                           mainDef.eff?.reply_mode)}
                         dictOn={dict?.kind === "col"
                                 && dict?.key === "main"}
+                        dictBusy={dictProc?.kind === "col"
+                                  && dictProc?.key === "main"}
                         onStats={() => setStatDlg(
                           { key: "main",
                             name: "⭐ " + (mainDef.name
@@ -2951,6 +2975,8 @@ export default function App() {
                         tp.eff?.reply_mode)}
                       dictOn={dict?.kind === "col"
                               && dict?.key === String(tp.id)}
+                      dictBusy={dictProc?.kind === "col"
+                                && dictProc?.key === String(tp.id)}
                       onStats={() => setStatDlg(
                         { key: String(tp.id),
                           name: tp.name || `тема #${tp.id}` })}
@@ -2982,6 +3008,8 @@ export default function App() {
                   onDict={() => toggleDictCol(String(tid))}
                   dictOn={dict?.kind === "col"
                           && dict?.key === String(tid)}
+                  dictBusy={dictProc?.kind === "col"
+                            && dictProc?.key === String(tid)}
                   onStats={() => setStatDlg(
                     { key: String(tid), name: "тема #" + tid })}
                   more={colMore[String(tid)]}
@@ -3132,25 +3160,33 @@ export default function App() {
                     if (d.ok) setMode(m);
                   }).catch(() => setToast("Сеть: не сохранил режим"))} />}
 
-      {dict && (
+      {(dict || dictProc) && (
         <Paper elevation={0} sx={{
           position: "fixed", left: "50%", transform: "translateX(-50%)",
           bottom: { xs: 150, md: 130 }, zIndex: 30, px: 1.6, py: 0.7,
           borderRadius: "12px", display: "flex", alignItems: "center",
           gap: 1, border: "1px solid", borderColor: "divider",
           boxShadow: "0 8px 24px rgba(28,33,40,.14)" }}>
-          <Box sx={{ width: 9, height: 9, borderRadius: "50%",
-                     bgcolor: "error.main",
-                     animation: "blink 1s ease-in-out infinite",
-                     "@keyframes blink": { "50%": { opacity: .25 } } }} />
+          {dict ? (
+            <Box sx={{ width: 9, height: 9, borderRadius: "50%",
+                       bgcolor: "error.main",
+                       animation: "blink 1s ease-in-out infinite",
+                       "@keyframes blink": { "50%": { opacity: .25 } } }} />
+          ) : (
+            <CircularProgress size={13} thickness={6}
+                              sx={{ color: "info.main" }} />
+          )}
           <Typography variant="body2" sx={{ fontSize: 13 }}>
-            {dictInfo || "00:00"} — {dict.kind === "note"
-              ? "диктую в заметку" : "диктую в колонку"}
+            {dict
+              ? <>{dictInfo || "00:00"} — {dict.kind === "note"
+                  ? "диктую в заметку" : "диктую в колонку"}</>
+              : "идёт распознавание…"}
           </Typography>
-          <Button size="small" color="error" onClick={stopDict}
-                  sx={{ textTransform: "none", fontSize: 12 }}>
-            ■ стоп
-          </Button>
+          {dict &&
+            <Button size="small" color="error" onClick={stopDict}
+                    sx={{ textTransform: "none", fontSize: 12 }}>
+              ■ стоп
+            </Button>}
         </Paper>)}
       </Box>
 
