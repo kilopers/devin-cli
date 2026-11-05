@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
   Stack, Typography, TextField, MenuItem, Box, Tooltip,
-  Checkbox, FormControlLabel,
 } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
@@ -18,7 +17,7 @@ export const TOPIC_COLORS = [
 ];
 
 export default function TopicSettings({ project, dlg, onClose, onSaved,
-                                       toast }) {
+                                       toast, topics }) {
   // dlg: {kind:"create"} | {kind:"edit", topic} | {kind:"main", current}
   const [name, setName] = useState("");
   const [color, setColor] = useState("");
@@ -26,9 +25,10 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   const [mode, setMode] = useState("");
   const [ac, setAc] = useState("");
   const [fast, setFast] = useState("");
-  // своя devin-сессия у темы — задаётся только при создании (галочка),
-  // потом не меняется; снято → задачи идут в общей сессии проекта
-  const [ownSess, setOwnSess] = useState(true);
+  // чья сессия у темы — только при создании, потом не меняется:
+  // "own" — своя новая, "main" — общая сессия проекта (как у
+  // «Главной»), "<id>" — прицепиться к сессии существующей темы
+  const [sess, setSess] = useState("own");
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -44,7 +44,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setMode(src.reply_mode || "");
     setAc(src.auto_commit || "");
     setFast(src.fast || "");
-    setOwnSess(true);
+    setSess("own");
     get("/api/models").then(j => setModels(j.models || []))
       .catch(() => {});
   }, [dlg]);
@@ -56,7 +56,10 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                      auto_commit: ac, fast };
       const d = await post("/api/topics",
         isCreate ? { ...body, action: "create", name: name.trim(),
-                     own_session: ownSess ? "1" : "0" }
+                     own_session: sess === "own" ? "1" : "0",
+                     session_topic_id:
+                       sess !== "own" && sess !== "main"
+                         ? Number(sess) : null }
         : isMain ? { ...body, action: "settings", main: true }
         : { ...body, action: "settings", id: dlg.topic.id,
             name: name.trim() });
@@ -100,26 +103,30 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                          ? "пусто — агент назовёт по первой задаче"
                          : ""} />}
           {isCreate &&
-            <Box>
-              <FormControlLabel
-                control={<Checkbox checked={ownSess} size="small"
-                          onChange={e => setOwnSess(e.target.checked)} />}
-                label={<Typography variant="body2" fontSize={13}>
-                  Своя сессия Devin</Typography>}
-                sx={{ m: 0 }} />
-              <Typography variant="caption" color="text.secondary"
-                          display="block" sx={{ ml: 4.2 }}>
-                {ownSess
-                  ? "у темы своя сессия — каждая задача продолжает её (🔁 в шапке колонки)"
-                  : "тема — только колонка для группировки: задачи идут в общей сессии проекта, как у «Главной»"}
-                {" — задаётся при создании, изменить нельзя"}
-              </Typography>
-            </Box>}
+            <TextField select label="Сессия" size="small" fullWidth
+                       value={sess}
+                       onChange={e => setSess(e.target.value)}
+                       helperText="задаётся при создании, изменить нельзя">
+              <MenuItem value="own">
+                🔁 новая сессия — у темы своя
+              </MenuItem>
+              <MenuItem value="main">
+                ⭐ общая — как у «Главной»
+              </MenuItem>
+              {(topics || []).filter(t => t.own_session).map(t => (
+                <MenuItem key={t.id} value={String(t.id)}>
+                  🧵 как у темы «{t.name || "тема #" + t.id}»
+                </MenuItem>))}
+            </TextField>}
           {dlg?.kind === "edit" &&
             <Typography variant="caption" color="text.secondary">
               Сессия: {dlg.topic?.own_session
                 ? "своя — резюмируется между задачами темы"
-                : "общая — задачи идут в сессии проекта"}
+                : dlg.topic?.session_topic_id
+                  ? "как у темы «" +
+                    (dlg.topic.attach_name
+                      || "тема #" + dlg.topic.session_topic_id) + "»"
+                  : "общая — задачи идут в сессии проекта"}
               {" (задаётся при создании)"}
             </Typography>}
           <Box>

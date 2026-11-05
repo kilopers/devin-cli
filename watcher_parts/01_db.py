@@ -186,10 +186,15 @@ def init_db() -> None:
                      ("auto_commit", "auto_commit VARCHAR(4) NULL"),
                      ("fast", "fast VARCHAR(4) NULL"),
                      # 0 — тема без своей devin-сессии: задачи идут в
-                     # общей (пин kv tsess:<proj>, как у «главной»);
+                     # общей (пин kv tsess:<proj>, как у «главной»)
+                     # или в сессии другой темы (session_topic_id);
                      # задаётся при создании, изменить нельзя
                      ("own_session", "own_session TINYINT"
-                                     " NOT NULL DEFAULT 1")):
+                                     " NOT NULL DEFAULT 1"),
+                     # прицепка к сессии другой темы того же проекта
+                     # (только с own_session=1); NULL + own_session=0 —
+                     # общая сессия проекта
+                     ("session_topic_id", "session_topic_id INT NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='topics'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -858,17 +863,26 @@ def run_task(task: dict) -> None:
     # всегда — в этом смысл темы); у «главной» — пин в kv tsess:<proj>,
     # только в режиме «продолжать». Оверрайд модели → новая сессия.
     tid = task.get("topic_id")
-    # own_session=0 при создании темы → общая сессия, как у «главной»
-    # (общий пин kv tsess:<proj> в режиме «продолжать», 🔁 не пиннится)
+    # own_session=0 при создании темы → не своя сессия: общая, как у
+    # «главной» (пин kv tsess:<proj> в режиме «продолжать»), либо
+    # прицепка к session_topic_id — сессии другой темы проекта
     own_sess = True
+    attach_id = None
     tr = None
     if tid:
-        tr = db_query("SELECT session_id, own_session FROM topics"
-                      " WHERE id=%s", (tid,))
+        tr = db_query("SELECT session_id, own_session, session_topic_id"
+                      " FROM topics WHERE id=%s", (tid,))
         own_sess = not tr or bool(tr[0]["own_session"])
+        attach_id = ((tr[0]["session_topic_id"] or None)
+                     if tr and not own_sess else None)
+    # тема, к чьему session_id пиннется задача; None — общий пин
+    pin_tid = tid if own_sess else attach_id
     resume_id = ""
     if not opts.get("model"):
-        if tid and own_sess:
+        if pin_tid:
+            if not own_sess or not tr:
+                tr = db_query("SELECT session_id FROM topics"
+                              " WHERE id=%s", (pin_tid,))
             resume_id = (tr[0]["session_id"] if tr else "") or ""
         elif continue_mode():
             resume_id = kv_get(f"tsess:{tproj or ''}")
@@ -883,7 +897,7 @@ def run_task(task: dict) -> None:
                # новая тема без пина НЕ continue'ит последнюю сессию
                # каталога (это чужая тема) — стартует свою
                DEVIN_CONTINUE=("true" if (ext or
-                                          ((not tid or not own_sess)
+                                          (not pin_tid
                                            and continue_mode()))
                                     and not opts.get("model")
                                     and not resume_id
@@ -995,9 +1009,9 @@ def run_task(task: dict) -> None:
     # пин сессии темы: следующая задача темы резюмит её через --resume
     sid = (tstats.get("session") or "")[:80]
     if sid and re.fullmatch(r"[A-Za-z0-9_-]+", sid):
-        if tid and own_sess:
+        if pin_tid:
             db_exec("UPDATE topics SET session_id=%s, updated=%s"
-                    " WHERE id=%s", (sid, time.time(), tid))
+                    " WHERE id=%s", (sid, time.time(), pin_tid))
         else:
             kv_set(f"tsess:{tproj or ''}", sid)
     with _run_lock:

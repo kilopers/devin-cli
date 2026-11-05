@@ -183,7 +183,7 @@ def _api_instr_set():
 
 def _topic_rows(project: str) -> list:
     return db_query("SELECT id, name, session_id, own_session,"
-                    " user, created, updated,"
+                    " session_topic_id, user, created, updated,"
                     " color, model, reply_mode, auto_commit, fast"
                     " FROM topics WHERE project=%s ORDER BY id", (project,))
 
@@ -211,16 +211,28 @@ def _api_topics_get():
     p = (request.args.get("project") or "").strip()
     if not p or not _owns_project(p):
         return jsonify({"ok": False, "error": "нет доступа"}), 403
+    rows = _topic_rows(p)
+    by_id = {r["id"]: r for r in rows}
+    out = []
+    for r in rows:
+        at = r.get("session_topic_id") or None
+        # 🔁: своя закреплённая сессия или сессия прицепленной темы;
+        # у темы с общей сессией (без прицепки) пина нет никогда
+        pin = (r["session_id"] if r["own_session"]
+               else (by_id.get(at) or {}).get("session_id") if at
+               else None)
+        out.append(dict(r, has_session=bool(pin),
+                        # имя темы, к чьей сессии прицеплены (для чипа)
+                        attach_name=((by_id.get(at) or {}).get("name")
+                                     if at else None),
+                        eff=_eff_topic_defaults(p, r["id"])))
     return jsonify({"ok": True,
                     # настройки «главной» колонки — pj:<p>.tmain;
                     # eff — итоговые дефолты (тема → проект → глобальные),
                     # их чипами рисует шапка колонки
                     "main": dict(_topic_defaults(p, None),
                                  eff=_eff_topic_defaults(p, None)),
-                    "topics": [
-                        dict(r, has_session=bool(r["session_id"]),
-                             eff=_eff_topic_defaults(p, r["id"]))
-                        for r in _topic_rows(p)]})
+                    "topics": out})
 
 
 @app.post("/api/topics")
@@ -240,16 +252,33 @@ def _api_topics_set():
             return jsonify({"ok": False,
                             "error": "тема с таким именем уже есть"}), 409
         st = _topic_settings_from(b)
-        # own_session ("0"/"1", дефолт 1) — только при создании, поля
-        # в настройках темы нет и через settings его не поменять
+        # own_session/session_topic_id — только при создании, полей
+        # в настройках темы нет и через settings их не поменять
         own = 0 if str(b.get("own_session") or "1") == "0" else 1
+        attach = None
+        if not own:
+            # прицепка к сессии существующей темы — только к теме того
+            # же проекта со своей сессией (own_session=1); иначе —
+            # общая сессия проекта
+            atid = int(b.get("session_topic_id") or 0)
+            if atid:
+                arow = db_query(
+                    "SELECT own_session FROM topics WHERE id=%s"
+                    " AND project=%s", (atid, p))
+                if not arow or not arow[0]["own_session"]:
+                    return jsonify(
+                        {"ok": False,
+                         "error": "прицепиться можно только к теме "
+                                  "со своей сессией"}), 400
+                attach = atid
         db_exec("INSERT INTO topics(project,user,name,color,model,"
-                "reply_mode,auto_commit,fast,own_session,created,"
-                "updated) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "reply_mode,auto_commit,fast,own_session,"
+                "session_topic_id,created,updated)"
+                " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (p, u, name, st.get("color") or None,
                  st.get("model") or None, st.get("reply_mode") or None,
                  st.get("auto_commit") or None, st.get("fast") or None,
-                 own, time.time(), time.time()))
+                 own, attach, time.time(), time.time()))
         return jsonify({"ok": True,
                         "id": db_query(
                             "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
@@ -296,8 +325,11 @@ def _api_topics_set():
                     vals)
         return jsonify({"ok": True})
     if act == "delete":
-        # задачи темы возвращаются в «главную»
+        # задачи темы возвращаются в «главную»; прицепленные к ней
+        # темы отвязываются — переходят на общую сессию
         db_exec("UPDATE tasks SET topic_id=NULL WHERE topic_id=%s", (tid,))
+        db_exec("UPDATE topics SET session_topic_id=NULL"
+                " WHERE session_topic_id=%s", (tid,))
         db_exec("DELETE FROM topics WHERE id=%s", (tid,))
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
