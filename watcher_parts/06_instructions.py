@@ -872,6 +872,39 @@ def _api_task_run():
     return jsonify({"ok": True, "stem": stem})
 
 
+@app.post("/api/task/continue")
+@login_required
+def _api_task_continue():
+    """«↻ продолжить» на done-карточке: доделка в той же записи —
+    текст дописывается в prompt, задача уходит в queued и резюмит
+    ту же сессию темы (--resume по её пину). Старый output не
+    трогаем: при записи результата run_task делает CONCAT — новый
+    кусок ложится под разделитель, который мы ставим здесь."""
+    body = _req_json()
+    stem = (body.get("stem") or "").strip()
+    text = (body.get("text") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "done":
+        return jsonify({"ok": False,
+                        "error": "продолжать можно только завершённую"}), 409
+    if not text:
+        return jsonify({"ok": False, "error": "пустой текст"}), 400
+    if len(text) > 20000:
+        return jsonify({"ok": False, "error": "text too long"}), 400
+    db_exec("UPDATE tasks SET status='queued',"
+            " prompt=CONCAT(prompt,'\\n\\n',%s),"
+            " output=CONCAT(IFNULL(output,''),'\\n\\n---\\n\\n'),"
+            " task_status=NULL, commit_offered=0,"
+            " started=NULL, finished=NULL"
+            " WHERE stem=%s", (text, stem))
+    log(f"task {stem} continued (+{len(text)} chars)")
+    return jsonify({"ok": True, "stem": stem})
+
+
 @app.post("/api/task/delete")
 @login_required
 def _api_task_delete():

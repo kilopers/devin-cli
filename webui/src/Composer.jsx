@@ -34,6 +34,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                                    fast, fastOv, onFast, topic,
                                    topicName, topics, mainDef,
                                    note, onNoteDone,
+                                   cont, onContDone,
                                    onTopic, onNewTopic }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
@@ -227,6 +228,17 @@ export default function Composer({ project, sttStatus, toast, onSent,
                     .slice(0, 42) || "карточка") + "…"}
             onDelete={() => onNoteDone?.()} />
         </Tooltip>}
+      {cont &&
+        <Tooltip title={"ввод — доделка выбранной карточки: уйдёт " +
+                        "обратно в работу той же сессией; крестик " +
+                        "отжимает её"}>
+          <Chip size="small" color="primary" variant="outlined"
+            sx={chipSx}
+            label={"↩ " +
+                   (((cont.prompt || "").trim().split("\n")[0] || "")
+                    .slice(0, 42) || "карточка") + "…"}
+            onDelete={() => onContDone?.()} />
+        </Tooltip>}
     </Box>
   );
 
@@ -235,7 +247,16 @@ export default function Composer({ project, sttStatus, toast, onSent,
     if (!s) return;
     setBusy(true);
     try {
-      if (note) {
+      if (cont) {
+        // «↻ продолжить» на done-карточке: текст дописывается в её
+        // prompt (POST /api/task/continue), задача уходит обратно в
+        // queued и выполняется той же сессией темы — карточка
+        // отжимается сама, когда опрос привезёт новый статус
+        const d = await post("/api/task/continue",
+                             { stem: cont.stem, text: s });
+        if (d.ok) { setText(""); onSent?.(); }
+        else toast("Ошибка: " + (d.error || "?"));
+      } else if (note) {
         // «нажатая» карточка-заметка: ввод дописывается в её текст
         // (POST /api/task/append, статус остаётся note) и она сразу
         // отжимается
@@ -351,7 +372,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                           overflowY: "auto" } }}
-          placeholder={say
+          placeholder={cont ? "Доделать в этой карточке…"
+                            : say
                             ? (note ? "Дописать в карточку…"
                                     : "Заметка в колонку…")
                             : curMode === "ask"
@@ -433,7 +455,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
             multiline minRows={1} maxRows={50} fullWidth size="small"
             sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                             overflowY: "auto" } }}
-            placeholder={(say
+            placeholder={(cont ? "Доделать в этой карточке — тот же текст, та же сессия"
+             : say
              ? (note ? "Дописать в карточку…"
                      : "Заметка в колонку — Devin её не получит")
              : curMode === "ask"

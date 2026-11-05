@@ -1017,7 +1017,8 @@ def run_task(task: dict) -> None:
     tstats = _collect_task_stats(export_path,
                                  task.get("started") or started_ts,
                                  finished_ts)
-    db_exec("UPDATE tasks SET status='done', output=%s, task_status=%s,"
+    db_exec("UPDATE tasks SET status='done',"
+            " output=CONCAT(IFNULL(output,''),%s), task_status=%s,"
             " finished=%s, stats=%s WHERE stem=%s",
             (body, status, finished_ts,
              json.dumps(tstats, ensure_ascii=False) if tstats else None,

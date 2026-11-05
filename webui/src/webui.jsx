@@ -40,6 +40,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArticleIcon from "@mui/icons-material/Article";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
+import RedoIcon from "@mui/icons-material/Redo";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -219,7 +220,7 @@ const saveTopicSel = (p, v) => {
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
-                                               sel, onNote }) {
+                                               sel, onNote, onCont }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -582,6 +583,15 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 <IconButton size="small" onClick={() => setInfo(true)}
                   sx={{ p: "3px", color: "text.secondary" }}>
                   <InfoOutlinedIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {t.status === "done" && onCont && (
+              <Tooltip title="продолжить задачу — дописать доделку, карточка уйдёт в работу той же сессией">
+                <IconButton size="small" onClick={() => onCont(t)}
+                  sx={{ p: "3px", color: sel ? "primary.main"
+                                           : "text.secondary" }}>
+                  <RedoIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -1106,6 +1116,9 @@ export default function App() {
   // выбранная карточка-заметка («нажатая»): композер в режиме
   // «сказать» дописывает в неё текст — повторный клик отжимает
   const [noteSel, setNoteSel] = useState(null);
+  // «продолжить» на done-карточке: композер дописывает доделку
+  // в её задачу, та уходит обратно в queued (той же сессией)
+  const [contSel, setContSel] = useState(null);
   // список тем текущего проекта уже загружен — можно проверять,
   // не удалили ли сохранённую тему
   const topicsLoaded = useRef(false);
@@ -1356,7 +1369,7 @@ export default function App() {
         .then(() => { loadWs(); refreshProjects(); })
         .catch(() => {});
     setFeed(new Map()); setColMore({}); setColBusy({});
-    setNoteSel(null);
+    setNoteSel(null); setContSel(null);
     setDrawerOpen(false);
     loadTasks();
   }, [multiMode, loadTasks, wsmap, wsInfo]);
@@ -1457,14 +1470,26 @@ export default function App() {
   const askDel = useCallback(
     t2 => setConfirm({ kind: "del", name: t2.name, stem: t2.stem }), []);
   // клик по карточке-заметке — «нажать»/«отжать» её
-  const toggleNote = useCallback(
-    t2 => setNoteSel(s => s === t2.stem ? null : t2.stem), []);
+  const toggleNote = useCallback(t2 => {
+    setContSel(null);
+    setNoteSel(s => s === t2.stem ? null : t2.stem);
+  }, []);
+  // «↻ продолжить» на done-карточке — «нажать»/«отжать»
+  const toggleCont = useCallback(t2 => {
+    setNoteSel(null);
+    setContSel(s => s === t2.stem ? null : t2.stem);
+  }, []);
   // карточку запустили/удалили — она перестала быть заметкой:
   // выбор снимаем, композер возвращается в обычный режим
   useEffect(() => {
     if (noteSel && feed.get(noteSel)?.status !== "note")
       setNoteSel(null);
   }, [feed, noteSel]);
+  // то же для «продолжения»: карточка ушла из done — отжать
+  useEffect(() => {
+    if (contSel && feed.get(contSel)?.status !== "done")
+      setContSel(null);
+  }, [feed, contSel]);
   const openBranchDlg = useCallback(() => {
     setBranchName(branchSuggest(""));
     setBranchDlg({ new: true });
@@ -1877,7 +1902,8 @@ export default function App() {
                           : "нет задач"}>
                         {mainItems.map(t =>
                           <TaskCard key={t.stem} t={t} hideTopic
-                            sel={noteSel === t.stem} onNote={toggleNote}
+                            sel={noteSel === t.stem || contSel === t.stem}
+                            onNote={toggleNote} onCont={toggleCont}
                             onStop={askStop} onCancel={askCancel}
                             onDel={askDel} toast={setToast} />)}
                       </TopicColumn>);
@@ -1903,7 +1929,8 @@ export default function App() {
                         askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
                       {byTopic(tp.id).map(t =>
                         <TaskCard key={t.stem} t={t} hideTopic
-                          sel={noteSel === t.stem} onNote={toggleNote}
+                          sel={noteSel === t.stem || contSel === t.stem}
+                            onNote={toggleNote} onCont={toggleCont}
                           onStop={askStop} onCancel={askCancel}
                           onDel={askDel} toast={setToast} />)}
                     </TopicColumn>);
@@ -1923,7 +1950,8 @@ export default function App() {
                   onMore={() => loadColMore(String(tid))}>
                   {byTopic(tid).map(t =>
                     <TaskCard key={t.stem} t={t} hideTopic
-                              sel={noteSel === t.stem} onNote={toggleNote}
+                              sel={noteSel === t.stem || contSel === t.stem}
+                            onNote={toggleNote} onCont={toggleCont}
                               onStop={askStop} onCancel={askCancel}
                               onDel={askDel} toast={setToast} />)}
                 </TopicColumn>)}
@@ -2043,6 +2071,8 @@ export default function App() {
                   toast={setToast} onSent={loadTasks} accent={accent}
                   note={noteSel ? feed.get(noteSel) : null}
                   onNoteDone={() => setNoteSel(null)}
+                  cont={contSel ? feed.get(contSel) : null}
+                  onContDone={() => setContSel(null)}
                   topic={topicSel} topicName={topicName} topics={topics}
                   mainDef={mainDef}
                   onTopic={selectTopic} onNewTopic={createTopic}
