@@ -1319,7 +1319,9 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                           "&:hover": { bgcolor:
                             btnC.startsWith("#") ? btnC + "14"
                                                  : "action.hover" } }}>
-              ＋ задача сюда
+              {eff?.reply_mode === "say" ? "＋ заметка сюда"
+                : eff?.reply_mode === "ask" ? "＋ спросить сюда"
+                : "＋ задача сюда"}
             </Button>); })()}
       </Box>
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
