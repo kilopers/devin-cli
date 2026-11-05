@@ -1053,33 +1053,41 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
 
 // Project picker in the header — replaces the old tabs row; selection
 // persists server-side via POST /api/project (kv.project_web).
-// вкладки проектов в шапке: каждая = открытый проект (крестик
-// закрывает), «+» — список всех проектов → новая вкладка
+// вкладки проектов — отдельная полоса под шапкой, перед доской:
+// вкладка = открытый проект (крестик закрывает), «+» — список
+// всех проектов → новая вкладка; переключение — перезагрузкой
+// страницы (проект/цвет/иконка подтягиваются целиком)
 function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
-                       wsmap, wsList, onWs, onSettings }) {
+                       wsmap, wsList, onWs, onSettings, accent }) {
   const [menu, setMenu] = useState(null);
   const [wsMenu, setWsMenu] = useState(null);
   const wsColor = p => {
     const w = (wsList || []).find(w => w.id === (wsmap || {})[p]);
     return w ? w.color : "#999";
   };
+  const acc = accent || "#5e6ad2";
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5,
-               overflowX: "auto", maxWidth: { xs: "52vw", md: 620 },
-               "&::-webkit-scrollbar": { height: 5 } }}>
+               overflowX: "auto", flexShrink: 0,
+               px: { xs: 0.6, md: 1.2 }, pt: 0.5,
+               bgcolor: "background.paper",
+               borderBottom: "1px solid", borderColor: "divider",
+               "&::-webkit-scrollbar": { height: 4 } }}>
       {tabs.map(p => (
         <Box key={p} onClick={() => onTab(p)}
              sx={{ display: "flex", alignItems: "center", gap: 0.4,
-                   height: 28, px: 1.1, flexShrink: 0,
+                   height: 30, px: 1.1, flexShrink: 0,
                    borderRadius: "8px 8px 0 0", fontSize: 13,
                    cursor: "pointer", userSelect: "none",
-                   bgcolor: p === current ? "rgba(255,255,255,.92)"
-                                          : "rgba(255,255,255,.12)",
-                   color: p === current ? "primary.main" : "#fff",
-                   fontWeight: p === current ? 600 : 400 }}>
+                   bgcolor: p === current ? acc
+                                          : "rgba(28,33,40,.05)",
+                   color: p === current ? "#fff" : "text.secondary",
+                   fontWeight: p === current ? 600 : 400,
+                   "&:hover": { bgcolor: p === current
+                     ? acc : "rgba(28,33,40,.09)" } }}>
           <WsDot color={wsColor(p)} />
           <Typography component="span" noWrap
-                      sx={{ fontSize: "inherit", maxWidth: 140 }}>
+                      sx={{ fontSize: "inherit", maxWidth: 160 }}>
             {p}
           </Typography>
           <IconButton size="small"
@@ -1091,8 +1099,10 @@ function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
         </Box>))}
       <Tooltip title="открыть проект в новой вкладке">
         <IconButton size="small" onClick={e => setMenu(e.currentTarget)}
-                    sx={{ color: "#fff", bgcolor: "rgba(255,255,255,.15)",
-                          width: 28, height: 28, flexShrink: 0 }}>
+                    sx={{ color: acc, border: "1.5px dashed",
+                          borderColor: acc, borderRadius: "8px",
+                          width: 30, height: 28, mb: 0.4,
+                          flexShrink: 0 }}>
           <AddIcon sx={{ fontSize: 17 }} />
         </IconButton>
       </Tooltip>
@@ -1894,9 +1904,21 @@ export default function App() {
     setTabs(nt);
     if (p !== project) return;
     const nxt = nt[nt.length - 1] || null;
-    if (nxt) selectProject(nxt);
+    if (nxt) switchTab(nxt);
     else { setProject(null); projRef.current = null;
            setFeed(new Map()); }
+  };
+  // переключение вкладки — полная перезагрузка: POST проекта и
+  // смены пространства должны успеть уйти, дальше всё (цвет,
+  // иконка, настройки) подтянется с сервера
+  const switchTab = async p => {
+    const pws = wsmap[p];
+    try {
+      if (pws && pws !== wsInfo.active)
+        await post("/api/ws/active", { id: pws });
+      await post("/api/project", { project: p });
+    } catch {}
+    location.reload();
   };
 
   // диктовка: 🎙 на note-карточке дописывает текст в неё
@@ -2315,16 +2337,10 @@ export default function App() {
               <ConnBadge conn={conn} showVer={false} />
             </Typography>
             {multiMode && (
-              <ProjectTabs projects={projects} tabs={tabs} current={project}
-                           onTab={selectProject} onClose={closeTab}
-                           onAdd={() => setAddOpen(true)}
-                           wsmap={wsmap} wsList={wsInfo.ws}
-                           onWs={(p, id) =>
-                             post("/api/project/ws",
-                                  { project: p, ws: id })
-                               .then(() => refreshProjects())}
-                           onSettings={p => setPSetOpen(p)} />
-            )}
+              <Typography variant="body2" noWrap
+                sx={{ opacity: .9, fontSize: 13, flexShrink: 0 }}>
+                {project}
+              </Typography>)}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
               sx={{ display: { xs: "none", md: "block" }, opacity: .9,
@@ -2386,6 +2402,19 @@ export default function App() {
         </AppBar>
         {/* spacer — AppBar is position:fixed, header stays pinned on top */}
         <Toolbar variant="dense" />
+        {/* вкладки проектов — полоса под шапкой перед баром ветки;
+            клик = перезагрузка страницы на выбранном проекте */}
+        {multiMode && (
+          <ProjectTabs projects={projects} tabs={tabs} current={project}
+                       onTab={switchTab} onClose={closeTab}
+                       onAdd={() => setAddOpen(true)}
+                       wsmap={wsmap} wsList={wsInfo.ws}
+                       onWs={(p, id) =>
+                         post("/api/project/ws",
+                              { project: p, ws: id })
+                           .then(() => refreshProjects())}
+                       onSettings={p => setPSetOpen(p)}
+                       accent={accent} />)}
 
         {/* бар ветки: имя + коммит/пуш + новая ветка (xs — в 3 части) */}
         {brInfo?.current &&
@@ -2462,8 +2491,9 @@ export default function App() {
             <Box sx={{ display: "flex", gap: 1.2, alignItems: "stretch",
                        overflowX: "auto", pb: 1.2,
                        px: { xs: 0.6, md: 0 },
-                       height: { xs: "calc(100dvh - 206px)",
-                                 md: "calc(100dvh - 214px)" },
+                       height: {
+                         xs: `calc(100dvh - ${multiMode ? 243 : 206}px)`,
+                         md: `calc(100dvh - ${multiMode ? 251 : 214}px)` },
                        scrollSnapType: { xs: "x proximity", md: "none" },
                        "&::-webkit-scrollbar": { height: 8 } }}>
               {/* доска = «Главная» + темы в общем порядке (sort);
