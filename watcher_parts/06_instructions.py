@@ -1181,14 +1181,15 @@ def _fmt_worker(stem: str) -> None:
             if fst:
                 db_exec("INSERT INTO topic_stats"
                         " (project, topic_id, stem, created, model,"
-                        " prompt_tok, cached_tok, completion_tok, cost)"
-                        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        " prompt_tok, cached_tok, completion_tok, cost,"
+                        " duration)"
+                        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (row.get("project"), row.get("topic_id"),
                          fstem, time.time(), fst.get("model"),
                          fst.get("prompt_tokens"),
                          fst.get("cached_tokens"),
                          fst.get("completion_tokens"),
-                         _task_cost(fst)))
+                         _task_cost(fst), fst.get("duration")))
         except Exception as e:
             log(f"topic_stats fmt: {e}")
         body = _clean_task_output(body).strip()

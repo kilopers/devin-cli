@@ -1,3 +1,12 @@
+## 1.8.57 — время выполнения в статистике темы
+
+- topic_stats: новая колонка duration (миграция в init_db,
+  ALTER IF NOT EXISTS) — время started→finished, очередь не
+  считается; пишется из tasks.stats.duration и из _fmt_worker.
+- Диалог «📊 Статистика» колонки: у каждой строки — длительность
+  (fmtDur), в «итого» — суммарное время «⏱ Nч Nм»;
+  /api/topic/stats отдаёт duration в rows и total.
+
 ## 1.8.56 — селектор VPN-ноды mihomo в шапке
 
 - В шапке — чип «🌐 <текущая нода>» (компонент ProxySel): клик —

@@ -480,13 +480,13 @@ def _api_topic_stats():
     if tid == "main":
         rows = db_query(
             "SELECT id, stem, created, model, prompt_tok, cached_tok,"
-            " completion_tok, cost FROM topic_stats"
+            " completion_tok, cost, duration FROM topic_stats"
             " WHERE project=%s AND topic_id IS NULL"
             " ORDER BY created DESC LIMIT 500", (proj,))
     else:
         rows = db_query(
             "SELECT id, stem, created, model, prompt_tok, cached_tok,"
-            " completion_tok, cost FROM topic_stats"
+            " completion_tok, cost, duration FROM topic_stats"
             " WHERE project=%s AND topic_id=%s"
             " ORDER BY created DESC LIMIT 500", (proj, int(tid)))
     return jsonify({"ok": True, "rows": rows, "total": {
@@ -494,7 +494,8 @@ def _api_topic_stats():
         "prompt": sum(r["prompt_tok"] or 0 for r in rows),
         "cached": sum(r["cached_tok"] or 0 for r in rows),
         "completion": sum(r["completion_tok"] or 0 for r in rows),
-        "cost": round(sum(r["cost"] or 0 for r in rows), 4)}})
+        "cost": round(sum(r["cost"] or 0 for r in rows), 4),
+        "duration": sum(r["duration"] or 0 for r in rows)}})
 
 
 @app.post("/api/topic/stats/clear")

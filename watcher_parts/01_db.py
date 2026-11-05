@@ -162,6 +162,14 @@ def init_db() -> None:
         cost DOUBLE NULL,
         KEY idx_proj_topic (project, topic_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # время выполнения задачи (started→finished, очередь не
+    # считается) — миграция для старых таблиц
+    if not db_query("SELECT 1 FROM information_schema.COLUMNS"
+                    " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='topic_stats'"
+                    " AND COLUMN_NAME='duration'",
+                    (MYSQL["database"],)):
+        db_exec("ALTER TABLE topic_stats"
+                " ADD COLUMN duration INT NULL")
     # чистка после бага «первая задача темы continue'ила последнюю
     # сессию каталога»: пин темы, равный пину «главной» её проекта или
     # продублированный у другой темы — это чужая сессия → NULL, тема
@@ -1135,13 +1143,14 @@ def run_task(task: dict) -> None:
         if tstats:
             db_exec("INSERT INTO topic_stats"
                     " (project, topic_id, stem, created, model,"
-                    " prompt_tok, cached_tok, completion_tok, cost)"
-                    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    " prompt_tok, cached_tok, completion_tok, cost,"
+                    " duration)"
+                    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (tproj, task.get("topic_id"), stem, finished_ts,
                      tstats.get("model"), tstats.get("prompt_tokens"),
                      tstats.get("cached_tokens"),
                      tstats.get("completion_tokens"),
-                     tstats.get("cost")))
+                     tstats.get("cost"), tstats.get("duration")))
     except Exception as e:
         log(f"topic_stats: {e}")
     # пин сессии темы: следующая задача темы резюмит её через --resume

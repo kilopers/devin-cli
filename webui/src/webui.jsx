@@ -1393,6 +1393,13 @@ function TopicStatsDlg({ dlg, project, onClose, toast }) {
               {fmtNum(r.prompt_tok)}·кэш {fmtNum(r.cached_tok)}
               ·out {fmtNum(r.completion_tok)}
             </Typography>
+            {!!r.duration &&
+              <Typography component="span"
+                sx={{ fontSize: "inherit",
+                      fontFamily: "ui-monospace, Menlo, monospace",
+                      color: "text.secondary", minWidth: 44 }}>
+                {fmtDur(r.duration)}
+              </Typography>}
             <Typography component="span"
               sx={{ fontSize: "inherit", fontWeight: 600,
                     minWidth: 56, textAlign: "right" }}>
@@ -1408,6 +1415,7 @@ function TopicStatsDlg({ dlg, project, onClose, toast }) {
         <Typography variant="body2" sx={{ fontSize: 12.5 }}>
           итого: задач {tot.tasks || 0} · prompt {fmtNum(tot.prompt)}
           (кэш {fmtNum(tot.cached)}) + out {fmtNum(tot.completion)}
+          {!!tot.duration && " · ⏱ " + fmtDur(tot.duration)}
           {" · ≈ " + money(tot.cost || 0)}
         </Typography>
         <Box sx={{ flex: 1 }} />
