@@ -228,6 +228,10 @@ const saveTopicSel = (p, v) => {
 
 // скелетон поверх карточки/колонки, пока действие идёт на сервере:
 // UI меняется только после ответа бэка и перечитки ленты
+// stem+тип карточки, которую тащат прямо сейчас — в dragover
+// payload dataTransfer недоступен, а мержу нужна «note на note»
+let dragStemNow = null;
+
 const PendOverlay = () => (
   <Box onClick={e => e.stopPropagation()} sx={{
     position: "absolute", inset: 0, zIndex: 3, borderRadius: "inherit",
@@ -242,7 +246,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
                                                sel, onNote, onCont, cols,
                                                onDict, dictOn, pending,
-                                               pend, onGone }) {
+                                               pend, onGone,
+                                               mergeSel, onMergeOver,
+                                               onMergeDrop,
+                                               onMergeLeave }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -556,6 +563,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   return (
     <Card elevation={0} data-stem={t.stem}
       onClick={isNote ? () => onNote?.(t) : undefined}
+      onDragOver={isNote ? e => onMergeOver?.(e, t) : undefined}
+      onDrop={isNote ? e => onMergeDrop?.(e, t) : undefined}
+      onDragLeave={isNote ? () => onMergeLeave?.(t) : undefined}
       sx={{
       mb: 1.6, borderRadius: "14px", position: "relative",
       border: "1px solid", borderColor: "divider",
@@ -564,6 +574,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
       ...(sel && { borderColor: "#5e6ad2",
                    bgcolor: "rgba(94,106,210,.05)",
                    boxShadow: "0 0 0 1px #5e6ad2" }),
+      ...(mergeSel && { borderColor: "#5e6ad2",
+                        borderStyle: "dashed",
+                        bgcolor: "rgba(94,106,210,.07)",
+                        boxShadow: "0 0 0 2px rgba(94,106,210,.35)" }),
       "&:hover": { borderColor: sel ? "#5e6ad2" : "#c9cfda",
                    boxShadow: sel ? "0 0 0 1px #5e6ad2"
                                   : "0 4px 18px rgba(16,24,40,.07)" } }}>
@@ -584,7 +598,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 <Box component="span" draggable
                      onDragStart={e => {
                        e.dataTransfer.setData("text/plain", t.stem);
-                       e.dataTransfer.effectAllowed = "move"; }}
+                       e.dataTransfer.effectAllowed = "move";
+                       dragStemNow = { stem: t.stem, note: isNote }; }}
                      onClick={e => e.stopPropagation()}
                      sx={{ cursor: "grab", display: "inline-flex",
                            mr: -0.3, color: "text.disabled",
@@ -1913,10 +1928,37 @@ export default function App() {
     }
   }, [loadTasks]);
   const dropAtRef = useRef(null);
-  const setDrop = d => { dropAtRef.current = d; setDropAt(d); };
+  const setDrop = useCallback(
+    d => { dropAtRef.current = d; setDropAt(d); }, []);
+  // склейка заметок: note-карту можно бросить на другую note (даже в
+  // другой колонке) — цель подсвечивается пунктиром, drop льёт текст
+  // источника в цель новым абзацем и стирает источник
+  const [mergeAt, setMergeAt] = useState(null);
+  const mergeOver = useCallback((e, t) => {
+    const types = e.dataTransfer ? [...e.dataTransfer.types] : [];
+    if (!types.includes("text/plain") || !dragStemNow?.note ||
+        t.stem === dragStemNow.stem) return;
+    e.preventDefault(); e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setDrop(null);
+    setMergeAt(prev => prev === t.stem ? prev : t.stem);
+  }, [setDrop]);
+  const mergeLeave = useCallback(t =>
+    setMergeAt(prev => prev === t.stem ? null : prev), []);
+  const mergeDrop = useCallback((e, t) => {
+    e.preventDefault(); e.stopPropagation();
+    const stem = e.dataTransfer.getData("text/plain");
+    setMergeAt(null);
+    if (!stem || stem === t.stem || !dragStemNow?.note) return;
+    pendRun(t.stem, () => post("/api/task/merge",
+                               { from: stem, to: t.stem })).then(res => {
+      if (res.ok) { dropStem(stem); setToast("Заметки объединены"); }
+      else setToast("Объединение: " + (res.error || "?"));
+    }).catch(() => setToast("Сеть: не объединил заметки"));
+  }, [pendRun, dropStem]);
   // отпустили карту вне колонки — спрятать плейсхолдер
   useEffect(() => {
-    const clear = () => setDrop(null);
+    const clear = () => { setDrop(null); setMergeAt(null); };
     document.addEventListener("dragend", clear);
     document.addEventListener("drop", clear);
     return () => { document.removeEventListener("dragend", clear);
@@ -1981,7 +2023,11 @@ export default function App() {
           dictOn={dict?.kind === "note" && dict?.stem === t.stem}
           pending={pendSet.has(t.stem)}
           pend={pendRun}
-          onGone={dropStem} />);
+          onGone={dropStem}
+          mergeSel={mergeAt === t.stem}
+          onMergeOver={mergeOver}
+          onMergeDrop={mergeDrop}
+          onMergeLeave={mergeLeave} />);
     });
     if (dropAt?.col === key && dropAt.idx >= list.length)
       out.push(mark);

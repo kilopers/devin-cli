@@ -1286,6 +1286,38 @@ def _api_task_delete():
     return jsonify({"ok": True, "stem": stem})
 
 
+@app.post("/api/task/merge")
+@login_required
+def _api_task_merge():
+    """Заметка на заметку (карточку перетащили прямо на другую
+    note-карточку): текст источника дописывается в prompt цели
+    новым абзацем, источник стирается. Обе должны быть
+    status='note'."""
+    body = _req_json()
+    src = (body.get("from") or "").strip()
+    dst = (body.get("to") or "").strip()
+    if not src or not dst or src == dst:
+        return jsonify({"ok": False,
+                        "error": "нужны две разные заметки"}), 400
+    a, b = task_row(src), task_row(dst)
+    if not a or not b:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    for r in (a, b):
+        if r["project"] and not _owns_project(r["project"]):
+            abort(403)
+        if r["status"] != "note":
+            return jsonify({"ok": False,
+                            "error": "объединять можно только "
+                                     "заметки"}), 409
+    text = (a.get("prompt") or "").strip()
+    if text:
+        db_exec("UPDATE tasks SET prompt=CONCAT(prompt,'\\n\\n',%s)"
+                " WHERE stem=%s", (text, dst))
+    drop_failed_task(src)
+    log(f"note {src} merged into {dst} (+{len(text)} chars)")
+    return jsonify({"ok": True, "stem": dst, "from": src})
+
+
 @app.post("/api/project/add")
 @login_required
 def _api_project_add():
