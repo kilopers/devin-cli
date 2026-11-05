@@ -2819,6 +2819,7 @@ export default function App() {
                 <Paper variant="outlined" onClick={createTopic}
                        sx={{ width: { xs: "55vw", sm: 190 },
                              flexShrink: 0, scrollSnapAlign: "start",
+                             alignSelf: "flex-start",
                              borderRadius: "12px", cursor: "pointer",
                              borderStyle: "dashed", borderColor: "divider",
                              "&:hover": { borderColor:
