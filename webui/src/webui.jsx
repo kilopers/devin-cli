@@ -1355,11 +1355,11 @@ export default function App() {
               🌿 ветка</Button>
           </Box>}
 
-        {/* бар темы — только мобильная версия, на всю ширину:
-            «＋ Новая тема» → «⭐ Главная» → темы проекта; каждая тема —
-            своя devin-сессия и своя лента задач */}
+        {/* бар темы: «＋ Новая тема» → «⭐ Главная» → темы проекта;
+            каждая тема — своя devin-сессия и своя лента задач.
+            мобильная — на всю ширину; десктоп — ширина по контенту */}
         {project && (
-          <Box sx={{ display: { xs: "flex", md: "none" },
+          <Box sx={{ display: "flex",
                      alignItems: "center", gap: 0.6,
                      position: "sticky",
                      top: brInfo?.current ? 80 : 48, zIndex: 5,
@@ -1369,13 +1369,15 @@ export default function App() {
                      borderColor: "divider" }}>
             <ForumIcon sx={{ fontSize: 14, flexShrink: 0,
                              color: "text.secondary" }} />
-            <Select size="small" fullWidth variant="standard"
+            <Select size="small" variant="standard"
                     disableUnderline value={topicSel}
                     onChange={e =>
                       e.target.value === "__new__"
                         ? createTopic()
                         : selectTopic(e.target.value)}
-                    sx={{ fontSize: 12.5 }}>
+                    sx={{ fontSize: 12.5,
+                          width: { xs: "100%", md: "auto" },
+                          minWidth: { md: 150 } }}>
               <MenuItem value="__new__"
                         sx={{ fontSize: 12.5, color: "#5e6ad2",
                               fontWeight: 600 }}>
