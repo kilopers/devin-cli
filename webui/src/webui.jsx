@@ -1287,7 +1287,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       eff, onSelect, onNewTask, onDelete,
                       onSettings, onMoveL, onMoveR,
                       empty, children, more, busy, onMore,
-                      onBodyOver, onBodyDrop, loading }) {
+                      onBodyOver, onBodyDrop, loading,
+                      onDict, dictOn }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{
@@ -1402,10 +1403,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
         {(() => { const btnC = boostColor(color) || accent
                                 || "#5e6ad2";
           return (
-            <Button size="small" fullWidth onClick={onNewTask}
-                    sx={{ textTransform: "none", fontSize: 13, py: 0.6,
-                          fontWeight: 600, border: "1.5px dashed",
-                          borderRadius: "9px",
+            <Box sx={{ display: "flex", gap: 0.5 }}>
+            <Button size="small" onClick={onNewTask}
+                    sx={{ flex: 1, textTransform: "none", fontSize: 13,
+                          py: 0.6, fontWeight: 600,
+                          border: "1.5px dashed", borderRadius: "9px",
                           color: btnC, borderColor: btnC,
                           "&:hover": { bgcolor:
                             btnC.startsWith("#") ? btnC + "14"
@@ -1413,7 +1415,19 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
               {eff?.reply_mode === "say" ? "＋ заметка сюда"
                 : eff?.reply_mode === "ask" ? "＋ спросить сюда"
                 : "＋ задача сюда"}
-            </Button>); })()}
+            </Button>
+            {onDict &&
+              <Tooltip title="надиктовать — текст в композер; в быстром режиме задача сразу в эту колонку">
+                <IconButton size="small"
+                  onClick={e => { e.stopPropagation(); onDict(); }}
+                  sx={{ border: "1.5px dashed", borderRadius: "9px",
+                        width: 32, flexShrink: 0,
+                        color: dictOn ? "error.main" : btnC,
+                        borderColor: dictOn ? "error.main" : btnC }}>
+                  <MicIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>}
+            </Box>); })()}
       </Box>
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8, flex: 1, minHeight: 0, overflowY: "auto",
@@ -1885,17 +1899,20 @@ export default function App() {
            setFeed(new Map()); }
   };
 
-  // диктовка в заметку: 🎙 на note-карточке → запись → /api/stt →
-  // текст дописывается в prompt через /api/task/append; карточка
-  // «нажата» (noteSel) на время записи, по стопу отжимается
+  // диктовка: 🎙 на note-карточке дописывает текст в неё
+  // (/api/task/append), 🎙 у «＋ … сюда» в колонке — голос →
+  // /api/stt → быстрый режим: задача сразу в эту колонку её
+  // уровня, обычный: текст попадает в поле композера, а колонка
+  // становится целевой
   const dictRef = useRef(null);
-  const [dictStem, setDictStem] = useState(null);
+  const [dict, setDict] = useState(null);   // {kind:'note'|'col',...}
   const [dictInfo, setDictInfo] = useState("");
+  const [compInj, setCompInj] = useState({ text: "", n: 0 });
   const stopDict = async () => {
     const r = dictRef.current;
     if (!r) return;
     dictRef.current = null;
-    setDictStem(null); setDictInfo("");
+    setDict(null); setDictInfo("");
     clearTimeout(r.timer); clearInterval(r.clock);
     r.proc.disconnect(); r.src.disconnect(); r.gain.disconnect();
     r.stream.getTracks().forEach(t => t.stop());
@@ -1907,46 +1924,66 @@ export default function App() {
       const d = await (await fetch("/api/stt", { method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: wav })).json();
-      if (d.ok && (d.text || "").trim()) {
+      const txt = (d.text || "").trim();
+      if (!d.ok || !txt) {
+        setToast(d.ok ? "Ничего не распознано"
+                      : "STT: " + (d.error || "?"));
+      } else if (r.target.kind === "note") {
         const a = await post("/api/task/append",
-                             { stem: r.stem, text: d.text.trim() });
+                             { stem: r.target.stem, text: txt });
         setToast(a.ok ? "Дописано в заметку"
                       : "append: " + (a.error || "?"));
         loadTasks();
+      } else if (effFast) {
+        const a = await post("/api/tasks", {
+          project: project === "workspace" ? null : project,
+          text: txt, topic: r.target.key,
+          ...(r.target.mode === "say" ? { mode: "say" } : {}),
+          ...(r.target.mode === "ask" ? { mode: "ask" } : {}) });
+        setToast(a.ok ? "Задача поставлена"
+                      : "Ошибка: " + (a.error || "?"));
+        loadTasks();
       } else {
-        setToast(d.ok ? "Ничего не распознано"
-                      : "STT: " + (d.error || "?"));
+        setCompInj(c => ({ text: txt, n: c.n + 1 }));
+        document.getElementById("composer-input")?.focus();
       }
     } catch (e) { setToast("STT сеть: " + e); }
   };
+  const startDict = async target => {
+    try {
+      const stream = await navigator.mediaDevices
+        .getUserMedia({ audio: true });
+      const ctx = new (window.AudioContext
+        || window.webkitAudioContext)({ sampleRate: STT_RATE });
+      const src = ctx.createMediaStreamSource(stream);
+      const proc = ctx.createScriptProcessor(4096, 1, 1);
+      const gain = ctx.createGain(); gain.gain.value = 0;
+      const chunks = [];
+      proc.onaudioprocess = e => chunks.push(
+        new Float32Array(e.inputBuffer.getChannelData(0)));
+      src.connect(proc); proc.connect(gain);
+      gain.connect(ctx.destination);
+      const t0 = Date.now();
+      dictRef.current = { target, ctx, proc, src, gain, stream,
+        chunks,
+        clock: setInterval(() => setDictInfo(
+          new Date(Date.now() - t0).toISOString().substr(14, 5)), 250),
+        timer: setTimeout(stopDict, 300000) };
+      setDict(target); setDictInfo("00:00");
+    } catch (e) {
+      setToast("Микрофон: " + e);
+      setDict(null); setNoteSel(null);
+    }
+  };
   const toggleDict = t => {
     if (dictRef.current) { stopDict(); return; }
-    setNoteSel(t.stem); setDictStem(t.stem); setDictInfo("00:00");
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices
-          .getUserMedia({ audio: true });
-        const ctx = new (window.AudioContext
-          || window.webkitAudioContext)({ sampleRate: STT_RATE });
-        const src = ctx.createMediaStreamSource(stream);
-        const proc = ctx.createScriptProcessor(4096, 1, 1);
-        const gain = ctx.createGain(); gain.gain.value = 0;
-        const chunks = [];
-        proc.onaudioprocess = e => chunks.push(
-          new Float32Array(e.inputBuffer.getChannelData(0)));
-        src.connect(proc); proc.connect(gain);
-        gain.connect(ctx.destination);
-        const t0 = Date.now();
-        dictRef.current = { stem: t.stem, ctx, proc, src, gain, stream,
-          chunks,
-          clock: setInterval(() => setDictInfo(
-            new Date(Date.now() - t0).toISOString().substr(14, 5)), 250),
-          timer: setTimeout(stopDict, 300000) };
-      } catch (e) {
-        setToast("Микрофон: " + e);
-        setDictStem(null); setNoteSel(null);
-      }
-    })();
+    setNoteSel(t.stem);
+    startDict({ kind: "note", stem: t.stem });
+  };
+  const toggleDictCol = (key, mode) => {
+    if (dictRef.current) { stopDict(); return; }
+    selectTopic(key);
+    startDict({ kind: "col", key, mode });
   };
 
   // «＋ задача сюда» в колонке: выбирает тему целевой и фокусирует
@@ -2442,6 +2479,10 @@ export default function App() {
                         tset={mainDef} eff={mainDef.eff}
                         onSelect={() => selectTopic("main")}
                         onNewTask={() => newTaskIn("main")}
+                        onDict={() => toggleDictCol("main",
+                          mainDef.eff?.reply_mode)}
+                        dictOn={dict?.kind === "col"
+                                && dict?.key === "main"}
                         onSettings={() => setTSetDlg(
                           { kind: "main", current: mainDef })}
                         onMoveL={mvL} onMoveR={mvR}
@@ -2467,6 +2508,10 @@ export default function App() {
                       color={tp.color} tset={tp} eff={tp.eff}
                       onSelect={() => selectTopic(String(tp.id))}
                       onNewTask={() => newTaskIn(String(tp.id))}
+                      onDict={() => toggleDictCol(String(tp.id),
+                        tp.eff?.reply_mode)}
+                      dictOn={dict?.kind === "col"
+                              && dict?.key === String(tp.id)}
                       more={colMore[String(tp.id)]}
                       busy={!!colBusy[String(tp.id)]}
                       onMore={() => loadColMore(String(tp.id))}
@@ -2491,6 +2536,9 @@ export default function App() {
                   sel={topicSel === String(tid)} accent={accent}
                   onSelect={() => selectTopic(String(tid))}
                   onNewTask={() => newTaskIn(String(tid))}
+                  onDict={() => toggleDictCol(String(tid))}
+                  dictOn={dict?.kind === "col"
+                          && dict?.key === String(tid)}
                   more={colMore[String(tid)]}
                   busy={!!colBusy[String(tid)]}
                   onMore={() => loadColMore(String(tid))}
@@ -2612,6 +2660,7 @@ export default function App() {
         </Box>
 
         {project && <Composer project={project} sttStatus={status.stt_status}
+                  inject={compInj}
                   toast={setToast} onSent={loadTasks} accent={accent}
                   note={noteSel ? feed.get(noteSel) : null}
                   onNoteDone={() => setNoteSel(null)}
@@ -2633,7 +2682,7 @@ export default function App() {
                     if (d.ok) setMode(m);
                   }).catch(() => setToast("Сеть: не сохранил режим"))} />}
 
-      {dictStem && (
+      {dict && (
         <Paper elevation={0} sx={{
           position: "fixed", left: "50%", transform: "translateX(-50%)",
           bottom: { xs: 150, md: 130 }, zIndex: 30, px: 1.6, py: 0.7,
@@ -2645,7 +2694,8 @@ export default function App() {
                      animation: "blink 1s ease-in-out infinite",
                      "@keyframes blink": { "50%": { opacity: .25 } } }} />
           <Typography variant="body2" sx={{ fontSize: 13 }}>
-            {dictInfo || "00:00"} — диктую в заметку
+            {dictInfo || "00:00"} — {dict.kind === "note"
+              ? "диктую в заметку" : "диктую в колонку"}
           </Typography>
           <Button size="small" color="error" onClick={stopDict}
                   sx={{ textTransform: "none", fontSize: 12 }}>

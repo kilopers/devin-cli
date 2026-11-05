@@ -35,7 +35,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                                    topicName, topics, mainDef,
                                    note, onNoteDone,
                                    cont, onContDone,
-                                   onTopic, onNewTopic }) {
+                                   onTopic, onNewTopic, inject }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -47,6 +47,14 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [lastAudio, setLastAudio] = useState(null);  // failed WAV → retry
   const textRef = useRef("");
   textRef.current = text;
+
+  // диктовка из колонки канбана (🎙 у «＋ … сюда»): распознанный
+  // текст приходит пропом inject {text,n} — дописываем в поле
+  useEffect(() => {
+    if (!inject?.n) return;
+    setText(p => (p ? p.replace(/\s+$/, "") + " " : "")
+                 + inject.text);
+  }, [inject?.n]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // чипы параметров следующей задачи: проектные дефолты + разовые
   // оверрайды (действуют только на ближайшую отправку)
