@@ -1362,13 +1362,10 @@ export default function App() {
     return () => clearInterval(t);
   }, [loadStatus, loadTasks, loadModels]);
 
-  // stick to bottom when new output lands and we're already near it
-  const sig = items.map(t => t.stem + t.status + (t.output || "").length).join();
-  useEffect(() => {
-    if (innerHeight + scrollY >= document.body.offsetHeight - 160)
-      scrollTo(0, document.body.scrollHeight);
-  }, [sig]);
-
+  // автоскролл ленты убран: поллинг (рост output у бегущей задачи)
+  // не должен дёргать положение страницы — живой вывод и так идёт
+  // внутри модалки 📄; на канбане свежие задачи сверху колонок,
+  // stick-to-bottom работал в обратную сторону
   const statusText = (status.current_task ? "▶ " + status.current_task : "idle") +
     " · очередь " + (status.queue ?? "?") + " · " + (status.model || "");
 
