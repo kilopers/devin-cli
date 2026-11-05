@@ -1017,12 +1017,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             </Tooltip>
           </DialogTitle>
           <DialogContent sx={{ pb: 2.5 }}>
-            <Typography variant="caption" color="text.secondary"
-                        sx={{ fontFamily: MONO, fontSize: 11.5,
-                              wordBreak: "break-all" }}>
-              {t.name}
-            </Typography>
-            <Box sx={{ mt: 1 }}>
+            <Box>
               {infoRows.map(([k, v, hint]) => (
                 <Box key={k} sx={{ display: "flex",
                                   justifyContent: "space-between",
@@ -1150,12 +1145,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           </DialogTitle>
           <DialogContent dividers
                          sx={{ "& .md": { maxHeight: "none" } }}>
-            <Typography variant="caption" color="text.secondary"
-                        sx={{ fontFamily: MONO, fontSize: 11.5,
-                              wordBreak: "break-all" }}>
-              {t.name}
-            </Typography>
-            <Box sx={{ mt: 1 }}>
+            <Box>
               {isNote
                 ? <Markdown text={promptShown} />
                 : t.status === "done"
