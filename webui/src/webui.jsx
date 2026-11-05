@@ -230,14 +230,21 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const maybeCut = full === null && (t.prompt || "").length >= 2000;
   // «инфо» — статистика завершённой задачи (tasks.stats + длительность)
   const [info, setInfo] = useState(false);
-  // «результат» — полный вывод Devin в модалке; только для успешных
-  // задач (ошибка → иконки нет, вывод доступен через «подробнее»)
+  // «результат/вывод» — модалка с выводом Devin: иконка есть у любой
+  // задачи; у running — живая консоль (хвост .progress/<stem>.out,
+  // обновляется поллингом ленты), у завершённых — финальный результат
   const [outOpen, setOutOpen] = useState(false);
+  const outRef = useRef(null);
+  // живая консоль прилипает к низу на каждом обновлении хвоста
+  useEffect(() => {
+    const el = outRef.current;
+    if (outOpen && el && t.status !== "done")
+      el.scrollTop = el.scrollHeight;
+  }, [t.output, outOpen]);
   const succeeded = t.status === "done" &&
     !(t.task_status && !/exit code: 0/.test(t.task_status));
   // раскрывать есть что, только если текст задачи обрезан тремя
-  // строками или у неуспешной задачи есть вывод — иначе «подробнее»
-  // не рисуем вовсе
+  // строками — вывод живёт в модалке 📄, «подробнее» его не дублирует
   const txtRef = useRef(null);
   const openRef = useRef(false);
   openRef.current = open;
@@ -253,11 +260,11 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [promptShown]);
-  const canExpand = clamped || (!succeeded && !!t.output);
-  // у успешной задачи превью может быть обрезано на 2000 символах —
-  // догружаем полный текст при раскрытии
+  const canExpand = clamped;
+  // превью задачи может быть обрезано на 2000 символах — полный текст
+  // догружаем при раскрытии
   useEffect(() => {
-    if (open && succeeded && maybeCut) loadFull();
+    if (open && maybeCut) loadFull();
   }, [open]);
   // на мобильной модалки карточки растягиваем почти на всю ширину
   // экрана (узкие отступы), на десктопе — как было
@@ -402,14 +409,13 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 ✖ удалить
               </Button>
             )}
-            {succeeded && (
-              <Tooltip title="результат задачи">
-                <IconButton size="small" onClick={() => setOutOpen(true)}
-                  sx={{ p: "3px", color: "text.secondary" }}>
-                  <ArticleIcon sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Tooltip>
-            )}
+            <Tooltip title={succeeded ? "результат задачи"
+                                      : "вывод задачи"}>
+              <IconButton size="small" onClick={() => setOutOpen(true)}
+                sx={{ p: "3px", color: "text.secondary" }}>
+                <ArticleIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
             {t.status === "done" && (
               <Tooltip title="статистика задачи">
                 <IconButton size="small" onClick={() => setInfo(true)}
@@ -446,21 +452,6 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   "&:hover": { textDecoration: "underline" } }}>
             … показать весь текст задачи
           </Typography>)}
-        {!succeeded && (
-        <Collapse in={open} unmountOnExit>
-          <Box sx={{ mt: 1.5, pt: 1.5,
-                     borderTop: "1px solid",
-                     borderColor: "divider" }}>
-            {t.output
-              ? (t.status === "done"
-                  ? <Markdown text={t.output} />
-                  : <pre className="out">{t.output}</pre>)
-              : <Typography variant="body2" color="text.secondary">
-                  {t.status === "queued" ? "в очереди — вывод ещё пуст"
-                                        : "вывод пока пуст"}</Typography>}
-          </Box>
-        </Collapse>)}
-
         {canExpand && (
         <Box onClick={() => setOpen(o => !o)}
              sx={{ display: "flex", alignItems: "center", gap: 0.4,
@@ -538,7 +529,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
         <Dialog open={outOpen} onClose={() => setOutOpen(false)}
                 maxWidth="md" fullWidth slotProps={dlgSlotProps}>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
-            Результат задачи
+            {succeeded ? "Результат задачи" : "Вывод задачи"}
             <IconButton size="small" onClick={() => setOutOpen(false)}
               sx={{ position: "absolute", right: 12, top: 10,
                     color: "text.secondary" }}>
@@ -553,10 +544,18 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               {t.name}
             </Typography>
             <Box sx={{ mt: 1 }}>
-              {t.output
-                ? <Markdown text={t.output} />
-                : <Typography variant="body2" color="text.secondary">
-                    вывод пуст — Devin ничего не вернул</Typography>}
+              {t.status === "done"
+                ? (t.output
+                    ? <Markdown text={t.output} />
+                    : <Typography variant="body2" color="text.secondary">
+                        вывод пуст — Devin ничего не вернул</Typography>)
+                : (t.output
+                    ? <pre className="out" ref={outRef}
+                           style={{ maxHeight: "60vh" }}>{t.output}</pre>
+                    : <Typography variant="body2" color="text.secondary">
+                        {t.status === "queued"
+                          ? "в очереди — вывод ещё пуст"
+                          : "вывод пока пуст"}</Typography>)}
             </Box>
           </DialogContent>
         </Dialog>
