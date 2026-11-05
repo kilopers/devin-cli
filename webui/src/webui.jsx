@@ -39,6 +39,7 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CheckIcon from "@mui/icons-material/Check";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArticleIcon from "@mui/icons-material/Article";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ForumIcon from "@mui/icons-material/Forum";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -215,7 +216,7 @@ const saveTopicSel = (p, v) => {
 };
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
-                                               toast }) {
+                                               onDel, toast }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -452,6 +453,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 <IconButton size="small" onClick={() => setInfo(true)}
                   sx={{ p: "3px", color: "text.secondary" }}>
                   <InfoOutlinedIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {t.status === "done" && !succeeded && onDel && (
+              <Tooltip title="удалить задачу">
+                <IconButton size="small" onClick={() => onDel(t)}
+                  sx={{ p: "3px", color: "error.main" }}>
+                  <DeleteOutlinedIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -1021,6 +1030,8 @@ export default function App() {
     t2 => setConfirm({ kind: "stop", name: t2.name }), []);
   const askCancel = useCallback(
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
+  const askDel = useCallback(
+    t2 => setConfirm({ kind: "del", name: t2.name, stem: t2.stem }), []);
   // накопление частей задачи («Начать задачу» → каждое сообщение
   // композера кладётся в batch, файл — тоже часть пачки)
   const onCollectPart = useCallback(part => {
@@ -1116,11 +1127,14 @@ export default function App() {
     try {
       const d = c.kind === "stop"
         ? await post("/api/stop", { stem: confirm.stem })
+        : c.kind === "del"
+        ? await post("/api/task/delete", { stem: c.stem })
         : await post("/api/task/cancel", { stem: c.stem });
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
+                 : c.kind === "del" ? "🗑 Задача удалена"
                                    : "Удалено из очереди: " + c.name);
-        if (c.kind === "cancel")
+        if (c.kind === "cancel" || c.kind === "del")
           setFeed(m => { const n = new Map(m); n.delete(c.stem); return n; });
       } else setToast("Ошибка: " + (d.error || "?"));
       loadStatus();
@@ -1475,7 +1489,8 @@ export default function App() {
             {items.length
               ? items.map(t => <TaskCard key={t.stem} t={t}
                     onStop={askStop}
-                    onCancel={askCancel} toast={setToast} />)
+                    onCancel={askCancel} onDel={askDel}
+                    toast={setToast} />)
               : <Typography align="center" color="text.secondary"
                   sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
             {/* части собираемой задачи — после последней карточки,
@@ -1677,6 +1692,7 @@ export default function App() {
               maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontSize: 16 }}>
           {confirm?.kind === "stop" ? "Остановить задачу?"
+           : confirm?.kind === "del" ? "Удалить задачу?"
                                    : "Удалить задачу из очереди?"}
         </DialogTitle>
         <DialogContent>
@@ -1685,6 +1701,9 @@ export default function App() {
               ? `«${confirm.name}» будет принудительно убита — воркер ` +
                 "возьмёт следующую из очереди. Незакоммиченные изменения " +
                 "в репо останутся."
+              : confirm?.kind === "del"
+              ? `«${confirm?.name}» будет удалена безвозвратно вместе ` +
+                "с выводом и статистикой."
               : `«${confirm?.name}» будет удалена из очереди и не ` +
                 "выполнится. Действие необратимо."}
           </Typography>

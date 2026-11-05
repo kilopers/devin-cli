@@ -618,6 +618,35 @@ def _api_task_cancel():
     return jsonify({"ok": True, "stem": stem})
 
 
+@app.post("/api/task/delete")
+@login_required
+def _api_task_delete():
+    """Web «удалить» на карточке упавшей задачи: стирает запись done-
+    задачи (статус «ошибка») вместе с прогресс-файлами и kv-метками."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["status"] != "done":
+        return jsonify({"ok": False,
+                        "error": "удалять можно только завершённые"}), 409
+    if not row["task_status"] or \
+            "exit code: 0" in (row["task_status"] or ""):
+        return jsonify({"ok": False,
+                        "error": "удалять можно только упавшие"}), 409
+    db_exec("DELETE FROM tasks WHERE stem=%s", (stem,))
+    for k in (f"tag:{stem}", f"opts:{stem}"):
+        db_exec("DELETE FROM kv WHERE k=%s", (k,))
+    for p in (TASKS_DIR / ".progress" / f"{stem}.out",
+              TASKS_DIR / ".progress" / f"{stem}.json"):
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+    log(f"web delete removed failed {stem}")
+    return jsonify({"ok": True, "stem": stem})
+
+
 @app.post("/api/project/add")
 @login_required
 def _api_project_add():
