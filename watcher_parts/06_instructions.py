@@ -182,7 +182,8 @@ def _api_instr_set():
 # --- темы проекта: именованные ветки работы со своей devin-сессией ----
 
 def _topic_rows(project: str) -> list:
-    return db_query("SELECT id, name, session_id, user, created, updated,"
+    return db_query("SELECT id, name, session_id, own_session,"
+                    " user, created, updated,"
                     " color, model, reply_mode, auto_commit, fast"
                     " FROM topics WHERE project=%s ORDER BY id", (project,))
 
@@ -239,13 +240,16 @@ def _api_topics_set():
             return jsonify({"ok": False,
                             "error": "тема с таким именем уже есть"}), 409
         st = _topic_settings_from(b)
+        # own_session ("0"/"1", дефолт 1) — только при создании, поля
+        # в настройках темы нет и через settings его не поменять
+        own = 0 if str(b.get("own_session") or "1") == "0" else 1
         db_exec("INSERT INTO topics(project,user,name,color,model,"
-                "reply_mode,auto_commit,fast,created,updated)"
-                " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "reply_mode,auto_commit,fast,own_session,created,"
+                "updated) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (p, u, name, st.get("color") or None,
                  st.get("model") or None, st.get("reply_mode") or None,
                  st.get("auto_commit") or None, st.get("fast") or None,
-                 time.time(), time.time()))
+                 own, time.time(), time.time()))
         return jsonify({"ok": True,
                         "id": db_query(
                             "SELECT LAST_INSERT_ID() AS i")[0]["i"]})

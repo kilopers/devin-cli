@@ -962,6 +962,13 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.4,
                    px: 0.9, py: 0.5,
                    borderBottom: "1px solid", borderColor: "divider" }}>
+          {tset?.own_session === 0 &&
+            <Tooltip title={"общая сессия проекта — у темы нет своей," +
+                            " задачи идут как в «Главной»"}>
+              <Chip size="small" label="🔗 общая" variant="outlined"
+                    sx={{ height: 17, fontSize: 9.5, fontWeight: 500,
+                          borderRadius: "6px" }} />
+            </Tooltip>}
           {[
             [eff.reply_mode === "ask" ? "💬 спросить" : "🛠 код",
              tset?.reply_mode, "режим ответа"],
@@ -1776,7 +1783,7 @@ export default function App() {
               {topics.map(tp =>
                 <TopicColumn key={tp.id}
                   name={tp.name || `тема #${tp.id}`}
-                  sess={tp.has_session}
+                  sess={tp.has_session && tp.own_session !== 0}
                   count={byTopic(tp.id).length}
                   sel={topicSel === String(tp.id)} accent={accent}
                   color={tp.color} tset={tp} eff={tp.eff}

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
   Stack, Typography, TextField, MenuItem, Box, Tooltip,
+  Checkbox, FormControlLabel,
 } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
@@ -25,6 +26,9 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   const [mode, setMode] = useState("");
   const [ac, setAc] = useState("");
   const [fast, setFast] = useState("");
+  // своя devin-сессия у темы — задаётся только при создании (галочка),
+  // потом не меняется; снято → задачи идут в общей сессии проекта
+  const [ownSess, setOwnSess] = useState(true);
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -40,6 +44,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setMode(src.reply_mode || "");
     setAc(src.auto_commit || "");
     setFast(src.fast || "");
+    setOwnSess(true);
     get("/api/models").then(j => setModels(j.models || []))
       .catch(() => {});
   }, [dlg]);
@@ -50,7 +55,8 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
       const body = { project, color, model, reply_mode: mode,
                      auto_commit: ac, fast };
       const d = await post("/api/topics",
-        isCreate ? { ...body, action: "create", name: name.trim() }
+        isCreate ? { ...body, action: "create", name: name.trim(),
+                     own_session: ownSess ? "1" : "0" }
         : isMain ? { ...body, action: "settings", main: true }
         : { ...body, action: "settings", id: dlg.topic.id,
             name: name.trim() });
@@ -93,6 +99,29 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                        helperText={isCreate
                          ? "пусто — агент назовёт по первой задаче"
                          : ""} />}
+          {isCreate &&
+            <Box>
+              <FormControlLabel
+                control={<Checkbox checked={ownSess} size="small"
+                          onChange={e => setOwnSess(e.target.checked)} />}
+                label={<Typography variant="body2" fontSize={13}>
+                  Своя сессия Devin</Typography>}
+                sx={{ m: 0 }} />
+              <Typography variant="caption" color="text.secondary"
+                          display="block" sx={{ ml: 4.2 }}>
+                {ownSess
+                  ? "у темы своя сессия — каждая задача продолжает её (🔁 в шапке колонки)"
+                  : "тема — только колонка для группировки: задачи идут в общей сессии проекта, как у «Главной»"}
+                {" — задаётся при создании, изменить нельзя"}
+              </Typography>
+            </Box>}
+          {dlg?.kind === "edit" &&
+            <Typography variant="caption" color="text.secondary">
+              Сессия: {dlg.topic?.own_session
+                ? "своя — резюмируется между задачами темы"
+                : "общая — задачи идут в сессии проекта"}
+              {" (задаётся при создании)"}
+            </Typography>}
           <Box>
             <Typography variant="caption" color="text.secondary">
               Цвет колонки
