@@ -40,7 +40,7 @@ try:
     _notes = open(os.environ.get(
         "RELEASE_NOTES_FILE", "/app/RELEASE_NOTES.md")).read()
     _sec = re.search(
-        rf"^##\s+{re.escape(_ver)}\s*\n(.*?)(?=^##\s|\Z)",
+        rf"^##\s+{re.escape(_ver)}[^\n]*\n(.*?)(?=^##\s|\Z)",
         _notes, re.M | re.S)
     if _sec:
         _items = [l for l in _sec.group(1).strip().splitlines()
