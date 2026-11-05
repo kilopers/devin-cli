@@ -132,6 +132,20 @@ def init_db() -> None:
         ws_id INT NOT NULL,
         PRIMARY KEY (user, name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # темы: именованная ветка работы внутри проекта — своя devin-сессия
+    # (session_id пиннится по завершении задачи, следующая тема резюмит
+    # её через --resume). tasks.topic_id NULL/0 = «главная» тема.
+    db_exec("""CREATE TABLE IF NOT EXISTS topics (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project VARCHAR(190) NOT NULL,
+        user VARCHAR(64) NOT NULL DEFAULT '',
+        name VARCHAR(190) NULL,
+        session_id VARCHAR(80) NULL,
+        created DOUBLE NOT NULL,
+        updated DOUBLE NOT NULL,
+        UNIQUE KEY uq_proj_name (project, name),
+        KEY idx_proj (project)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                     " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='instructions'"
                     " AND COLUMN_NAME='project'", (MYSQL["database"],)):
@@ -146,7 +160,8 @@ def init_db() -> None:
                      ("user", "user VARCHAR(64) NULL"),
                      ("bot", "bot VARCHAR(80) NULL"),
                      ("instr", "instr MEDIUMTEXT NULL"),
-                     ("stats", "stats MEDIUMTEXT NULL")):
+                     ("stats", "stats MEDIUMTEXT NULL"),
+                     ("topic_id", "topic_id INT NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -329,13 +344,14 @@ def _insert_task(stem: str, prompt: str, source: str,
                  reply_mode: str | None = None,
                  user: str | None = None,
                  bot: str | None = None,
-                 instr: str | None = None) -> None:
+                 instr: str | None = None,
+                 topic_id: int | None = None) -> None:
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
-            " model, reply_mode, user, bot, instr, created) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            " model, reply_mode, user, bot, instr, topic_id, created) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
             (stem, source, project, chat_id, prompt, model, reply_mode,
-             user, bot, instr, created))
+             user, bot, instr, topic_id, created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -730,15 +746,33 @@ def run_task(task: dict) -> None:
                      "и учитывай в задаче:\n"
                      + "\n".join("- " + p for p in paths))
     task_file.write_text(body_txt, errors="replace")
+    # сессия темы: у именованной темы — свой session_id (резюмим её
+    # всегда — в этом смысл темы); у «главной» — пин в kv tsess:<proj>,
+    # только в режиме «продолжать». Оверрайд модели → новая сессия.
+    tid = task.get("topic_id")
+    resume_id = ""
+    if not opts.get("model"):
+        if tid:
+            tr = db_query("SELECT session_id FROM topics WHERE id=%s",
+                          (tid,))
+            resume_id = (tr[0]["session_id"] if tr else "") or ""
+        elif continue_mode():
+            resume_id = kv_get(f"tsess:{tproj or ''}")
+    resume_id = re.sub(r"[^A-Za-z0-9_-]+", "", resume_id or "")
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
                TASK_STEM=stem,
                DEVIN_MODEL=(opts.get("model") or task.get("model")
                             or current_model()),
                DEVIN_WORKDIR=str(workdir),
-               # оверрайд модели → новая сессия: resume игнорит --model
+               # оверрайд модели → новая сессия: resume игнорит --model;
+               # есть пин сессии темы → резюмим ЕЁ, --continue не нужен
                DEVIN_CONTINUE=("true" if (ext or continue_mode())
                                     and not opts.get("model")
+                                    and not resume_id
                                else "false"),
+               DEVIN_EXTRA_ARGS=(
+                   (os.environ.get("DEVIN_EXTRA_ARGS") or "") +
+                   (f" --resume {resume_id}" if resume_id else "")),
                REPLY_MODE=(opts.get("mode") or task.get("reply_mode")
                            or reply_mode()),
                # спросить = только читать и отвечать — жёстко read-only,
@@ -836,6 +870,14 @@ def run_task(task: dict) -> None:
             (body, status, finished_ts,
              json.dumps(tstats, ensure_ascii=False) if tstats else None,
              stem))
+    # пин сессии темы: следующая задача темы резюмит её через --resume
+    sid = (tstats.get("session") or "")[:80]
+    if sid and re.fullmatch(r"[A-Za-z0-9_-]+", sid):
+        if tid:
+            db_exec("UPDATE topics SET session_id=%s, updated=%s"
+                    " WHERE id=%s", (sid, time.time(), tid))
+        else:
+            kv_set(f"tsess:{tproj or ''}", sid)
     with _run_lock:
         RUNNING_PROJS.discard(tproj or "")
         RUNNING_STEMS.discard(stem)

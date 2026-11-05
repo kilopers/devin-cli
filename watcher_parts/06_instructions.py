@@ -179,6 +179,99 @@ def _api_instr_set():
     return jsonify({"ok": False, "error": "bad action"}), 400
 
 
+# --- темы проекта: именованные ветки работы со своей devin-сессией ----
+
+def _topic_rows(project: str) -> list:
+    return db_query("SELECT id, name, session_id, user, created, updated"
+                    " FROM topics WHERE project=%s ORDER BY id", (project,))
+
+
+@app.get("/api/topics")
+@login_required
+def _api_topics_get():
+    p = (request.args.get("project") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    return jsonify({"ok": True, "topics": [
+        dict(r, has_session=bool(r["session_id"]))
+        for r in _topic_rows(p)]})
+
+
+@app.post("/api/topics")
+@login_required
+def _api_topics_set():
+    """create/rename/delete темы проекта."""
+    b = _req_json()
+    u = _current_user()
+    act = (b.get("action") or "").strip()
+    p = (b.get("project") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    if act == "create":
+        name = (b.get("name") or "").strip()[:190] or None
+        if name and db_query("SELECT 1 FROM topics WHERE project=%s"
+                             " AND name=%s", (p, name)):
+            return jsonify({"ok": False,
+                            "error": "тема с таким именем уже есть"}), 409
+        db_exec("INSERT INTO topics(project,user,name,created,updated)"
+                " VALUES(%s,%s,%s,%s,%s)",
+                (p, u, name, time.time(), time.time()))
+        return jsonify({"ok": True,
+                        "id": db_query(
+                            "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
+    tid = int(b.get("id") or 0)
+    if not db_query("SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                    (tid, p)):
+        return jsonify({"ok": False, "error": "нет такой темы"}), 404
+    if act == "rename":
+        name = (b.get("name") or "").strip()[:190]
+        if not name:
+            return jsonify({"ok": False, "error": "пустое имя"}), 400
+        db_exec("UPDATE topics SET name=%s, updated=%s WHERE id=%s",
+                (name, time.time(), tid))
+        return jsonify({"ok": True})
+    if act == "delete":
+        # задачи темы возвращаются в «главную»
+        db_exec("UPDATE tasks SET topic_id=NULL WHERE topic_id=%s", (tid,))
+        db_exec("DELETE FROM topics WHERE id=%s", (tid,))
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "bad action"}), 400
+
+
+@app.post("/api/internal/topic")
+def _api_topic_int():
+    """Агент из задачи: переименовать свою новую тему / создать тему.
+    Та же схема авторизации, что у /api/internal/instr."""
+    if not _internal_auth():
+        abort(403)
+    b = _req_json()
+    act = (b.get("action") or "").strip()
+    if act == "rename":
+        tid = int(b.get("id") or 0)
+        name = (b.get("name") or "").strip()[:190]
+        if not name:
+            return jsonify({"ok": False, "error": "пустое имя"}), 400
+        if not db_exec("UPDATE topics SET name=%s, updated=%s"
+                       " WHERE id=%s", (name, time.time(), tid)):
+            return jsonify({"ok": False,
+                            "error": "нет такой темы"}), 404
+        return jsonify({"ok": True})
+    if act == "create":
+        u = (b.get("user") or "").strip()
+        p = (b.get("project") or "").strip()
+        name = (b.get("name") or "").strip()[:190]
+        if not p or not name:
+            return jsonify({"ok": False,
+                            "error": "нужны project и name"}), 400
+        db_exec("INSERT INTO topics(project,user,name,created,updated)"
+                " VALUES(%s,%s,%s,%s,%s)",
+                (p, u, name, time.time(), time.time()))
+        return jsonify({"ok": True,
+                        "id": db_query(
+                            "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
+    return jsonify({"ok": False, "error": "bad action"}), 400
+
+
 def _deploy_auth() -> bool:
     """POST статусов деплоя: localhost+internal token (агенты из задач)
     или Bearer DEPLOY_TOKEN/WATCHTOWER_TOKEN (внешние скрипты/CI)."""

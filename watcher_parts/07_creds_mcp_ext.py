@@ -276,8 +276,44 @@ def _api_task_new():
         if "/" in a or not (ATTACH_DIR / a).is_file():
             return jsonify({"ok": False,
                             "error": "вложение не найдено"}), 400
+    # тема задачи: «new» — создать безымянную (агент сам назовёт по
+    # смыслу задачи); число — существующая тема ЭТОГО проекта; иначе —
+    # главная (topic_id NULL)
+    topic_id = None
+    tv = str(body.get("topic") or "").strip()
+    if project and tv:
+        if tv == "new" or tv.isdigit() and tv != "0":
+            tid = None
+            if tv.isdigit():
+                row = db_query("SELECT id, name FROM topics"
+                               " WHERE id=%s AND project=%s",
+                               (int(tv), project))
+                tid = row[0]["id"] if row else None
+            else:
+                db_exec("INSERT INTO topics(project,user,name,created,"
+                        "updated) VALUES(%s,%s,NULL,%s,%s)",
+                        (project, _current_user(),
+                         time.time(), time.time()))
+                tid = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
+            topic_id = tid
     name = enqueue_task(text, project=project, prefix="web",
-                        override_mode=mode)
+                        override_mode=mode, topic_id=topic_id)
+    if topic_id:
+        # безымянная тема → просим агента сформулировать название
+        trow = db_query("SELECT name FROM topics WHERE id=%s",
+                        (topic_id,))
+        if trow and not trow[0]["name"]:
+            stem = name.removesuffix(".txt")
+            db_exec(
+                "UPDATE tasks SET instr=CONCAT(instr,%s) WHERE stem=%s",
+                ("\n\n## Тема задачи\n"
+                 f"Задача выполняется в новой безымянной теме id={topic_id} "
+                 f"проекта «{project}». Сначала сформулируй её короткое "
+                 "название (2–5 слов, по-русски) по смыслу задачи и "
+                 "переименуй тему: POST "
+                 f"http://127.0.0.1:{WEB_PORT}/api/internal/topic "
+                 '{"action":"rename","id":' + str(topic_id) +
+                 ',"name":"…"} с заголовком X-Internal-Token.', stem))
     o = {}
     if atts:
         o["attach"] = atts[0] if len(atts) == 1 else atts

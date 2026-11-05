@@ -38,6 +38,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CheckIcon from "@mui/icons-material/Check";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ForumIcon from "@mui/icons-material/Forum";
 import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
@@ -285,6 +286,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         borderColor: t.ac === "1" ? "#a5d6a7" : undefined }}
                   label={t.ac === "1" ? "⚡ автокоммит"
                                       : "✋ коммит вручную"} />
+            {t.topic &&
+              <Chip size="small" variant="outlined" sx={metaSx}
+                    label={"🧵 " + t.topic} />}
             {t.tag &&
               <Chip size="small" color="primary"
                     sx={{ ...metaSx,
@@ -543,6 +547,10 @@ export default function App() {
   const [multiMode, setMultiMode] = useState(false);
   const [project, setProject] = useState(null);
   const projRef = useRef(null);
+  // тема: «main» — главная; число (строкой) — именованная тема проекта
+  const [topicSel, setTopicSel] = useState("main");
+  const topicRef = useRef("main");
+  const [topics, setTopics] = useState([]);
   const [feed, setFeed] = useState(new Map());
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -608,7 +616,11 @@ export default function App() {
     if (!p) return;
     try {
       const d = await apiJson("/api/tasks?project=" +
-        encodeURIComponent(p) + "&limit=20");
+        encodeURIComponent(p) + "&topic=" + topicRef.current +
+        "&limit=20");
+      apiJson("/api/topics?project=" + encodeURIComponent(p))
+        .then(td => { if (td.ok) setTopics(td.topics || []); })
+        .catch(() => {});
       setFeed(m => {
         // выкидываем задачи чужих проектов — ответ опроса за старый
         // проект мог прилететь уже после переключения ws и висеть вечно
@@ -634,6 +646,7 @@ export default function App() {
     try {
       const prevH = document.body.scrollHeight, prevY = window.scrollY;
       const d = await apiJson("/api/tasks?project=" + encodeURIComponent(p) +
+        "&topic=" + topicRef.current +
         "&limit=20&before=" + encodeURIComponent(oldestStem));
       setFeed(m => {
         const n = new Map(m);
@@ -699,6 +712,7 @@ export default function App() {
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
+    setTopicSel("main"); topicRef.current = "main"; setTopics([]);
     if (multiMode)
       post("/api/project", { project: p })
         .then(d => { if (!d.ok) setToast("Проект: " + (d.error || "?")); })
@@ -713,6 +727,23 @@ export default function App() {
     setDrawerOpen(false);
     loadTasks();
   }, [multiMode, loadTasks, wsmap, wsInfo]);
+
+  // тема проекта: переключение перезагружает ленту («обнуляется»)
+  const selectTopic = v => {
+    setTopicSel(v); topicRef.current = v;
+    setFeed(new Map()); setHasMore(false); firstLoad.current = true;
+    loadTasks();
+  };
+  const createTopic = async () => {
+    const p = projRef.current;
+    if (!p) return;
+    try {
+      const d = await post("/api/topics",
+                           { action: "create", project: p });
+      if (d.ok) selectTopic(String(d.id));
+      else setToast("Тема: " + (d.error || "?"));
+    } catch (e) { setToast("Сеть: " + e); }
+  };
 
   // раскрытые секции панели — per-user+project, подгружаем при смене проекта
   useEffect(() => {
@@ -1139,6 +1170,42 @@ export default function App() {
               🌿 ветка</Button>
           </Box>}
 
+        {/* бар темы — только мобильная версия, на всю ширину:
+            «＋ Новая тема» → «⭐ Главная» → темы проекта; каждая тема —
+            своя devin-сессия и своя лента задач */}
+        {project && (
+          <Box sx={{ display: { xs: "flex", md: "none" },
+                     alignItems: "center", gap: 0.6,
+                     position: "sticky",
+                     top: brInfo?.current ? 80 : 48, zIndex: 5,
+                     px: 0.8, py: 0.4,
+                     bgcolor: "background.paper",
+                     borderBottom: "1px solid",
+                     borderColor: "divider" }}>
+            <ForumIcon sx={{ fontSize: 14, flexShrink: 0,
+                             color: "text.secondary" }} />
+            <Select size="small" fullWidth variant="standard"
+                    disableUnderline value={topicSel}
+                    onChange={e =>
+                      e.target.value === "__new__"
+                        ? createTopic()
+                        : selectTopic(e.target.value)}
+                    sx={{ fontSize: 12.5 }}>
+              <MenuItem value="__new__"
+                        sx={{ fontSize: 12.5, color: "#5e6ad2",
+                              fontWeight: 600 }}>
+                ＋ Новая тема</MenuItem>
+              <MenuItem value="main" sx={{ fontSize: 12.5 }}>
+                ⭐ Главная</MenuItem>
+              {topics.map(t => (
+                <MenuItem key={t.id} value={String(t.id)}
+                          sx={{ fontSize: 12.5 }}>
+                  {t.name || `тема #${t.id}`}
+                  {t.has_session ? " · 🔁" : ""}
+                </MenuItem>))}
+            </Select>
+          </Box>)}
+
         <SwipeableDrawer open={drawerOpen}
                 onOpen={() => setDrawerOpen(true)}
                 onClose={() => setDrawerOpen(false)}
@@ -1315,6 +1382,7 @@ export default function App() {
 
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={accent}
+                  topic={topicSel}
                   collect={batch !== null} onCollect={onCollectPart}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
                   mode={mode}

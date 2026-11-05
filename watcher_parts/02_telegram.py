@@ -392,7 +392,8 @@ def _load_json(path: Path) -> dict:
 
 def enqueue_task(text: str, chat_id: int | None = None,
                  project: str | None = None, prefix: str = "tg",
-                 override_mode: str | None = None) -> str:
+                 override_mode: str | None = None,
+                 topic_id: int | None = None) -> str:
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
     scope = source if source in ("web", "telegram") else ""
     proj = project or (current_project(scope)[0] if multi_mode() else None)
@@ -420,7 +421,8 @@ def enqueue_task(text: str, chat_id: int | None = None,
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
-                 rmode, author, bot, instr=_instr_block(author, proj))
+                 rmode, author, bot, instr=_instr_block(author, proj),
+                 topic_id=topic_id)
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
         f"project={proj}, model={model}, mode={rmode}")
     return _task_name(stem)

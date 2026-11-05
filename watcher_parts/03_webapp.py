@@ -86,7 +86,7 @@ def _tail(path: Path, limit: int = 12000) -> str:
 
 
 def api_tasks(project: str | None = None, limit: int = 5,
-              before: str | None = None) -> dict:
+              before: str | None = None, topic: str | None = None) -> dict:
     """Task feed, oldest -> newest, from the tasks table. The UI loads the
     newest `limit` tasks first and pages upward on scroll — `before` is a
     stem cursor: return up to `limit` items immediately older than that
@@ -97,7 +97,16 @@ def api_tasks(project: str | None = None, limit: int = 5,
     if project:
         sql += " WHERE project=%s"
         params.append(project)
+        # тема: «main» (или не задана) — задачи без темы; число — своя
+        if not topic or topic == "main":
+            sql += " AND topic_id IS NULL"
+        elif str(topic).isdigit():
+            sql += " AND topic_id=%s"
+            params.append(int(topic))
     rows = db_query(sql + " ORDER BY created", params)
+    tmap = ({r["id"]: r["name"] for r in db_query(
+        "SELECT id, name FROM topics WHERE project=%s", (project,))}
+        if project else {})
     items = []
     for r in rows:
         stem = r["stem"]
@@ -144,6 +153,9 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "commit_offered": bool(r["commit_offered"]),
             "tag": kv_get(f"tag:{stem}"),
             "stats": st_json,
+            "topic": (tmap.get(r["topic_id"])
+                      or (f"тема #{r['topic_id']}" if r["topic_id"]
+                          else "")),
             "created": int(r["created"]),
             "prompt": (r["prompt"] or "")[:2000],
             "output": out,

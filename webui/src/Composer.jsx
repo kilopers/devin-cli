@@ -32,7 +32,7 @@ const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
 
 export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
-                                   fast, onFast, collect, onCollect }) {
+                                   fast, onFast, collect, onCollect, topic }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -132,7 +132,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const submitDiscussed = (text, model) =>
     post("/api/tasks", { project: project === "workspace" ? null : project,
-                         text, mode: "code",
+                         text, mode: "code", topic: topic || "main",
                          ...(model ? { model } : {}) })
       .then(d => { if (d.ok) { setDiscussOpen(false); onSent?.(); }
                    else toast("Ошибка: " + (d.error || "?")); })
@@ -158,6 +158,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
     try {
       const d = await post("/api/tasks", {
         project: project === "workspace" ? null : project, text: s,
+        topic: topic || "main",
         ...(ov.mode ? { mode: ov.mode } : {}),
         ...(ov.ac !== undefined ? { auto_commit: ov.ac } : {}),
         ...(ov.model ? { model: ov.model } : {}),

@@ -464,7 +464,8 @@ def _api_tasks():
         abort(403)
     return jsonify(api_tasks(proj,
                              min(max(limit, 1), 50),
-                             request.args.get("before")))
+                             request.args.get("before"),
+                             request.args.get("topic")))
 
 
 @app.get("/api/task/<stem>/prompt")
