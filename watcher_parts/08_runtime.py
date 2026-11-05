@@ -107,6 +107,9 @@ def main() -> int:
     start_web()
     # каталог моделей для веб-селекта — в фоне: mihomo может ещё мерить ноды
     threading.Thread(target=refresh_models, daemon=True).start()
+    # и дальше — крон: полная выгрузка `devin models list` раз в час
+    threading.Thread(target=models_refresh_cron, daemon=True,
+                     name="models-cron").start()
     log(f"watching {INBOX} every {POLL_INTERVAL}s "
         f"(timeout {TASK_TIMEOUT}s, workers {WORKER_THREADS})")
     # воркеры: задачи РАЗНЫХ проектов идут параллельно, одного —

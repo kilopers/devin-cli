@@ -848,6 +848,19 @@ def refresh_models() -> None:
         _models_cache = got
 
 
+def models_refresh_cron(interval: int = 3600) -> None:
+    """Крон каталога моделей: раз в час перечитывает
+    `devin models list --format json` (info с ценами/лимитами может
+    меняться) — тот же полный снапшот, что и меню моделей в вебе;
+    лежит в kv models_cache и в _models_cache."""
+    while True:
+        time.sleep(interval)
+        try:
+            refresh_models()
+        except Exception as e:
+            log(f"models refresh cron: {e}")
+
+
 def status_text() -> str:
     uptime = int(time.time() - _started_at)
     h, m = uptime // 3600, uptime % 3600 // 60
