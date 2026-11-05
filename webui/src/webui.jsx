@@ -38,6 +38,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CheckIcon from "@mui/icons-material/Check";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ArticleIcon from "@mui/icons-material/Article";
 import ForumIcon from "@mui/icons-material/Forum";
 import Grid from "@mui/material/Grid";
 import { api, apiJson, post } from "./api.js";
@@ -213,6 +214,11 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const maybeCut = full === null && (t.prompt || "").length >= 2000;
   // «инфо» — статистика завершённой задачи (tasks.stats + длительность)
   const [info, setInfo] = useState(false);
+  // «результат» — полный вывод Devin в модалке; только для успешных
+  // задач (ошибка → иконки нет, вывод доступен через «подробнее»)
+  const [outOpen, setOutOpen] = useState(false);
+  const succeeded = t.status === "done" &&
+    !(t.task_status && !/exit code: 0/.test(t.task_status));
   const st = t.stats || {};
   const infoRows = [
     ["Статус", t.task_status || null],
@@ -315,6 +321,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 ✖ удалить
               </Button>
             )}
+            {succeeded && (
+              <Tooltip title="результат задачи">
+                <IconButton size="small" onClick={() => setOutOpen(true)}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  <ArticleIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             {t.status === "done" && (
               <Tooltip title="статистика задачи">
                 <IconButton size="small" onClick={() => setInfo(true)}
@@ -415,6 +429,31 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 детальные метрики сессии не собраны (задача до
                 появления статистики или export-файл недоступен)
               </Typography>)}
+          </DialogContent>
+        </Dialog>
+        <Dialog open={outOpen} onClose={() => setOutOpen(false)}
+                maxWidth="md" fullWidth>
+          <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
+            Результат задачи
+            <IconButton size="small" onClick={() => setOutOpen(false)}
+              sx={{ position: "absolute", right: 12, top: 10,
+                    color: "text.secondary" }}>
+              <CloseIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers
+                         sx={{ "& .md": { maxHeight: "none" } }}>
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ fontFamily: MONO, fontSize: 11.5,
+                              wordBreak: "break-all" }}>
+              {t.name}
+            </Typography>
+            <Box sx={{ mt: 1 }}>
+              {t.output
+                ? <Markdown text={t.output} />
+                : <Typography variant="body2" color="text.secondary">
+                    вывод пуст — Devin ничего не вернул</Typography>}
+            </Box>
           </DialogContent>
         </Dialog>
       </CardContent>
