@@ -296,8 +296,8 @@ def _api_task_new():
                         (project, _current_user(),
                          time.time(), time.time()))
                 tid = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
-                db_exec("UPDATE topics SET sort=id WHERE id=%s",
-                        (tid,))
+                db_exec("UPDATE topics SET sort=%s WHERE id=%s",
+                        (_topic_append_sort(project), tid))
             topic_id = tid
     name = enqueue_task(text, project=project, prefix="web",
                         override_mode=mode if mode != "say" else None,

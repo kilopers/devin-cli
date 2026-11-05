@@ -222,6 +222,20 @@ def _main_col_name(p: str) -> str:
     return (_main_col_json(p).get("name") or "").strip()
 
 
+def _topic_append_sort(project: str) -> int:
+    """sort новой темы — всегда ПОСЛЕДНЯЯ (справа) на доске:
+    максимум по всем колонкам (темы + «главная» из pj:<p>.tmain) +10.
+    Простой sort=id ломался после «сместить»: move нормализует
+    порядок шагом 10, и id новой темы оказывался меньше — она
+    вставала первой."""
+    mx = int(_main_col_json(project).get("sort") or 0)
+    r = db_query("SELECT MAX(sort) s FROM topics WHERE project=%s",
+                 (project,))
+    if r and r[0]["s"]:
+        mx = max(mx, int(r[0]["s"]))
+    return mx + 10
+
+
 @app.get("/api/topics")
 @login_required
 def _api_topics_get():
@@ -299,10 +313,13 @@ def _api_topics_set():
                  st.get("model") or None, st.get("reply_mode") or None,
                  st.get("auto_commit") or None, st.get("fast") or None,
                  own, attach, time.time(), time.time()))
-        db_exec("UPDATE topics SET sort=id WHERE sort=0")
-        return jsonify({"ok": True,
-                        "id": db_query(
-                            "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
+        new_id = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
+        # новая тема — последняя (справа); бессортовые старые добиваем
+        db_exec("UPDATE topics SET sort=id WHERE sort=0 AND id<>%s",
+                (new_id,))
+        db_exec("UPDATE topics SET sort=%s WHERE id=%s",
+                (_topic_append_sort(p), new_id))
+        return jsonify({"ok": True, "id": new_id})
     if act == "settings" and b.get("main"):
         # «главная» колонка — не строка topics: настройки лежат
         # JSON-объектом в pj:<p>.tmain (ключи колонок + name — её
@@ -432,10 +449,12 @@ def _api_topic_int():
         db_exec("INSERT INTO topics(project,user,name,created,updated)"
                 " VALUES(%s,%s,%s,%s,%s)",
                 (p, u, name, time.time(), time.time()))
-        db_exec("UPDATE topics SET sort=id WHERE sort=0")
-        return jsonify({"ok": True,
-                        "id": db_query(
-                            "SELECT LAST_INSERT_ID() AS i")[0]["i"]})
+        new_id = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
+        db_exec("UPDATE topics SET sort=id WHERE sort=0 AND id<>%s",
+                (new_id,))
+        db_exec("UPDATE topics SET sort=%s WHERE id=%s",
+                (_topic_append_sort(p), new_id))
+        return jsonify({"ok": True, "id": new_id})
     return jsonify({"ok": False, "error": "bad action"}), 400
 
 
