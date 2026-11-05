@@ -672,17 +672,23 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </IconButton>
               </Tooltip>
             )}
-            {isNote && !!t.output && (
-              <Button size="small" variant="outlined"
-                onClick={e => { e.stopPropagation(); setFmtOpen(true); }}
-                sx={{ fontSize: 11, px: 1, height: 26,
-                      borderRadius: "7px", whiteSpace: "nowrap",
-                      textTransform: "none" }}>
-                ✨ вариант
-              </Button>
-            )}
-            {isNote
-              ? <Tooltip title="отправить в работу с настройками её колонки">
+          </Box>
+          {/* действия заметки — отдельный flex-ребёнок внешнего
+              wrap-ряда: не влезает в ширину — группа уходит на новую
+              строку, внутри себя тоже переносится */}
+          {isNote
+            ? <Box sx={{ display: "flex", alignItems: "center",
+                         gap: 0.8, flexWrap: "wrap" }}>
+                {!!t.output && (
+                  <Button size="small" variant="outlined"
+                    onClick={e => { e.stopPropagation();
+                                    setFmtOpen(true); }}
+                    sx={{ fontSize: 11, px: 1, height: 26,
+                          borderRadius: "7px", whiteSpace: "nowrap",
+                          textTransform: "none" }}>
+                    ✨ вариант
+                  </Button>)}
+                <Tooltip title="отправить в работу с настройками её колонки">
                   <Button size="small" variant="outlined"
                           onClick={runNote} disabled={runBusy}
                           startIcon={runBusy
@@ -702,8 +708,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                     {runBusy ? "запускаю…" : "▶ начать выполнение"}
                   </Button>
                 </Tooltip>
-              : <StatusChip t={t} />}
-          </Box>
+              </Box>
+            : <StatusChip t={t} />}
         </Box>
         {isNote ? (
           <Box ref={txtRef}
