@@ -1001,12 +1001,12 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
               {onMoveL &&
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onMoveL(); }}>
-                  ◀ Сместить влево
+                  ⬅ Сместить влево
                 </MenuItem>}
               {onMoveR &&
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onMoveR(); }}>
-                  ▶ Сместить вправо
+                  ➡ Сместить вправо
                 </MenuItem>}
               {onDelete &&
                 <MenuItem dense sx={{ fontSize: 13, color: "error.main" }}
