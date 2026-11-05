@@ -1015,6 +1015,10 @@ def _api_task_move():
     режимом целевой колонки и её свежими дефолтами; done-вопрос →
     code-колонка — переход «▶ в работу». Равный или понижение —
     просто перестановка (уже идущие задачи тоже только едут).
+    Упавшая карточка (done+ошибка), переехавшая в другую тему,
+    перенимает её дефолты: model/reply_mode/opts подгоняются под
+    колонку — «повторить» потом ставит задачу с настройками новой
+    темы, а не теми, с которыми она когда-то запускалась.
     Позиция: above/below — stem соседа, ПОСЛЕ которого / ПЕРЕД
     которым по экрану встаём (sort DESC — свежие сверху); без них —
     наверх колонки."""
@@ -1082,6 +1086,21 @@ def _api_task_move():
         # done-вопрос в code-колонку — переход «▶ в работу»
         _ask_to_work(row)
         started = True
+    if not started and is_failed_task(row) \
+            and new_tid != row["topic_id"]:
+        # упавшая карточка переехала в другую тему — её «повторить»
+        # ставит задачу новой записью в ЭТУ колонку, поэтому она
+        # должна унаследовать настройки новой темы, а не старые:
+        # подгоняем model/reply_mode под дефолты колонки и смываем
+        # разовые оверрайды (ov станет пустым — retry пошлёт чистый
+        # topic). В say-колонку задача не перезапускается вообще —
+        # там reply_mode оставляем как был
+        db_exec("UPDATE tasks SET model=%s, reply_mode=%s WHERE stem=%s",
+                (eff.get("model") or None,
+                 erm if erm in ("ask", "code")
+                 else (row.get("reply_mode") or "code"),
+                 stem))
+        _opts_for_column(stem, eff)
     db_exec("UPDATE tasks SET topic_id=%s, sort=%s WHERE stem=%s",
             (new_tid, new_sort, stem))
     log(f"task {stem} moved -> topic={new_tid} sort={new_sort} "
