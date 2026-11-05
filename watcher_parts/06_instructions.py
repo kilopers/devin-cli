@@ -1135,6 +1135,7 @@ def _fmt_worker(stem: str) -> None:
                    WINDSURF_API_KEY=uset("devin.api_key", task_user,
                                          "WINDSURF_API_KEY"))
         out_f = open(out_path, "w", errors="replace")
+        started_ts = time.time()
         proc = subprocess.Popen(
             [DEVIN_TASK], env=env,
             stdout=out_f, stderr=subprocess.STDOUT,
@@ -1153,6 +1154,24 @@ def _fmt_worker(stem: str) -> None:
             with _procs_lock:
                 _task_procs.pop(fstem, None)
             out_f.close()
+        # «✨ Оформить» — тоже прогон Devin: его токены и стоимость
+        # считаем в статистику темы заметки (row['topic_id'])
+        try:
+            fst = _collect_task_stats(progress_dir / f"{fstem}.json",
+                                      started_ts, time.time())
+            if fst:
+                db_exec("INSERT INTO topic_stats"
+                        " (project, topic_id, stem, created, model,"
+                        " prompt_tok, cached_tok, completion_tok, cost)"
+                        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (row.get("project"), row.get("topic_id"),
+                         fstem, time.time(), fst.get("model"),
+                         fst.get("prompt_tokens"),
+                         fst.get("cached_tokens"),
+                         fst.get("completion_tokens"),
+                         _task_cost(fst)))
+        except Exception as e:
+            log(f"topic_stats fmt: {e}")
         body = _clean_task_output(body).strip()
         if not body:
             body = ("Ошибка оформления: пустой ответ"
