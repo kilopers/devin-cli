@@ -438,14 +438,22 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // очередь с настройками своей колонки
   const isNote = t.status === "note";
   const [runBusy, setRunBusy] = useState(false);
+  // лоадер держим до смены статуса (поллинг привезёт 'queued') —
+  // иначе кнопка успевает «моргнуть» обратно в «начать выполнение»
+  useEffect(() => {
+    if (t.status !== "note") setRunBusy(false);
+  }, [t.status]);
   const runNote = async () => {
     if (runBusy) return;
     setRunBusy(true);
     try {
       const d = await post("/api/task/run", { stem: t.stem });
-      toast?.(d.ok ? "▶ Заметка отправлена в работу"
-                  : "Ошибка: " + (d.error || "?"));
-      if (d.ok && sel) onNote?.(t);   // ушла в очередь — отжать выбор
+      if (d.ok) {
+        toast?.("▶ Заметка отправлена в работу");
+        if (sel) onNote?.(t);   // ушла в очередь — отжать выбор
+        return;                 // busy сбросится эффектом выше
+      }
+      toast?.("Ошибка: " + (d.error || "?"));
     } catch (e) { toast?.("Сеть: " + e); }
     setRunBusy(false);
   };
@@ -494,7 +502,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             <Tooltip title={(t.mode === "ask"
               ? "режим «вопрос» — только чтение"
               : t.mode === "say"
-              ? "заметка «сказать» — не уходит Devin"
+              ? "карточка-заметка — не уходит Devin"
               : "режим «код» — полный доступ") +
               " — отличается от дефолта колонки"}>
               <Chip size="small" variant="outlined" sx={metaSx}
@@ -606,6 +614,17 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               ? <Tooltip title="отправить в работу с настройками её колонки">
                   <Button size="small" variant="outlined"
                           onClick={runNote} disabled={runBusy}
+                          startIcon={runBusy
+                            ? <Box component="span" sx={{
+                                width: 11, height: 11,
+                                border: "2px solid #5e6ad2",
+                                borderTopColor: "transparent",
+                                borderRadius: "50%",
+                                animation: "rot .8s linear infinite",
+                                "@keyframes rot":
+                                  { to: { transform:
+                                          "rotate(360deg)" } } }} />
+                            : undefined}
                           sx={{ fontSize: 11, px: 1.2, height: 26,
                                 borderRadius: "7px", whiteSpace: "nowrap",
                                 textTransform: "none" }}>

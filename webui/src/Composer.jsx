@@ -150,7 +150,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                 : "режим следующей задачи" +
                   (ov.mode ? " — переопределено разово" : "")}>
         <Chip size="small" clickable sx={chipSx}
-          label={say ? "📝 Сказать"
+          label={say ? "📝 Заметка"
                  : effMode === "ask" ? "💬 Спросить" : "🛠 Код"}
           color={ov.mode || note ? "primary" : "default"}
           variant={ov.mode || note ? "filled" : "outlined"}
