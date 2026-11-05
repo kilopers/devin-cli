@@ -74,7 +74,9 @@ def api_models(fresh: bool = False) -> dict:
     if fresh and models:
         _models_cache = models
     return {"models": models, "current": current_model("web"),
-            "fresh": bool(fresh)}
+            "fresh": bool(fresh),
+            # метка последнего опроса devin models list (cron/веб)
+            "at": int(kv_get("models_cache_at") or 0)}
 
 
 def _tail(path: Path, limit: int = 12000) -> str:

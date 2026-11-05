@@ -817,6 +817,7 @@ def devin_models() -> list:
     if models:
         try:
             kv_set("models_cache", json.dumps(models, ensure_ascii=False))
+            kv_set("models_cache_at", str(int(time.time())))
         except Exception:
             pass
     return models

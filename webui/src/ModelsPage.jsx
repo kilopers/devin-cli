@@ -126,6 +126,14 @@ export default function ModelsPage({ accent, onClose, toast }) {
             <Chip size="small" label="живой список"
                   sx={{ bgcolor: "rgba(255,255,255,.2)", color: "#fff",
                         mr: 1 }} />}
+          {!!data?.at &&
+            <Typography sx={{ fontSize: 11, opacity: .8, mr: 1,
+                              whiteSpace: "nowrap" }}>
+              опрос {new Date(data.at * 1000)
+                .toLocaleString("ru-RU",
+                  { day: "2-digit", month: "2-digit",
+                    hour: "2-digit", minute: "2-digit" })}
+            </Typography>}
           <Tooltip title="закрыть">
             <IconButton color="inherit" onClick={onClose}>
               <CloseIcon />
