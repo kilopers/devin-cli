@@ -1908,6 +1908,12 @@ export default function App() {
   const [dict, setDict] = useState(null);   // {kind:'note'|'col',...}
   const [dictInfo, setDictInfo] = useState("");
   const [compInj, setCompInj] = useState({ text: "", n: 0 });
+  // продиктованная командная фраза в начале речи — «заметка сюда»,
+  // «задача сюда», «спросить», «плюс задача» — не часть текста,
+  // срезаем её, чтобы не уходила в промпт/заметку
+  const cleanDictText = t => t.replace(
+    /^\s*(плюс\s*)?(новая\s+|новый\s+)?(заметк\w*|задач\w*|спрос\w*)(\s+сюда)?[\s,.:;—-]*/u,
+    "").trim();
   const stopDict = async () => {
     const r = dictRef.current;
     if (!r) return;
@@ -1924,7 +1930,7 @@ export default function App() {
       const d = await (await fetch("/api/stt", { method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: wav })).json();
-      const txt = (d.text || "").trim();
+      const txt = cleanDictText((d.text || "").trim());
       if (!d.ok || !txt) {
         setToast(d.ok ? "Ничего не распознано"
                       : "STT: " + (d.error || "?"));
