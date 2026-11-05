@@ -1062,12 +1062,19 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
         </Box>}
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8 }}>
-        <Button size="small" fullWidth onClick={onNewTask}
-                sx={{ textTransform: "none", fontSize: 12, py: 0.3,
-                      color: "text.secondary", border: "1px dashed",
-                      borderColor: "divider", borderRadius: "8px" }}>
-          ＋ задача сюда
-        </Button>
+        {(() => { const btnC = boostColor(color) || accent
+                                || "#5e6ad2";
+          return (
+            <Button size="small" fullWidth onClick={onNewTask}
+                    sx={{ textTransform: "none", fontSize: 13, py: 0.6,
+                          fontWeight: 600, border: "1.5px dashed",
+                          borderRadius: "9px",
+                          color: btnC, borderColor: btnC,
+                          "&:hover": { bgcolor:
+                            btnC.startsWith("#") ? btnC + "14"
+                                                 : "action.hover" } }}>
+              ＋ задача сюда
+            </Button>); })()}
         {children}
         {!React.Children.count(children) &&
           <Typography variant="caption" color="text.secondary"
