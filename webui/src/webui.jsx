@@ -42,6 +42,7 @@ import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import RedoIcon from "@mui/icons-material/Redo";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -492,6 +493,22 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
       else toast?.("Ошибка: " + (d.error || "?"));
     } catch (e) { toast?.("Сеть: " + e); }
   };
+  // инлайн-редактирование заметки: превью подменяется полем
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const startEdit = () => { setEditText(promptShown); setEditing(true); };
+  const saveEdit = async () => {
+    if (editBusy || !editText.trim()) return;
+    setEditBusy(true);
+    try {
+      const d = await post("/api/task/edit",
+                           { stem: t.stem, text: editText });
+      if (d.ok) setEditing(false);
+      else toast?.("Ошибка: " + (d.error || "?"));
+    } catch (e) { toast?.("Сеть: " + e); }
+    setEditBusy(false);
+  };
   // мелкие мета-чипы шапки: один стиль, воздух вокруг текста
   const metaSx = { height: 22, fontSize: 11, fontWeight: 500,
                    borderRadius: "7px",
@@ -654,6 +671,15 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         : <ContentCopyIcon sx={{ fontSize: 15 }} />}
               </IconButton>
             </Tooltip>
+            {isNote && !editing && (
+              <Tooltip title="редактировать текст заметки">
+                <IconButton size="small"
+                  onClick={e => { e.stopPropagation(); startEdit(); }}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  <EditOutlinedIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             {isNote && (
               <Tooltip title="оформить текст в markdown через Devin — результат появится кнопкой «✨ вариант»">
                 <IconButton size="small" disabled={fmtOn}
@@ -712,12 +738,41 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             : <StatusChip t={t} />}
         </Box>
         {isNote ? (
+          editing ? (
+            <Box onClick={e => e.stopPropagation()}>
+              <TextField multiline fullWidth autoFocus size="small"
+                minRows={3} maxRows={16}
+                value={editText}
+                onChange={e => setEditText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Escape") setEditing(false);
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey))
+                    saveEdit(); }}
+                sx={{ "& .MuiInputBase-root":
+                      { fontSize: 13.5, lineHeight: 1.62 } }} />
+              <Box sx={{ display: "flex", gap: 0.8, mt: 0.8 }}>
+                <Button size="small" variant="contained"
+                  onClick={saveEdit} disabled={editBusy}
+                  sx={{ fontSize: 11, px: 1.2, height: 26,
+                        borderRadius: "7px", textTransform: "none" }}>
+                  {editBusy ? "сохраняю…" : "Сохранить"}
+                </Button>
+                <Button size="small" variant="outlined"
+                  onClick={() => setEditing(false)}
+                  sx={{ fontSize: 11, px: 1.2, height: 26,
+                        borderRadius: "7px", textTransform: "none" }}>
+                  Отмена
+                </Button>
+              </Box>
+            </Box>
+          ) : (
           <Box ref={txtRef}
             sx={{ fontSize: 13.5, lineHeight: 1.62,
                   ...(open ? {} : { maxHeight: 76,
                                     overflow: "hidden" }) }}>
             <Markdown text={promptShown} />
           </Box>
+          )
         ) : (
         <Typography variant="body2" ref={txtRef}
           onClick={(canExpand || open)

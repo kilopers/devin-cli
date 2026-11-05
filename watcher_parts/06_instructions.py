@@ -986,6 +986,31 @@ def _fmt_worker(stem: str) -> None:
         db_exec("DELETE FROM kv WHERE k=%s", (f"fmt:{stem}",))
 
 
+@app.post("/api/task/edit")
+@login_required
+def _api_task_edit():
+    """Инлайн-редактирование заметки: заменяет её prompt целиком
+    (дописывание — отдельный /api/task/append). Только status='note'."""
+    body = _req_json()
+    stem = (body.get("stem") or "").strip()
+    text = (body.get("text") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "note":
+        return jsonify({"ok": False,
+                        "error": "править можно только заметку"}), 409
+    if not text:
+        return jsonify({"ok": False, "error": "пустой текст"}), 400
+    if len(text) > 20000:
+        return jsonify({"ok": False, "error": "text too long"}), 400
+    db_exec("UPDATE tasks SET prompt=%s WHERE stem=%s", (text, stem))
+    log(f"task {stem} edited ({len(text)} chars)")
+    return jsonify({"ok": True})
+
+
 @app.post("/api/task/format")
 @login_required
 def _api_task_format():
