@@ -1,6 +1,5 @@
 // Shared audio helpers for voice dictation: PCM16 WAV @16kHz for the
-// STT endpoint. Kept in its own module — Composer.jsx and Discuss.jsx
-// both use these and must not import each other (cycle → TDZ crash).
+// STT endpoint. Kept in its own module — Composer.jsx uses these.
 export const STT_RATE = 16000;
 
 export function resample(chunks, srcRate, dstRate) {

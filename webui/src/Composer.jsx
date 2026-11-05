@@ -19,21 +19,19 @@ import MenuIcon from "@mui/icons-material/Menu";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import PsychologyIcon from "@mui/icons-material/Psychology";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson as get, post } from "./api.js";
 import { STT_RATE, resample, encodeWav } from "./audio.js";
-import Discuss from "./Discuss.jsx";
 
 const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
                     String(Math.floor(s % 60)).padStart(2, "0");
 
 export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
-                                   fast, onFast, collect, onCollect, topic,
+                                   fast, onFast, topic,
                                    topicName, topics, onTopic, onNewTopic }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
@@ -44,7 +42,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
   const [lastAudio, setLastAudio] = useState(null);  // failed WAV → retry
-  const [discussOpen, setDiscussOpen] = useState(false);
   const textRef = useRef("");
   textRef.current = text;
 
@@ -172,30 +169,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
     </Box>
   );
 
-  const submitDiscussed = (text, model) =>
-    post("/api/tasks", { project: project === "workspace" ? null : project,
-                         text, mode: "code", topic: topic || "main",
-                         ...(model ? { model } : {}) })
-      .then(d => { if (d.ok) { setDiscussOpen(false); onSent?.(); }
-                   else toast("Ошибка: " + (d.error || "?")); })
-      .catch(e => toast("Сеть: " + e));
-
-  const discuss = (
-    <Discuss open={discussOpen} onClose={() => setDiscussOpen(false)}
-             project={project} models={models} defModel={curModel}
-             onSubmit={submitDiscussed} toast={toast} />
-  );
-
   const sendText = async raw => {
     const s = raw.trim();
     if (!s) return;
-    // режим «Начать задачу»: сообщение копится в пачку, в очередь
-    // Devin оно попадёт по кнопке «Начать выполнение»
-    if (collect) {
-      onCollect?.({ text: s, attach: att });
-      setText(""); setAtt(null);
-      return;
-    }
     setBusy(true);
     try {
       const d = await post("/api/tasks", {
@@ -348,8 +324,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
             sx={{ minWidth: 0, color: "warning.light" }} />
         )}
         <BottomNavigationAction
-          label={collect ? "+ В задачу"
-                        : (curMode === "ask" ? "Спросить" : "Делай")}
+          label={curMode === "ask" ? "Спросить" : "Делай"}
           icon={<SendIcon />}
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
@@ -364,13 +339,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
           icon={<AttachFileIcon />}
           onClick={() => fileRef.current?.click()}
           sx={{ minWidth: 0, color: "#fff" }} />
-        <BottomNavigationAction label="Обсудить"
-          icon={<PsychologyIcon />}
-          onClick={() => setDiscussOpen(true)}
-          sx={{ minWidth: 0, color: "#fff" }} />
       </BottomNavigation>
     </Paper>
-    {discuss}
   </>);
 
   return (<>
@@ -410,12 +380,6 @@ export default function Composer({ project, sttStatus, toast, onSent,
               <IconButton size="small"
                           onClick={() => fileRef.current?.click()}>
                 <AttachFileIcon />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="обсудить идею с Devin">
-              <IconButton size="small"
-                          onClick={() => setDiscussOpen(true)}>
-                <PsychologyIcon />
               </IconButton>
             </Tooltip>
             <Tooltip title={recognizing ? "распознаю запись…"
@@ -458,8 +422,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                           textTransform: "none", fontWeight: 600,
                           boxShadow: "none",
                           "&:hover": { boxShadow: "none" } }}>
-                  {collect ? "+ В задачу"
-                           : (curMode === "ask" ? "Спросить" : "В работу")}
+                  {curMode === "ask" ? "Спросить" : "В работу"}
                 </Button>
               </span>
             </Tooltip>
@@ -467,6 +430,5 @@ export default function Composer({ project, sttStatus, toast, onSent,
         </Grid>
       </Grid>
     </Paper>
-    {discuss}
   </>);
 }
