@@ -133,6 +133,11 @@ const theme = createTheme({
   },
 });
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+// выпадашки из шапки (профиль, прокси): плоский верхний край без
+// бордера и лёгкий заход под AppBar — меню будто выходит из шапки,
+// а не висит отдельной плашкой
+const APPBAR_MENU = { borderRadius: "0 0 12px 12px",
+                      borderTop: "none", mt: "-2px" };
 const STATUS_RU = { queued: "в очереди", running: "выполняется",
                     done: "готово", note: "заметка" };
 const SRC_RU = { telegram: "telegram", web: "web", file: "файл" };
@@ -280,7 +285,8 @@ function ProxySel() {
       </Tooltip>
       <Menu anchorEl={anchor} open={!!anchor}
             onClose={() => setAnchor(null)}
-            PaperProps={{ sx: { maxHeight: 420 } }}>
+            slotProps={{ paper: { sx: { ...APPBAR_MENU,
+                                        maxHeight: 420 } } }}>
         {(info.nodes || []).map(n =>
           <MenuItem key={n} dense selected={n === info.now}
                     onClick={() => choose(n)}
@@ -2737,7 +2743,8 @@ export default function App() {
               </IconButton>
             </Tooltip>
             <Menu anchorEl={profMenu} open={!!profMenu}
-                  onClose={() => setProfMenu(null)}>
+                  onClose={() => setProfMenu(null)}
+                  slotProps={{ paper: { sx: APPBAR_MENU } }}>
               {status.is_admin &&
                 <MenuItem onClick={() => { setProfMenu(null);
                                            setUsersOpen(true); }}>
