@@ -8,12 +8,12 @@
 #   DEVIN_WORKDIR            Repo directory inside the container (default: /workspace)
 #   DEVIN_TASK_FILE          Path to the task .txt file    (default: /task/task.txt)
 #   DEVIN_MODEL              Model to use                  (default: swe)
-#   DEVIN_PERMISSION_MODE    Permission mode               (default: bypass)
+#   DEVIN_PERMISSION_MODE    Permission mode               (default: dangerous)
 #   DEVIN_INSTRUCTIONS_FILE  Optional extra instructions file appended to the prompt
 #   DEVIN_EXTRA_ARGS         Extra flags appended to the devin invocation
 #   GIT_AUTO_COMMIT          "false" -> agent leaves changes uncommitted (default: true)
 #   DEVIN_CONTINUE           "true" -> resume the workdir's last session when one exists
-#   REPLY_MODE               "ask" -> answer a question about the repo, no edits (default: code)
+#   REPLY_MODE               "ask" -> answer a question about the repo; no edits — enforced by prompt only (default: code)
 #   DEVIN_EXPORT_FILE        If set, devin exports the live transcript here each turn
 #   GIT_REPO_URL             If set and WORKDIR is empty — clone instead of requiring a mount
 #   GIT_BRANCH               Branch for the clone (optional)
@@ -30,7 +30,7 @@ WORKDIR="${DEVIN_WORKDIR:-/workspace}"
 TASK_FILE="${DEVIN_TASK_FILE:-/task/task.txt}"
 INSTRUCTIONS_FILE="${DEVIN_INSTRUCTIONS_FILE:-}"
 MODEL="${DEVIN_MODEL:-swe}"
-PERMISSION_MODE="${DEVIN_PERMISSION_MODE:-bypass}"
+PERMISSION_MODE="${DEVIN_PERMISSION_MODE:-dangerous}"
 AUTO_COMMIT="${GIT_AUTO_COMMIT:-true}"
 CONTINUE="${DEVIN_CONTINUE:-false}"
 REPLY_MODE="${REPLY_MODE:-code}"

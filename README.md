@@ -139,7 +139,9 @@ nginx режет путь; работает всегда).
 - `/stop` — SIGKILL всей процесс-группе текущей задачи (подвисший Devin
   убивается вместе с дочерними процессами), воркер берёт следующую из очереди
 - `/mode` — режим ответа: «🛠 код» (обычная задача) или «💬 вопрос»
-  (агент читает репо и отвечает, ничего не меняет и не коммитит).
+  (агент читает репо и отвечает, ничего не меняет и не коммитит —
+  read-only держится промптом, permission-mode у задач всегда
+  `dangerous`).
   Хранится в `kv.reply_mode_telegram`; у веба свой — `kv.reply_mode_web`
   (селект в шапке), задача фиксирует режим источника в `tasks.reply_mode`
 - `/status` — сводка: uptime, проект, модель, режимы, очередь,
@@ -370,7 +372,7 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 |---|---|---|
 | `PROJECT_DIR` | — (обязательна) | Папка проекта на сервере, монтируется в `/workspace`. Пустая → clone, с репо → pull |
 | `DEVIN_MODEL` | `swe` | Модель (`opus`, `sonnet`, `gpt`, `swe`, …); перекрывается выбором в веб-селекте или `/models` (хранится в `tasks/model.txt`) |
-| `DEVIN_PERMISSION_MODE` | `bypass` | Режим разрешений Devin CLI |
+| `DEVIN_PERMISSION_MODE` | `dangerous` | Режим разрешений Devin CLI (`dangerous` = `bypass`/`yolo`) |
 | `POLL_INTERVAL` | `30` | Период опроса `inbox/`, сек |
 | `TASK_TIMEOUT` | `7200` | Таймаут одной задачи, сек |
 | `GIT_USER_NAME` / `GIT_USER_EMAIL` | `devin-bot` | Git-идентичность для коммитов |
@@ -461,7 +463,7 @@ docker run --rm \
 2. Проверяет авторизацию (`devin auth status`).
 3. Промпт = инструкции репозитория (`AGENTS.md`, `.devin/` и т.п.) + задача +
    обязательство `git add -A` → commit → push.
-4. `devin -p` в режиме `bypass`.
+4. `devin -p` в режиме `dangerous` (алиас `bypass`).
 5. Safety-net: незапушенные коммиты допушиваются самим скриптом.
 
 ## Git push
@@ -483,7 +485,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 ## Замечания
 
 - Контейнер работает от `root` — файлы агента в `/workspace` будут root'овые.
-- `bypass` авто-аппрувит все команды агента — изоляция только сам контейнер.
+- `dangerous` авто-аппрувит все команды агента — изоляция только сам контейнер.
 - Раньше Devin CLI был запинен на `3000.10.48` из-за пустого списка моделей
   при создании сессии (`Available models:` пустой, любой `--model` падал с
   `Unknown model`). Причиной оказался не релиз, а внешний HTTP-прокси: запрос
@@ -511,7 +513,8 @@ Watchtower умеет HTTP API (`/v1/update`), но его порт наружу
 
 Внешнее приложение может ставить Devin обезличенные задачи (не привязаны
 к репозиториям проектов) по секретному ключу. Типовой сценарий — «спросить
-и получить ответ»: технические вопросы, режим `ask` (read-only), при этом
+и получить ответ»: технические вопросы, режим `ask` (read-only на уровне
+промпта — permission-mode `dangerous`), при этом
 сессия Devin **продолжается** между задачами с одним `project`-лейблом.
 
 ### Ключ
@@ -542,7 +545,7 @@ curl -X POST https://<host>/api/ext/task \
        "project": "my-service",          # лейбл — это ключ сессии, не repo
        "task": "проверь статус заказа 42",
        "instructions": "markdown — доп. правила, подмешиваются в промпт",
-       "mode": "ask",                    # ask (по умолчанию, read-only) | code
+       "mode": "ask",                    # ask (по умолчанию, read-only промптом) | code
        "hook": "https://app.example/hook" # куда POST'ить результат
      }'
 # → 201 {"ok":true,"name":"ext-my-service-admin-1022-153012.txt",

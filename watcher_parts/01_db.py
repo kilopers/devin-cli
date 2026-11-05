@@ -789,11 +789,13 @@ def run_task(task: dict) -> None:
                    (f" --resume {resume_id}" if resume_id else "")),
                REPLY_MODE=(opts.get("mode") or task.get("reply_mode")
                            or reply_mode()),
-               # спросить = только читать и отвечать — жёстко read-only,
-               # иначе bypass-права всё равно дают править код
+               # сессия неинтерактивная — подтверждать вызовы некому,
+               # поэтому всегда dangerous (= bypass): даже «Спросить»
+               # должно иметь рабочий exec/fetch; read-only там держится
+               # только на промпте. env воркера может переопределить.
                DEVIN_PERMISSION_MODE=(
-                   "auto" if (opts.get("mode") or task.get("reply_mode")
-                              or reply_mode()) == "ask" else "bypass"),
+                   os.environ.get("DEVIN_PERMISSION_MODE")
+                   or "dangerous"),
                DEVIN_EXPORT_FILE=str(export_path),
                GIT_AUTO_COMMIT=(
                    "true" if (opts.get("ac") == "1"

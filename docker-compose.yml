@@ -18,7 +18,7 @@ services:
       DEVIN_WORKDIR: /workspace
       # Multi-project mode activates when /projects has subfolders.
       DEVIN_PROJECTS_DIR: /projects
-      DEVIN_PERMISSION_MODE: ${DEVIN_PERMISSION_MODE:-bypass}
+      DEVIN_PERMISSION_MODE: ${DEVIN_PERMISSION_MODE:-dangerous}
       TASKS_DIR: /tasks
       POLL_INTERVAL: ${POLL_INTERVAL:-30}
       TASK_TIMEOUT: ${TASK_TIMEOUT:-7200}

@@ -318,7 +318,7 @@ def _devin_discuss(msgs: list, user: str | None = None,
     try:
         p = subprocess.Popen(
             ["devin", "--model", current_model(),
-             "--permission-mode", "smart",
+             "--permission-mode", "dangerous",
              "--respect-workspace-trust", "false",
              "-p", prompt],
             env=env, cwd=str(workdir),
