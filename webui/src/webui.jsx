@@ -242,7 +242,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
                                                sel, onNote, onCont, cols,
                                                onDict, dictOn, pending,
-                                               pend }) {
+                                               pend, onGone }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -345,7 +345,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
         ...(rov.model && t.model ? { model: t.model } : {}),
         ...(rov.ac && (t.ac === "0" || t.ac === "1")
             ? { auto_commit: t.ac } : {}) };
-      const d = await post("/api/tasks", body);
+      const d = await (pend || ((_, f) => f()))(t.stem, () =>
+        post("/api/tasks", body));
+      if (d.ok) onGone?.(t.stem);   // бэк стёр старую запись (retry_of)
       toast?.(d.ok ? "🔁 Задача поставлена заново — старая удалена"
                   : "Ошибка: " + (d.error || "?"));
     } catch (e) { toast?.("Сеть: " + e); }
@@ -1896,6 +1898,10 @@ export default function App() {
   // «честные» действия: ключ (stem карточки / col:<key> колонки) под
   // скелетоном, пока сервер не ответил и лента не перечитана
   const [pendSet, setPendSet] = useState(() => new Set());
+  // убрать карточку из ленты локально (бэк уже стёр её: retry_of,
+  // merge) — поллинг Map только мержит, удалённых не выкидывает
+  const dropStem = useCallback(stem => setFeed(m => {
+    const n = new Map(m); n.delete(stem); return n; }), []);
   const pendRun = useCallback(async (k, fn) => {
     setPendSet(p => new Set(p).add(k));
     try {
@@ -1974,7 +1980,8 @@ export default function App() {
           onDict={toggleDict}
           dictOn={dict?.kind === "note" && dict?.stem === t.stem}
           pending={pendSet.has(t.stem)}
-          pend={pendRun} />);
+          pend={pendRun}
+          onGone={dropStem} />);
     });
     if (dropAt?.col === key && dropAt.idx >= list.length)
       out.push(mark);
