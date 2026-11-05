@@ -97,8 +97,11 @@ def api_tasks(project: str | None = None, limit: int = 5,
     if project:
         sql += " WHERE project=%s"
         params.append(project)
-        # тема: «main» (или не задана) — задачи без темы; число — своя
-        if not topic or topic == "main":
+        # тема: «all» — вся доска (канбан-колонки на фронте); «main»
+        # (или не задана) — задачи без темы; число — своя тема
+        if topic == "all":
+            pass
+        elif not topic or topic == "main":
             sql += " AND topic_id IS NULL"
         elif str(topic).isdigit():
             sql += " AND topic_id=%s"

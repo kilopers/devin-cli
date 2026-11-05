@@ -42,6 +42,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import ForumIcon from "@mui/icons-material/Forum";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson, post } from "./api.js";
@@ -217,7 +218,7 @@ const saveTopicSel = (p, v) => {
 };
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
-                                               onDel, toast }) {
+                                               onDel, toast, hideTopic }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -457,7 +458,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                     label={t.ac === "1" ? "⚡ автокоммит"
                                         : "✋ коммит вручную"} />
             </Tooltip>
-            {t.topic &&
+            {t.topic && !hideTopic &&
               <Tooltip title="тема задачи">
                 <Chip size="small" variant="outlined" sx={metaSx}
                       label={"🧵 " + t.topic} />
@@ -806,6 +807,107 @@ function Panel({ icon, title, chip, right, open, onToggle, children }) {
   </>);
 }
 
+// Колонка канбан-доски тем: заголовок (имя, 🔁-сессия, счётчик задач,
+// меню ⋯) + карточки задач своей темы + кнопка «＋ задача сюда».
+// Клик по заголовку делает колонку «целевой» — новые задачи из
+// композера падают в неё (выделена акцентной рамкой). «Главная»
+// (tid = null) не переименовывается и не удаляется — меню ей не даём.
+function TopicColumn({ name, sess, count, sel, accent, onSelect,
+                      onNewTask, onRename, onDelete, empty, children }) {
+  const [menu, setMenu] = useState(null);
+  const [edit, setEdit] = useState(null);   // null или редактируемое имя
+  const saveEdit = () => {
+    const n = (edit || "").trim();
+    setEdit(null);
+    if (n && n !== name) onRename?.(n);
+  };
+  return (
+    <Paper variant="outlined" sx={{
+      width: { xs: "82vw", sm: 300, md: 320 }, flexShrink: 0,
+      borderRadius: "12px", scrollSnapAlign: "start",
+      borderColor: sel ? (accent || "primary.main") : "divider",
+      borderWidth: sel ? 2 : 1,
+      bgcolor: "background.paper" }}>
+      <Box onClick={onSelect}
+           sx={{ display: "flex", alignItems: "center", gap: 0.6,
+                 px: 1.1, py: 0.7, cursor: "pointer",
+                 borderBottom: "1px solid", borderColor: "divider" }}>
+        <ForumIcon sx={{ fontSize: 14, flexShrink: 0,
+                         color: "text.secondary" }} />
+        {edit === null
+          ? <Tooltip title={sel
+                ? "целевая колонка — новые задачи падают сюда"
+                : "клик — новые задачи будут падать в эту тему"}>
+              <Typography variant="body2" noWrap
+                          sx={{ flex: 1, minWidth: 0, fontWeight: 600,
+                                fontSize: 13 }}>
+                {name}
+              </Typography>
+            </Tooltip>
+          : <TextField autoFocus fullWidth size="small"
+                       variant="standard" value={edit}
+                       onChange={e => setEdit(e.target.value)}
+                       onBlur={saveEdit}
+                       onClick={e => e.stopPropagation()}
+                       onKeyDown={e => {
+                         if (e.key === "Enter") {
+                           e.preventDefault(); saveEdit();
+                         } else if (e.key === "Escape") setEdit(null);
+                       }}
+                       sx={{ "& input": { fontSize: 13, py: 0 } }} />}
+        {sess &&
+          <Tooltip title="закреплённая devin-сессия — следующая задача темы продолжит её">
+            <Typography component="span" sx={{ fontSize: 12,
+                        lineHeight: 1, flexShrink: 0 }}>🔁</Typography>
+          </Tooltip>}
+        <Chip size="small" label={count}
+              sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
+        {(onRename || onDelete) &&
+          <>
+            <Tooltip title="действия с темой">
+              <IconButton size="small" sx={{ p: 0.2 }}
+                onClick={e => { e.stopPropagation();
+                                setMenu(e.currentTarget); }}>
+                <MoreVertIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
+            <Menu anchorEl={menu} open={!!menu}
+                  onClose={() => setMenu(null)}
+                  onClick={e => e.stopPropagation()}>
+              {onRename &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); setEdit(name); }}>
+                  ✏️ Переименовать
+                </MenuItem>}
+              {onDelete &&
+                <MenuItem dense sx={{ fontSize: 13, color: "error.main" }}
+                  onClick={() => { setMenu(null); onDelete(); }}>
+                  🗑 Удалить тему
+                </MenuItem>}
+            </Menu>
+          </>}
+      </Box>
+      <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
+                 gap: 0.8 }}>
+        {children}
+        {!React.Children.count(children) &&
+          <Typography variant="caption" color="text.secondary"
+                      align="center" sx={{ py: 2, display: "block" }}>
+            {empty || "нет задач"}
+          </Typography>}
+      </Box>
+      <Box sx={{ px: 0.8, pb: 0.8 }}>
+        <Button size="small" fullWidth onClick={onNewTask}
+                sx={{ textTransform: "none", fontSize: 12, py: 0.3,
+                      color: "text.secondary", border: "1px dashed",
+                      borderColor: "divider", borderRadius: "8px" }}>
+          ＋ задача сюда
+        </Button>
+      </Box>
+    </Paper>
+  );
+}
+
 export default function App() {
   const [projects, setProjects] = useState([]);
   const [multiMode, setMultiMode] = useState(false);
@@ -900,14 +1002,30 @@ export default function App() {
   const items = useMemo(() =>
     [...feed.values()].sort((a, b) => a.created - b.created), [feed]);
   const oldestStem = items.length ? items[0].stem : null;
+  // канбан: главная колонка — задачи без темы; именованные — по tid
+  const mainItems = items.filter(t => !t.tid);
+  const byTopic = id => items.filter(t => t.tid === id);
+  // задачи темы, которой ещё нет в списке topics (гонка опроса) —
+  // вынесены в отдельную временную колонку
+  const orphanTids = useMemo(() => {
+    const known = new Set(topics.map(t => t.id));
+    const s = new Set();
+    items.forEach(t => { if (t.tid && !known.has(t.tid)) s.add(t.tid); });
+    return [...s];
+  }, [items, topics]);
+  // имя целевой темы — показываем в чипе композера
+  const topicName = topicSel === "main" ? "Главная"
+    : (topics.find(t => String(t.id) === topicSel)?.name
+       || "тема #" + topicSel);
 
   const loadTasks = useCallback(async () => {
     const p = projRef.current;
     if (!p) return;
     try {
+      // канбан-доска: грузим задачи всех тем разом, колонки
+      // разбираются на фронте по t.tid
       const d = await apiJson("/api/tasks?project=" +
-        encodeURIComponent(p) + "&topic=" + topicRef.current +
-        "&limit=20");
+        encodeURIComponent(p) + "&topic=all&limit=20");
       apiJson("/api/topics?project=" + encodeURIComponent(p))
         .then(td => {
           if (td.ok) { topicsLoaded.current = true;
@@ -939,7 +1057,7 @@ export default function App() {
     try {
       const prevH = document.body.scrollHeight, prevY = window.scrollY;
       const d = await apiJson("/api/tasks?project=" + encodeURIComponent(p) +
-        "&topic=" + topicRef.current +
+        "&topic=all" +
         "&limit=20&before=" + encodeURIComponent(oldestStem));
       setFeed(m => {
         const n = new Map(m);
@@ -1024,12 +1142,11 @@ export default function App() {
     loadTasks();
   }, [multiMode, loadTasks, wsmap, wsInfo]);
 
-  // тема проекта: переключение перезагружает ленту («обнуляется»)
+  // целевая тема: клик по колонке канбана решает, куда упадут новые
+  // задачи; лента общая — перезагружать её не нужно
   const selectTopic = v => {
     setTopicSel(v); topicRef.current = v;
     saveTopicSel(projRef.current, v);
-    setFeed(new Map()); setHasMore(false); firstLoad.current = true;
-    loadTasks();
   };
   // сохранённая тема могла быть удалена — откатываемся на «Главную»
   // (но только когда список тем уже пришёл, не на пустом старте)
@@ -1047,6 +1164,23 @@ export default function App() {
       if (d.ok) selectTopic(String(d.id));
       else setToast("Тема: " + (d.error || "?"));
     } catch (e) { setToast("Сеть: " + e); }
+  };
+  const renameTopic = (id, name) =>
+    post("/api/topics", { action: "rename", project: projRef.current,
+                          id, name })
+      .then(d => {
+        if (d.ok)
+          setTopics(ts => ts.map(t => t.id === id ? { ...t, name } : t));
+        else setToast("Тема: " + (d.error || "?"));
+      })
+      .catch(() => setToast("Сеть: не переименовал тему"));
+  const askDelTopic = (id, name) =>
+    setConfirm({ kind: "topic_del", tid: id, name });
+  // «＋ задача сюда» в колонке: выбирает тему целевой и фокусирует
+  // поле ввода композера
+  const newTaskIn = v => {
+    selectTopic(v);
+    document.getElementById("composer-input")?.focus();
   };
 
   // раскрытые секции панели — per-user+project, подгружаем при смене проекта
@@ -1122,6 +1256,7 @@ export default function App() {
       const d = await post("/api/tasks", {
         project: project === "workspace" ? null : project,
         text: batch.map(p => p.text).join("\n\n"),
+        topic: topicRef.current || "main",
         ...(atts.length ? { attach: atts } : {}) });
       if (d.ok) { setBatch(null); loadTasks(); }
       else setToast("Ошибка: " + (d.error || "?"));
@@ -1203,13 +1338,21 @@ export default function App() {
         ? await post("/api/stop", { stem: confirm.stem })
         : c.kind === "del"
         ? await post("/api/task/delete", { stem: c.stem })
+        : c.kind === "topic_del"
+        ? await post("/api/topics", { action: "delete",
+                       project: projRef.current, id: c.tid })
         : await post("/api/task/cancel", { stem: c.stem });
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
                  : c.kind === "del" ? "🗑 Задача удалена"
+                 : c.kind === "topic_del" ? "🗑 Тема удалена"
                                    : "Удалено из очереди: " + c.name);
         if (c.kind === "cancel" || c.kind === "del")
           setFeed(m => { const n = new Map(m); n.delete(c.stem); return n; });
+        if (c.kind === "topic_del") {
+          setTopics(ts => ts.filter(t => t.id !== c.tid));
+          if (topicSel === String(c.tid)) selectTopic("main");
+        }
       } else setToast("Ошибка: " + (d.error || "?"));
       loadStatus();
     } catch (e) { setToast("Сеть: " + e); }
@@ -1492,55 +1635,6 @@ export default function App() {
             </Tooltip>
           </Box>}
 
-        {/* бар темы: «＋ Новая тема» → «⭐ Главная» → темы проекта;
-            каждая тема — своя devin-сессия и своя лента задач.
-            мобильная — на всю ширину; десктоп — ширина по контенту */}
-        {project && (
-          <Box sx={{ display: "flex",
-                     alignItems: "center", gap: 0.6,
-                     position: "sticky",
-                     top: brInfo?.current ? 80 : 48, zIndex: 5,
-                     px: 0.8, py: 0.4,
-                     bgcolor: "background.paper",
-                     borderBottom: "1px solid",
-                     borderColor: "divider" }}>
-            <ForumIcon sx={{ fontSize: 14, flexShrink: 0,
-                             color: "text.secondary" }} />
-            <Select size="small" variant="standard"
-                    disableUnderline value={topicSel}
-                    onChange={e =>
-                      e.target.value === "__new__"
-                        ? createTopic()
-                        : selectTopic(e.target.value)}
-                    sx={{ fontSize: 12.5,
-                          width: { xs: "100%", md: "auto" },
-                          minWidth: { md: 150 } }}>
-              <MenuItem value="__new__"
-                        sx={{ fontSize: 12.5, color: "#5e6ad2",
-                              fontWeight: 600 }}>
-                <Tooltip placement="right"
-                         title="новая тема — первая задача стартует свою сессию Devin">
-                  <span>＋ Новая тема</span>
-                </Tooltip></MenuItem>
-              <MenuItem value="main" sx={{ fontSize: 12.5 }}>
-                <Tooltip placement="right"
-                         title="главная ветка проекта — общая сессия">
-                  <span>⭐ Главная</span>
-                </Tooltip></MenuItem>
-              {topics.map(t => (
-                <MenuItem key={t.id} value={String(t.id)}
-                          sx={{ fontSize: 12.5 }}>
-                  <Tooltip placement="right"
-                           title={t.has_session
-                             ? "🔁 закреплённая сессия — следующая задача продолжит её"
-                             : "сессии ещё нет — первая задача темы стартует свою"}>
-                    <span>{t.name || `тема #${t.id}`}
-                      {t.has_session ? " · 🔁" : ""}</span>
-                  </Tooltip>
-                </MenuItem>))}
-            </Select>
-          </Box>)}
-
         <SwipeableDrawer open={drawerOpen}
                 onOpen={() => setDrawerOpen(true)}
                 onClose={() => setDrawerOpen(false)}
@@ -1571,13 +1665,76 @@ export default function App() {
                   {loadingOlder ? "загружаю…" : "загрузить ещё"}
                 </Button>
               </Box>}
-            {items.length
-              ? items.map(t => <TaskCard key={t.stem} t={t}
-                    onStop={askStop}
-                    onCancel={askCancel} onDel={askDel}
-                    toast={setToast} />)
-              : <Typography align="center" color="text.secondary"
-                  sx={{ mt: 8 }}>Задач пока нет — напиши первую внизу.</Typography>}
+            {/* канбан-доска: каждая тема — колонка со своими задачами,
+                листается влево-вправо (на мобильной — со снапом);
+                «целевая» колонка (клик по заголовку) — куда падают
+                новые задачи из композера */}
+            <Box sx={{ display: "flex", gap: 1.2, alignItems: "flex-start",
+                       overflowX: "auto", pb: 1.2,
+                       px: { xs: 0.6, md: 0 },
+                       scrollSnapType: { xs: "x proximity", md: "none" },
+                       "&::-webkit-scrollbar": { height: 8 } }}>
+              <TopicColumn name="⭐ Главная" sess={false}
+                count={mainItems.length} sel={topicSel === "main"}
+                accent={accent} onSelect={() => selectTopic("main")}
+                onNewTask={() => newTaskIn("main")}
+                empty={!items.length
+                  ? "Задач пока нет — напиши первую внизу."
+                  : "нет задач"}>
+                {mainItems.map(t =>
+                  <TaskCard key={t.stem} t={t} hideTopic
+                            onStop={askStop} onCancel={askCancel}
+                            onDel={askDel} toast={setToast} />)}
+              </TopicColumn>
+              {topics.map(tp =>
+                <TopicColumn key={tp.id}
+                  name={tp.name || `тема #${tp.id}`}
+                  sess={tp.has_session}
+                  count={byTopic(tp.id).length}
+                  sel={topicSel === String(tp.id)} accent={accent}
+                  onSelect={() => selectTopic(String(tp.id))}
+                  onNewTask={() => newTaskIn(String(tp.id))}
+                  onRename={n => renameTopic(tp.id, n)}
+                  onDelete={() =>
+                    askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
+                  {byTopic(tp.id).map(t =>
+                    <TaskCard key={t.stem} t={t} hideTopic
+                              onStop={askStop} onCancel={askCancel}
+                              onDel={askDel} toast={setToast} />)}
+                </TopicColumn>)}
+              {/* задачи темы, которой ещё нет в списке (гонка опроса)
+                  — временная колонка без меню */}
+              {orphanTids.map(tid =>
+                <TopicColumn key={"t" + tid}
+                  name={"тема #" + tid} sess={false}
+                  count={byTopic(tid).length}
+                  sel={topicSel === String(tid)} accent={accent}
+                  onSelect={() => selectTopic(String(tid))}
+                  onNewTask={() => newTaskIn(String(tid))}>
+                  {byTopic(tid).map(t =>
+                    <TaskCard key={t.stem} t={t} hideTopic
+                              onStop={askStop} onCancel={askCancel}
+                              onDel={askDel} toast={setToast} />)}
+                </TopicColumn>)}
+              {project && project !== "workspace" &&
+                <Paper variant="outlined" onClick={createTopic}
+                       sx={{ width: { xs: "55vw", sm: 190 },
+                             flexShrink: 0, scrollSnapAlign: "start",
+                             borderRadius: "12px", cursor: "pointer",
+                             borderStyle: "dashed", borderColor: "divider",
+                             "&:hover": { borderColor:
+                               accent || "primary.main" } }}>
+                  <Tooltip title="новая тема — первая задача стартует свою сессию Devin">
+                    <Box sx={{ px: 1.1, py: 0.8, display: "flex",
+                               alignItems: "center", gap: 0.6 }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 600,
+                                        color: accent || "primary.main" }}>
+                        ＋ Новая тема
+                      </Typography>
+                    </Box>
+                  </Tooltip>
+                </Paper>}
+            </Box>
             {/* части собираемой задачи — после последней карточки,
                 по центру; «Начать выполнение» склеивает их в одну */}
             {batch !== null && (
@@ -1723,7 +1880,8 @@ export default function App() {
 
         <Composer project={project} sttStatus={status.stt_status}
                   toast={setToast} onSent={loadTasks} accent={accent}
-                  topic={topicSel}
+                  topic={topicSel} topicName={topicName} topics={topics}
+                  onTopic={selectTopic} onNewTopic={createTopic}
                   collect={batch !== null} onCollect={onCollectPart}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}
                   mode={mode}
@@ -1782,6 +1940,7 @@ export default function App() {
         <DialogTitle sx={{ fontSize: 16 }}>
           {confirm?.kind === "stop" ? "Остановить задачу?"
            : confirm?.kind === "del" ? "Удалить задачу?"
+           : confirm?.kind === "topic_del" ? "Удалить тему?"
                                    : "Удалить задачу из очереди?"}
         </DialogTitle>
         <DialogContent>
@@ -1793,6 +1952,9 @@ export default function App() {
               : confirm?.kind === "del"
               ? `«${confirm?.name}» будет удалена безвозвратно вместе ` +
                 "с выводом и статистикой."
+              : confirm?.kind === "topic_del"
+              ? `Тема «${confirm?.name}» будет удалена — её задачи ` +
+                "вернутся в «Главную»."
               : `«${confirm?.name}» будет удалена из очереди и не ` +
                 "выполнится. Действие необратимо."}
           </Typography>

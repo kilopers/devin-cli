@@ -33,7 +33,8 @@ const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
 
 export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
-                                   fast, onFast, collect, onCollect, topic }) {
+                                   fast, onFast, collect, onCollect, topic,
+                                   topicName, topics, onTopic, onNewTopic }) {
   // <md = phone layout: single bottom-nav bar
   const mobile = useMediaQuery(t => t.breakpoints.down("md"));
   const [text, setText] = useState("");
@@ -55,6 +56,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [att, setAtt] = useState(null);     // {id, name} прикреплённый файл
   const fileRef = useRef(null);
   const [mAnchor, setMAnchor] = useState(null);
+  const [tAnchor, setTAnchor] = useState(null);   // меню целевой темы
   useEffect(() => {
     if (!project || project === "workspace") return;
     get("/api/project/settings?project=" + encodeURIComponent(project))
@@ -101,6 +103,37 @@ export default function Composer({ project, sttStatus, toast, onSent,
                "& .MuiChip-root": { flexShrink: 0 },
                "&::-webkit-scrollbar": { display: "none" } }}>
       {attChip}
+      {/* целевая колонка канбана: в какую тему упадёт задача */}
+      <Tooltip title="тема (колонка доски), в которую упадёт новая задача">
+        <Chip size="small" clickable sx={chipSx}
+          label={"🧵 " + (topicName || "Главная")}
+          color={topic && topic !== "main" ? "primary" : "default"}
+          variant={topic && topic !== "main" ? "filled" : "outlined"}
+          onClick={e => setTAnchor(e.currentTarget)} />
+      </Tooltip>
+      <Menu anchorEl={tAnchor} open={!!tAnchor}
+            onClose={() => setTAnchor(null)}>
+        <MenuItem dense selected={!topic || topic === "main"}
+          sx={{ fontSize: 13 }}
+          onClick={() => { onTopic?.("main"); setTAnchor(null); }}>
+          ⭐ Главная
+        </MenuItem>
+        {(topics || []).map(t => (
+          <MenuItem key={t.id} dense
+            selected={String(t.id) === topic}
+            sx={{ fontSize: 13 }}
+            onClick={() => { onTopic?.(String(t.id));
+                             setTAnchor(null); }}>
+            {(t.name || `тема #${t.id}`) +
+             (t.has_session ? " · 🔁" : "")}
+          </MenuItem>))}
+        {onNewTopic && project !== "workspace" &&
+          <MenuItem dense sx={{ fontSize: 13, fontWeight: 600,
+                                color: "primary.main" }}
+            onClick={() => { setTAnchor(null); onNewTopic(); }}>
+            ＋ Новая тема
+          </MenuItem>}
+      </Menu>
       <Tooltip title={"режим следующей задачи" +
                       (ov.mode ? " — переопределено разово" : "")}>
         <Chip size="small" clickable sx={chipSx}
@@ -267,6 +300,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
       <Box sx={{ px: 1, pt: 0, pb: "5px",
                  display: "flex", alignItems: "flex-end", gap: 0.5 }}>
         <TextField
+          id="composer-input"
           multiline minRows={1} maxRows={50} fullWidth size="small"
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                           overflowY: "auto" } }}
@@ -350,6 +384,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         <Grid size={{ xs: 12, sm: "grow" }}>
           <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.5 }}>
             <TextField
+            id="composer-input"
             multiline minRows={1} maxRows={50} fullWidth size="small"
             sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                             overflowY: "auto" } }}
