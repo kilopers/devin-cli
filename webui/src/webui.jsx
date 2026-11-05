@@ -250,42 +250,23 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   }, [t.output, outOpen]);
   const succeeded = t.status === "done" &&
     !(t.task_status && !/exit code: 0/.test(t.task_status));
-  // «в работу»: у задачи-вопроса (reply_mode=ask) из модалки 📄 тот
-  // же промпт уходит обычной code-задачей в ту же тему. Кнопку
-  // подсвечиваем, когда в ответе Devin есть предложение реализации
-  // («если хочешь — сделаем» и т.п.)
+  // «в работу»: у задачи-вопроса (reply_mode=ask) из модалки 📄 та
+  // же карточка уходит в очередь code-задачей — бэк приписывает
+  // «реализуй предложение» к промпту, прячет ответ в instr и
+  // резюмит ту же сессию темы (новых карточек не создаётся).
+  // Кнопку подсвечиваем, когда в ответе Devin есть предложение
+  // реализации («если хочешь — сделаем» и т.п.)
   const [workBusy, setWorkBusy] = useState(false);
   const offersWork = t.mode === "ask" && succeeded &&
     /если хочешь|могу (сделать|реализовать|добавить|исправить|помочь)|скажи[^\n.]{0,30}сделаю|давай сделаем|готов (сделать|реализовать)|предлагаю|shall i|could implement|can implement/i
       .test(t.output || "");
   const sendToWork = async () => {
     if (workBusy) return;
-    let text = promptShown || "";
-    if (full === null && maybeCut) {
-      try {
-        const d = await apiJson("/api/task/" + t.stem + "/prompt");
-        if (d.ok) { setFull(d.prompt); text = d.prompt; }
-      } catch { /* сеть — отправим что есть */ }
-    }
-    if (!text.trim()) return;
     setWorkBusy(true);
     try {
-      // один и тот же вопрос голым текстом Devin снова читает как
-      // вопрос — добавляем указание реализовать его предложение
-      const body = {
-        text: "Давай сделаем по твоему предложению из предыдущего "
-              + "ответа — реализуй его.\n\nИсходный вопрос:\n" + text,
-        mode: "code" };
-      if (t.project) body.project = t.project;
-      if (t.tid) body.topic = String(t.tid);
-      // скрыто подмешиваем сам ответ Devin (его предложение) в
-      // инструкции задачи — новая сессия уже знает, что реализовать;
-      // на карточке этот текст не светится
-      if ((t.output || "").trim())
-        body.instr = "## Результат предыдущего ответа Devin\n" +
-                     t.output.trim().slice(0, 6000);
-      const d = await post("/api/tasks", body);
-      if (d.ok) { toast?.("Отправлено в работу"); setOutOpen(false); }
+      const d = await post("/api/task/towork", { stem: t.stem });
+      if (d.ok) { toast?.("Отправлено в работу — та же карточка");
+                  setOutOpen(false); }
       else toast?.("Ошибка: " + (d.error || "?"));
     } catch (e) { toast?.("Сеть: " + e); }
     setWorkBusy(false);

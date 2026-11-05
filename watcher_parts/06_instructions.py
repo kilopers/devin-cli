@@ -905,6 +905,53 @@ def _api_task_continue():
     return jsonify({"ok": True, "stem": stem})
 
 
+@app.post("/api/task/towork")
+@login_required
+def _api_task_towork():
+    """«▶ в работу» на done-задаче-вопросе: та же запись уходит в
+    queued уже code-задачей (механика «↻ продолжить») — сессия темы
+    резюмится, контекст не теряется, карточек не плодится. Ответ
+    Devin копим в instr (скрыто от юзера), перед prompt добавляем
+    «реализуй предложение», вывод копится под разделителем."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "done":
+        return jsonify({"ok": False,
+                        "error": "в работу — только завершённую"}), 409
+    if (row.get("reply_mode") or "") != "ask":
+        return jsonify({"ok": False,
+                        "error": "в работу — только из «вопроса»"}), 409
+    instr = (((row.get("instr") or "")
+              + "\n\n## Результат предыдущего ответа Devin\n"
+              + (row.get("output") or "").strip()[:6000])
+             .strip()[:8000])
+    # разовый оверрайд opts.mode='ask' перекрыл бы новый reply_mode —
+    # смываем только его (model/ac/attach — те же, что были)
+    try:
+        o = json.loads(kv_get(f"opts:{stem}") or "{}")
+    except ValueError:
+        o = {}
+    if o.pop("mode", None) is not None:
+        if o:
+            kv_set(f"opts:{stem}", json.dumps(o, ensure_ascii=False))
+        else:
+            db_exec("DELETE FROM kv WHERE k=%s", (f"opts:{stem}",))
+    db_exec("UPDATE tasks SET status='queued', reply_mode='code',"
+            " prompt=CONCAT(%s, prompt), instr=%s,"
+            " output=CONCAT(IFNULL(output,''),'\\n\\n---\\n\\n'),"
+            " task_status=NULL, commit_offered=0,"
+            " started=NULL, finished=NULL WHERE stem=%s",
+            ("Давай сделаем по твоему предложению из предыдущего "
+             "ответа — реализуй его.\n\nИсходный вопрос: ",
+             instr, stem))
+    log(f"task {stem} sent to work (ask -> code)")
+    return jsonify({"ok": True, "stem": stem})
+
+
 def _fmt_worker(stem: str) -> None:
     """Фоновый прогон «✨ оформить»: отдельный devin-task (свежая
     сессия — пин темы и --continue не нужны) переоформляет текст
