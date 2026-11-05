@@ -40,7 +40,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CheckIcon from "@mui/icons-material/Check";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import ArticleIcon from "@mui/icons-material/Article";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import RedoIcon from "@mui/icons-material/Redo";
@@ -670,7 +670,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                       : "вывод задачи"}>
               <IconButton size="small" onClick={() => setOutOpen(true)}
                 sx={{ p: "3px", color: "text.secondary" }}>
-                <ArticleIcon sx={{ fontSize: 15 }} />
+                <ForumOutlinedIcon sx={{ fontSize: 15 }} />
               </IconButton>
             </Tooltip>
             {t.status === "done" && (
