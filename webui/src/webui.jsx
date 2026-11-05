@@ -2846,18 +2846,21 @@ export default function App() {
                 </Typography>
               </Box>
           : <>
-          <Box sx={{ flex: 1, minWidth: 0,
-                     p: { xs: "8px 2px 0", md: "16px 12px 0" } }}>
+          <Box sx={{ flex: 1, minWidth: 0, minHeight: 0,
+                     display: "flex", flexDirection: "column",
+                     p: { xs: "8px 2px 8px", md: "16px 12px 16px" } }}>
             {/* канбан-доска: каждая тема — колонка со своими задачами,
                 листается влево-вправо (на мобильной — со снапом);
                 «целевая» колонка (клик по заголовку) — куда падают
                 новые задачи из композера */}
             <Box sx={{ display: "flex", gap: 1.2, alignItems: "stretch",
-                       overflowX: "auto", pb: 1.2,
+                       overflowX: "auto",
                        px: { xs: 0.6, md: 0 },
-                       height: {
-                         xs: `calc(100dvh - ${multiMode ? 243 : 206}px)`,
-                         md: `calc(100dvh - ${multiMode ? 251 : 214}px)` },
+                       // доска занимает ровно оставшуюся высоту
+                       // (flex-раскладка вместо жёсткого calc —
+                       // страница не скроллится, отступ снизу =
+                       // отступу сверху)
+                       flex: 1, minHeight: 0,
                        scrollSnapType: { xs: "x proximity", md: "none" },
                        "&::-webkit-scrollbar": { height: 8 } }}>
               {/* доска = «Главная» + темы в общем порядке (sort);
