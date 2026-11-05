@@ -411,9 +411,27 @@ def _api_topics_set():
                     vals)
         return jsonify({"ok": True})
     if act == "delete":
-        # задачи темы возвращаются в «главную»; прицепленные к ней
-        # темы отвязываются — переходят на общую сессию
-        db_exec("UPDATE tasks SET topic_id=NULL WHERE topic_id=%s", (tid,))
+        # активные задачи блокируют удаление темы целиком — сообщение
+        # с именем карточки, повторить после её завершения
+        act_rows = db_query(
+            "SELECT stem FROM tasks WHERE topic_id=%s"
+            " AND status IN ('queued','running') LIMIT 4", (tid,))
+        if act_rows:
+            names = ", ".join(_task_name(r["stem"])
+                              for r in act_rows[:3])
+            more = (f" и ещё {len(act_rows) - 3}"
+                    if len(act_rows) > 3 else "")
+            return jsonify({"ok": False,
+                            "error": "удалить нельзя — в теме "
+                                     "выполняется или ждёт очереди "
+                                     f"задача: {names}{more}. "
+                                     "Повторите после её завершения"}), 409
+        # остальные карточки темы (note/done) стираются каскадом
+        # вместе с ней; прицепленные темы отвязываются — на общую
+        # сессию
+        for r in db_query("SELECT stem FROM tasks WHERE topic_id=%s",
+                          (tid,)):
+            drop_failed_task(r["stem"])
         db_exec("UPDATE topics SET session_topic_id=NULL"
                 " WHERE session_topic_id=%s", (tid,))
         db_exec("DELETE FROM topics WHERE id=%s", (tid,))
@@ -1230,25 +1248,20 @@ def _api_task_apply():
 @app.post("/api/task/delete")
 @login_required
 def _api_task_delete():
-    """Web «удалить» на карточке упавшей задачи или заметки: стирает
-    запись (done + ошибка либо status='note') вместе с прогресс-
-    файлами и kv-метками."""
+    """Web «удалить» на карточке заметки или завершённой задачи
+    (успешной или упавшей): стирает запись вместе с прогресс-
+    файлами и kv-метками. Активные (queued/running) удалять нельзя —
+    их убирают «✖ удалить» (cancel) и «стоп»."""
     stem = (_req_json().get("stem") or "").strip()
     row = task_row(stem)
     if not row:
         return jsonify({"ok": False, "error": "нет такой задачи"}), 404
-    if row["status"] == "note":
-        drop_failed_task(stem)
-        log(f"web delete removed note {stem}")
-        return jsonify({"ok": True, "stem": stem})
-    if row["status"] != "done":
+    if row["status"] not in ("note", "done"):
         return jsonify({"ok": False,
-                        "error": "удалять можно только завершённые"}), 409
-    if not is_failed_task(row):
-        return jsonify({"ok": False,
-                        "error": "удалять можно только упавшие"}), 409
+                        "error": "удалять можно только заметку или "
+                                 "завершённую"}), 409
     drop_failed_task(stem)
-    log(f"web delete removed failed {stem}")
+    log(f"web delete removed {row['status']} {stem}")
     return jsonify({"ok": True, "stem": stem})
 
 

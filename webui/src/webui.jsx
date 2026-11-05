@@ -642,14 +642,6 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </Button>
               </Tooltip>
             )}
-            {isNote && onDel && (
-              <Tooltip title="удалить заметку">
-                <IconButton size="small" onClick={() => onDel(t)}
-                  sx={{ p: "3px", color: "error.main" }}>
-                  <DeleteOutlinedIcon sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Tooltip>
-            )}
             <Tooltip title={isNote ? "текст заметки"
                           : succeeded ? "результат задачи"
                                       : "вывод задачи"}>
@@ -684,8 +676,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </IconButton>
               </Tooltip>
             )}
-            {t.status === "done" && !succeeded && onDel && (
-              <Tooltip title="удалить задачу">
+            {(isNote || t.status === "done") && onDel && (
+              <Tooltip title={isNote ? "удалить заметку"
+                                     : "удалить задачу"}>
                 <IconButton size="small" onClick={() => onDel(t)}
                   sx={{ p: "3px", color: "error.main" }}>
                   <DeleteOutlinedIcon sx={{ fontSize: 15 }} />
@@ -1749,8 +1742,16 @@ export default function App() {
         }
       })
       .catch(() => setToast("Сеть: не сдвинул тему"));
-  const askDelTopic = (id, name) =>
-    setConfirm({ kind: "topic_del", tid: id, name });
+  // удаление темы: карточки уходят каскадом вместе с ней, но если
+  // хоть одна в очереди/в работе — показываем блок в диалоге
+  // (бэк тоже вернёт 409 с именем задачи)
+  const askDelTopic = (id, name) => {
+    const act = byTopic(id)
+      .filter(t => t.status === "running" || t.status === "queued");
+    setConfirm({ kind: "topic_del", tid: id, name,
+                 active: act.map(t => t.name),
+                 cards: byTopic(id).length });
+  };
   // «＋ задача сюда» в колонке: выбирает тему целевой и фокусирует
   // поле ввода композера
   const newTaskIn = v => {
@@ -1921,6 +1922,9 @@ export default function App() {
           setFeed(m => { const n = new Map(m); n.delete(c.stem); return n; });
         if (c.kind === "topic_del") {
           setTopics(ts => ts.filter(t => t.id !== c.tid));
+          // её карточки стёрты каскадом — убираем из ленты
+          setFeed(m => new Map(
+            [...m].filter(([, t]) => t.tid !== c.tid)));
           if (topicSel === String(c.tid)) selectTopic("main");
         }
       } else setToast("Ошибка: " + (d.error || "?"));
@@ -2474,15 +2478,26 @@ export default function App() {
               ? `«${confirm?.name}» будет удалена безвозвратно вместе ` +
                 "с выводом и статистикой."
               : confirm?.kind === "topic_del"
-              ? `Тема «${confirm?.name}» будет удалена — её задачи ` +
-                "вернутся в «Главную»."
+              ? (confirm?.active?.length
+                ? `Удалить нельзя — в теме «${confirm.name}» ` +
+                  `выполняется или ждёт очереди задача: ` +
+                  `${confirm.active.slice(0, 3).join(", ")}` +
+                  (confirm.active.length > 3
+                    ? ` и ещё ${confirm.active.length - 3}` : "") +
+                  `. Повторите после её завершения.`
+                : `Тема «${confirm?.name}»` +
+                  (confirm?.cards
+                    ? ` и её карточки (${confirm.cards} шт.)` : "") +
+                  " будут удалены безвозвратно.")
               : `«${confirm?.name}» будет удалена из очереди и не ` +
                 "выполнится. Действие необратимо."}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirm(null)}>Отмена</Button>
-          <Button color="error" variant="contained" onClick={confirmAct}>
+          <Button color="error" variant="contained" onClick={confirmAct}
+            disabled={confirm?.kind === "topic_del" &&
+                      (confirm?.active || []).length > 0}>
             {confirm?.kind === "stop" ? "Остановить" : "Удалить"}
           </Button>
         </DialogActions>
