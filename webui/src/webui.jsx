@@ -41,7 +41,6 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArticleIcon from "@mui/icons-material/Article";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
-import ForumIcon from "@mui/icons-material/Forum";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -843,15 +842,42 @@ function Panel({ icon, title, chip, right, open, onToggle, children }) {
   </>);
 }
 
+// «тот же цвет, но ярче» — рамка целевой колонки: оттенок фона темы
+// с поднятой насыщенностью и опущенной светлотой (hex6 → hex6)
+const boostColor = hex => {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || "");
+  if (!m) return "";
+  const [r, g, b] = m.slice(1).map(v => parseInt(v, 16) / 255);
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) {
+    const hi = mx === r ? ((g - b) / d) % 6
+             : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (hi * 60 + 360) % 360;
+  }
+  const l = (mx + mn) / 2;
+  const s = d ? Math.min(1, Math.max(
+      d / (1 - Math.abs(2 * l - 1)) * 1.5, 0.55)) : 0.55;
+  const l2 = 0.5;
+  const c = (1 - Math.abs(2 * l2 - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const seg = [[c, x, 0], [x, c, 0], [0, c, x],
+               [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(h / 60) % 6];
+  const o = Math.round((l2 - c / 2) * 255);
+  const f = v => (Math.round(v * 255) + o).toString(16).padStart(2, "0");
+  return "#" + f(seg[0]) + f(seg[1]) + f(seg[2]);
+};
+
 // Колонка канбан-доски тем: заголовок (имя, 🔁-сессия, счётчик задач,
-// меню ⋯) + карточки задач своей темы + кнопка «＋ задача сюда».
-// Клик по заголовку делает колонку «целевой» — новые задачи из
-// композера падают в неё (выделена акцентной рамкой). color — цвет
-// колонки из настроек темы; «Главная» не переименовывается и не
-// удаляется — в её меню только «⚙ Настройки».
-function TopicColumn({ name, sess, count, sel, accent, color, onSelect,
-                      onNewTask, onRename, onDelete, onSettings, empty,
-                      children, more, busy, onMore }) {
+// меню ⋯) + ряд чипов эффективных настроек (тема → проект →
+// глобальные; залитый чип = задано у самой темы) + карточки задач +
+// кнопка «＋ задача сюда». Клик по заголовку делает колонку «целевой»
+// — новые задачи падают в неё (рамка — яркая версия цвета темы).
+// «Главная» не переименовывается и не удаляется — в её меню только
+// «⚙ Настройки».
+function TopicColumn({ name, sess, count, sel, accent, color, tset,
+                      eff, onSelect, onNewTask, onRename, onDelete,
+                      onSettings, empty, children, more, busy, onMore }) {
   const [menu, setMenu] = useState(null);
   const [edit, setEdit] = useState(null);   // null или редактируемое имя
   const saveEdit = () => {
@@ -863,15 +889,14 @@ function TopicColumn({ name, sess, count, sel, accent, color, onSelect,
     <Paper variant="outlined" sx={{
       width: { xs: "82vw", sm: 300, md: 320 }, flexShrink: 0,
       borderRadius: "12px", scrollSnapAlign: "start",
-      borderColor: sel ? (accent || "primary.main") : "divider",
+      borderColor: sel ? (boostColor(color) || accent || "primary.main")
+                       : "divider",
       borderWidth: sel ? 2 : 1,
       bgcolor: color || "background.paper" }}>
       <Box onClick={onSelect}
            sx={{ display: "flex", alignItems: "center", gap: 0.6,
                  px: 1.1, py: 0.7, cursor: "pointer",
                  borderBottom: "1px solid", borderColor: "divider" }}>
-        <ForumIcon sx={{ fontSize: 14, flexShrink: 0,
-                         color: "text.secondary" }} />
         {edit === null
           ? <Tooltip title={sel
                 ? "целевая колонка — новые задачи падают сюда"
@@ -930,6 +955,34 @@ function TopicColumn({ name, sess, count, sel, accent, color, onSelect,
             </Menu>
           </>}
       </Box>
+      {eff &&
+        // эффективные настройки колонки тегами — видно, с чем уходят
+        // задачи темы; залитый чип = переопределено у самой темы,
+        // контурный — наследуется из проекта/настроек
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.4,
+                   px: 0.9, py: 0.5,
+                   borderBottom: "1px solid", borderColor: "divider" }}>
+          {[
+            [eff.reply_mode === "ask" ? "💬 спросить" : "🛠 код",
+             tset?.reply_mode, "режим ответа"],
+            [eff.auto_commit === "1" ? "⚡ автокоммит" : "✋ коммит вручную",
+             tset?.auto_commit, "автокоммит после задачи"],
+            [eff.model ? "М: " + eff.model : null,
+             tset?.model, "модель"],
+            [eff.fast === "1" ? "⚡ быстрый" : "обычный",
+             tset?.fast, "быстрый режим — голос сразу в задачу"],
+          ].filter(([label]) => label).map(([label, own, hint]) => (
+            <Tooltip key={hint}
+                     title={hint + (own
+                       ? " — задано у темы" : " — из настроек проекта")}>
+              <Chip size="small" label={label}
+                    color={own ? "primary" : "default"}
+                    variant={own ? "filled" : "outlined"}
+                    sx={{ height: 17, fontSize: 9.5, fontWeight: 500,
+                          borderRadius: "6px",
+                          "& .MuiChip-label": { px: "6px" } }} />
+            </Tooltip>))}
+        </Box>}
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8 }}>
         <Button size="small" fullWidth onClick={onNewTask}
@@ -1705,6 +1758,7 @@ export default function App() {
               <TopicColumn name="⭐ Главная" sess={false}
                 count={mainItems.length} sel={topicSel === "main"}
                 accent={accent} color={mainDef.color}
+                tset={mainDef} eff={mainDef.eff}
                 onSelect={() => selectTopic("main")}
                 onNewTask={() => newTaskIn("main")}
                 onSettings={() => setTSetDlg(
@@ -1725,7 +1779,7 @@ export default function App() {
                   sess={tp.has_session}
                   count={byTopic(tp.id).length}
                   sel={topicSel === String(tp.id)} accent={accent}
-                  color={tp.color}
+                  color={tp.color} tset={tp} eff={tp.eff}
                   onSelect={() => selectTopic(String(tp.id))}
                   onNewTask={() => newTaskIn(String(tp.id))}
                   more={colMore[String(tp.id)]}

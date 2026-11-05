@@ -211,10 +211,14 @@ def _api_topics_get():
     if not p or not _owns_project(p):
         return jsonify({"ok": False, "error": "нет доступа"}), 403
     return jsonify({"ok": True,
-                    # настройки «главной» колонки — pj:<p>.tmain
-                    "main": _topic_defaults(p, None),
+                    # настройки «главной» колонки — pj:<p>.tmain;
+                    # eff — итоговые дефолты (тема → проект → глобальные),
+                    # их чипами рисует шапка колонки
+                    "main": dict(_topic_defaults(p, None),
+                                 eff=_eff_topic_defaults(p, None)),
                     "topics": [
-                        dict(r, has_session=bool(r["session_id"]))
+                        dict(r, has_session=bool(r["session_id"]),
+                             eff=_eff_topic_defaults(p, r["id"]))
                         for r in _topic_rows(p)]})
 
 
