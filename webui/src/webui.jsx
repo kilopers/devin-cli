@@ -225,10 +225,22 @@ const saveTopicSel = (p, v) => {
   try { localStorage.setItem(TOPIC_LS, JSON.stringify(m)); } catch {}
 };
 
+// скелетон поверх карточки/колонки, пока действие идёт на сервере:
+// UI меняется только после ответа бэка и перечитки ленты
+const PendOverlay = () => (
+  <Box onClick={e => e.stopPropagation()} sx={{
+    position: "absolute", inset: 0, zIndex: 3, borderRadius: "inherit",
+    overflow: "hidden", cursor: "progress",
+    bgcolor: "rgba(246,247,250,.55)" }}>
+    <Skeleton variant="rectangular" animation="wave"
+      sx={{ width: "100%", height: "100%",
+            bgcolor: "rgba(94,106,210,.08)" }} />
+  </Box>);
+
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
                                                sel, onNote, onCont, cols,
-                                               onDict }) {
+                                               onDict, pending, pend }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -292,9 +304,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const sendToWork = async (key, name) => {
     if (workBusy) return;
     setWorkBusy(true);
+    setWorkMenu(null);
     try {
-      const d = await post("/api/task/move",
-                           { stem: t.stem, topic: key });
+      const d = await (pend || ((_, f) => f()))(t.stem, () =>
+        post("/api/task/move", { stem: t.stem, topic: key }));
       if (d.ok) { toast?.(d.started
                     ? "Отправлена в работу — «" + name + "»"
                     : "Перемещена — «" + name + "»");
@@ -516,8 +529,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const moveTo = async (key, name) => {
     if (moveBusy) return;
     setMoveBusy(true);
+    setMoveOpen(false);
     try {
-      const d = await post("/api/task/move", { stem: t.stem, topic: key });
+      const d = await (pend || ((_, f) => f()))(t.stem, () =>
+        post("/api/task/move", { stem: t.stem, topic: key }));
       if (d.ok) {
         setMoveOpen(false);
         toast?.(d.started ? "▶ Запущена в «" + name + "»"
@@ -538,7 +553,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     <Card elevation={0} data-stem={t.stem}
       onClick={isNote ? () => onNote?.(t) : undefined}
       sx={{
-      mb: 1.6, borderRadius: "14px",
+      mb: 1.6, borderRadius: "14px", position: "relative",
       border: "1px solid", borderColor: "divider",
       cursor: isNote ? "pointer" : "default",
       transition: "box-shadow .2s ease, border-color .2s ease",
@@ -548,6 +563,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
       "&:hover": { borderColor: sel ? "#5e6ad2" : "#c9cfda",
                    boxShadow: sel ? "0 0 0 1px #5e6ad2"
                                   : "0 4px 18px rgba(16,24,40,.07)" } }}>
+      {(pending || moveBusy || workBusy || retryBusy) && <PendOverlay />}
       <CardContent sx={{ p: "14px 20px 10px",
                          "&:last-child": { pb: "10px" } }}>
         <Box sx={{ display: "flex", justifyContent: "space-between",
@@ -1418,10 +1434,10 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onSettings, onMoveL, onMoveR,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
-                      onDict, dictOn, onStats }) {
+                      onDict, dictOn, onStats, pending }) {
   const [menu, setMenu] = useState(null);
   return (
-    <Paper variant="outlined" sx={{
+    <Paper variant="outlined" sx={{ position: "relative",
       width: { xs: "82vw", sm: 300, md: 320 }, flexShrink: 0,
       height: "100%", display: "flex", flexDirection: "column",
       borderRadius: "12px", scrollSnapAlign: "start",
@@ -1429,6 +1445,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                        : "divider",
       borderWidth: sel ? 2 : 1,
       bgcolor: color || "background.paper" }}>
+      {pending && <PendOverlay />}
       <Box onClick={onSelect}
            sx={{ display: "flex", alignItems: "center", gap: 0.6,
                  px: 1.1, py: 0.7, cursor: "pointer", flexShrink: 0,
@@ -1869,6 +1886,19 @@ export default function App() {
   // по пунктирному плейсхолдеру; drop уходит в /api/task/move —
   // там же решается уровневый переход (повышение уровня = запуск)
   const [dropAt, setDropAt] = useState(null);  // {col, idx}
+  // «честные» действия: ключ (stem карточки / col:<key> колонки) под
+  // скелетоном, пока сервер не ответил и лента не перечитана
+  const [pendSet, setPendSet] = useState(() => new Set());
+  const pendRun = useCallback(async (k, fn) => {
+    setPendSet(p => new Set(p).add(k));
+    try {
+      const d = await fn();
+      if (d?.ok) await loadTasks();
+      return d;
+    } finally {
+      setPendSet(p => { const n = new Set(p); n.delete(k); return n; });
+    }
+  }, [loadTasks]);
   const dropAtRef = useRef(null);
   const setDrop = d => { dropAtRef.current = d; setDropAt(d); };
   // отпустили карту вне колонки — спрятать плейсхолдер
@@ -1913,10 +1943,9 @@ export default function App() {
     const body = { stem, topic: key };
     if (fl[idx - 1]) body.above = fl[idx - 1];
     if (fl[idx]) body.below = fl[idx];
-    post("/api/task/move", body).then(res => {
+    pendRun(stem, () => post("/api/task/move", body)).then(res => {
       if (!res.ok) setToast("Перенос: " + (res.error || "?"));
       else if (res.started) setToast("▶ Карточка запущена");
-      loadTasks();
     }).catch(() => setToast("Сеть: не перенёс карточку"));
   };
   // карточки колонки с пунктирным плейсхолдером в месте вставки
@@ -1935,7 +1964,8 @@ export default function App() {
           onNote={toggleNote} onCont={toggleCont}
           onStop={askStop} onCancel={askCancel}
           onDel={askDel} toast={setToast} cols={boardCols}
-          onDict={toggleDict} />);
+          onDict={toggleDict} pending={pendSet.has(t.stem)}
+          pend={pendRun} />);
     });
     if (dropAt?.col === key && dropAt.idx >= list.length)
       out.push(mark);
@@ -1983,8 +2013,9 @@ export default function App() {
   // «◀/▶» в меню колонки — сдвиг темы на доске; «Главная» всегда
   // первая и не двигается
   const moveTopic = (id, dir) =>
-    post("/api/topics", { action: "move", project: projRef.current,
-                          id, dir })
+    pendRun("col:" + id, () =>
+      post("/api/topics", { action: "move", project: projRef.current,
+                            id, dir }))
       .then(async d => {
         if (!d.ok) return setToast("Тема: " + (d.error || "?"));
         const td = await apiJson("/api/topics?project=" +
@@ -2293,15 +2324,16 @@ export default function App() {
   const confirmAct = async () => {
     const c = confirm;
     setConfirm(null);
+    const pk = c.kind === "topic_del" ? "col:" + c.tid : c.stem;
     try {
-      const d = c.kind === "stop"
+      const d = await pendRun(pk, async () => c.kind === "stop"
         ? await post("/api/stop", { stem: confirm.stem })
         : c.kind === "del"
         ? await post("/api/task/delete", { stem: c.stem })
         : c.kind === "topic_del"
         ? await post("/api/topics", { action: "delete",
                        project: projRef.current, id: c.tid })
-        : await post("/api/task/cancel", { stem: c.stem });
+        : await post("/api/task/cancel", { stem: c.stem }));
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
                  : c.kind === "del" ? "🗑 Задача удалена"
@@ -2660,7 +2692,8 @@ export default function App() {
                         empty={!items.length
                           ? "Задач пока нет — напиши первую внизу."
                           : "нет задач"}
-                        loading={!booted}>
+                        loading={!booted}
+                        pending={pendSet.has("col:main")}>
                         {colCards(mainItems, "main")}
                       </TopicColumn>);
                   const tp = topics.find(
@@ -2692,7 +2725,8 @@ export default function App() {
                         askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}
                       onBodyOver={e => overCol(e, String(tp.id))}
                       onBodyDrop={e => dropCol(e, String(tp.id))}
-                      loading={!booted}>
+                      loading={!booted}
+                      pending={pendSet.has("col:" + tp.id)}>
                       {colCards(byTopic(tp.id), String(tp.id))}
                     </TopicColumn>);
                 });
