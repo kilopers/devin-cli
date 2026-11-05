@@ -244,12 +244,31 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // обновляется поллингом ленты), у завершённых — финальный результат
   const [outOpen, setOutOpen] = useState(false);
   const outRef = useRef(null);
+  // живой вывод: пока пользователь выделяет текст в консоли — его
+  // перерисовку и автоскролл замораживаем (frozenOut держит снимок),
+  // иначе поллинг каждые 3 с сносит выделение и скопировать нельзя;
+  // снял выделение — консоль догоняет до актуального хвоста
+  const [frozenOut, setFrozenOut] = useState(null);
+  const outNow = useRef(t.output);
+  outNow.current = t.output;
+  useEffect(() => {
+    if (!outOpen) { setFrozenOut(null); return; }
+    const h = () => {
+      const s = window.getSelection();
+      const inOut = s && !s.isCollapsed && outRef.current &&
+                    outRef.current.contains(s.anchorNode);
+      if (inOut) setFrozenOut(f => f ?? outNow.current);
+      else setFrozenOut(null);
+    };
+    document.addEventListener("selectionchange", h);
+    return () => document.removeEventListener("selectionchange", h);
+  }, [outOpen]);
   // живая консоль прилипает к низу на каждом обновлении хвоста
   useEffect(() => {
     const el = outRef.current;
-    if (outOpen && el && t.status !== "done")
+    if (outOpen && el && t.status !== "done" && frozenOut === null)
       el.scrollTop = el.scrollHeight;
-  }, [t.output, outOpen]);
+  }, [t.output, outOpen, frozenOut]);
   const succeeded = t.status === "done" &&
     !(t.task_status && !/exit code: 0/.test(t.task_status));
   // «в работу»: у задачи-вопроса (reply_mode=ask) из модалки 📄 та
@@ -906,6 +925,13 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             {isNote ? "Заметка"
                    : succeeded ? "Результат задачи" : "Вывод задачи"}
+            {frozenOut !== null &&
+              <Tooltip title="выделен текст — обновление вывода на паузе, снимите выделение для продолжения">
+                <Chip size="small" variant="outlined"
+                      label="⏸ пауза"
+                      sx={{ ml: 1, height: 17, fontSize: 9.5,
+                            borderRadius: "6px" }} />
+              </Tooltip>}
             {t.mode === "ask" && t.status === "done" && (<>
               <Tooltip title="в работу той же карточкой — выбрать code-тему">
                 <span>
@@ -957,9 +983,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                     ? <Markdown text={t.output} />
                     : <Typography variant="body2" color="text.secondary">
                         вывод пуст — Devin ничего не вернул</Typography>)
-                : (t.output
+                : ((frozenOut ?? t.output)
                     ? <pre className="out" ref={outRef}
-                           style={{ maxHeight: "60vh" }}>{t.output}</pre>
+                           style={{ maxHeight: "60vh" }}>
+                        {frozenOut ?? t.output}</pre>
                     : <Typography variant="body2" color="text.secondary">
                         {t.status === "queued"
                           ? "в очереди — вывод ещё пуст"
@@ -1477,10 +1504,15 @@ export default function App() {
           encodeURIComponent(p));
         if (td.ok) {
           topicsLoaded.current = true;
-          setTopics(td.topics || []);
-          setMainDef(td.main || {});
-          tkeys = ["main",
-            ...(td.topics || []).map(t => String(t.id))];
+          // сохраняем ссылочную стабильность: новые массив/объект
+          // каждый поллинг сносили бы React.memo(TaskCard) — все
+          // карточки перерисовывались и выделение текста умирало
+          const nt = td.topics || [], nm = td.main || {};
+          setTopics(prev =>
+            JSON.stringify(prev) === JSON.stringify(nt) ? prev : nt);
+          setMainDef(prev =>
+            JSON.stringify(prev) === JSON.stringify(nm) ? prev : nm);
+          tkeys = ["main", ...nt.map(t => String(t.id))];
         }
       } catch (e) { /* темы не пришли — опрашиваем хотя бы главную */ }
       const pages = await Promise.all(tkeys.map(k =>
@@ -1708,8 +1740,13 @@ export default function App() {
         if (!d.ok) return setToast("Тема: " + (d.error || "?"));
         const td = await apiJson("/api/topics?project=" +
           encodeURIComponent(projRef.current)).catch(() => null);
-        if (td?.ok) { setTopics(td.topics || []);
-                      setMainDef(td.main || {}); }
+        if (td?.ok) {
+          const nt = td.topics || [], nm = td.main || {};
+          setTopics(prev =>
+            JSON.stringify(prev) === JSON.stringify(nt) ? prev : nt);
+          setMainDef(prev =>
+            JSON.stringify(prev) === JSON.stringify(nm) ? prev : nm);
+        }
       })
       .catch(() => setToast("Сеть: не сдвинул тему"));
   const askDelTopic = (id, name) =>
