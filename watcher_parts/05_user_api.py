@@ -468,6 +468,54 @@ def _api_tasks():
                              request.args.get("topic")))
 
 
+@app.get("/api/topic/stats")
+@login_required
+def _api_topic_stats():
+    """Статистика колонки: строки topic_stats + итоги. Живёт отдельно
+    от карточек — удаление задачи статистику не трогает."""
+    proj = request.args.get("project")
+    if proj and not _owns_project(proj):
+        abort(403)
+    tid = request.args.get("topic") or "main"
+    if tid == "main":
+        rows = db_query(
+            "SELECT id, stem, created, model, prompt_tok, cached_tok,"
+            " completion_tok, cost FROM topic_stats"
+            " WHERE project=%s AND topic_id IS NULL"
+            " ORDER BY created DESC LIMIT 500", (proj,))
+    else:
+        rows = db_query(
+            "SELECT id, stem, created, model, prompt_tok, cached_tok,"
+            " completion_tok, cost FROM topic_stats"
+            " WHERE project=%s AND topic_id=%s"
+            " ORDER BY created DESC LIMIT 500", (proj, int(tid)))
+    return jsonify({"ok": True, "rows": rows, "total": {
+        "tasks": len(rows),
+        "prompt": sum(r["prompt_tok"] or 0 for r in rows),
+        "cached": sum(r["cached_tok"] or 0 for r in rows),
+        "completion": sum(r["completion_tok"] or 0 for r in rows),
+        "cost": round(sum(r["cost"] or 0 for r in rows), 4)}})
+
+
+@app.post("/api/topic/stats/clear")
+@login_required
+def _api_topic_stats_clear():
+    """«Очистить историю» в статистике темы — стирает только записи
+    topic_stats, карточки и темы не трогает."""
+    d = request.get_json(force=True, silent=True) or {}
+    proj = d.get("project")
+    if proj and not _owns_project(proj):
+        abort(403)
+    tid = d.get("topic") or "main"
+    if tid == "main":
+        db_exec("DELETE FROM topic_stats WHERE project=%s"
+                " AND topic_id IS NULL", (proj,))
+    else:
+        db_exec("DELETE FROM topic_stats WHERE project=%s"
+                " AND topic_id=%s", (proj, int(tid)))
+    return jsonify({"ok": True})
+
+
 @app.get("/api/task/<stem>/prompt")
 @login_required
 def _api_task_prompt(stem: str):

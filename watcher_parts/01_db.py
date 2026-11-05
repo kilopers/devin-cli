@@ -147,6 +147,21 @@ def init_db() -> None:
         UNIQUE KEY uq_proj_name (project, name),
         KEY idx_proj (project)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # статистика тем: строка на каждую завершённую задачу — живёт
+    # отдельно от карточки, удаление/перенос задачи её не трогает
+    db_exec("""CREATE TABLE IF NOT EXISTS topic_stats (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project VARCHAR(190) NOT NULL,
+        topic_id INT NULL,
+        stem VARCHAR(80) NULL,
+        created DOUBLE NOT NULL,
+        model VARCHAR(80) NULL,
+        prompt_tok BIGINT NULL,
+        cached_tok BIGINT NULL,
+        completion_tok BIGINT NULL,
+        cost DOUBLE NULL,
+        KEY idx_proj_topic (project, topic_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     # чистка после бага «первая задача темы continue'ила последнюю
     # сессию каталога»: пин темы, равный пину «главной» её проекта или
     # продублированный у другой темы — это чужая сессия → NULL, тема
@@ -675,6 +690,45 @@ def _collect_task_stats(export_path: Path, started: float,
     return st
 
 
+def _model_costs(model_uid: str) -> dict | None:
+    """$/1M {input, cached, output} по каталогу models_cache
+    (info.cost_summary вида «$0.5 / 1M Input · $0.1 / 1M Cached
+    input · $2 / 1M Output») или None — у бесплатной модели
+    summary нет, неизвестная модель тоже."""
+    try:
+        models = json.loads(kv_get("models_cache") or "[]")
+    except Exception:
+        models = []
+    for m in models:
+        if m.get("id") != model_uid:
+            continue
+        cs = (m.get("info") or {}).get("cost_summary") or ""
+        out = {}
+        for kind, key in (("Input", "input"),
+                          ("Cached input", "cached"),
+                          ("Output", "output")):
+            mm = re.search(r"\$([\d.]+)\s*/\s*1M\s+" + kind, cs)
+            if mm:
+                out[key] = float(mm.group(1))
+        return out or None
+    return None
+
+
+def _task_cost(st: dict) -> float | None:
+    """Примерная стоимость задачи по тарифу её модели:
+    (prompt−cached)·input + cached·cached + completion·output."""
+    p = _model_costs(st.get("model") or "")
+    if not p:
+        return None
+    return round(max((st.get("prompt_tokens") or 0)
+                     - (st.get("cached_tokens") or 0), 0)
+                 * p.get("input", 0) / 1e6
+                 + (st.get("cached_tokens") or 0)
+                 * p.get("cached", 0) / 1e6
+                 + (st.get("completion_tokens") or 0)
+                 * p.get("output", 0) / 1e6, 6)
+
+
 def progress_loop(chat_id, export_path: Path, out_path: Path,
                   proc: subprocess.Popen, since: float) -> None:
     """While the task runs, send live progress to telegram.
@@ -1025,12 +1079,32 @@ def run_task(task: dict) -> None:
     tstats = _collect_task_stats(export_path,
                                  task.get("started") or started_ts,
                                  finished_ts)
+    if tstats:
+        cost = _task_cost(tstats)
+        if cost is not None:
+            tstats["cost"] = cost
     db_exec("UPDATE tasks SET status='done',"
             " output=CONCAT(IFNULL(output,''),%s), task_status=%s,"
             " finished=%s, stats=%s WHERE stem=%s",
             (body, status, finished_ts,
              json.dumps(tstats, ensure_ascii=False) if tstats else None,
              stem))
+    # статистика темы: строка в topic_stats (project+topic_id на
+    # момент завершения) — переживает удаление карточки и её перенос
+    # в другую колонку
+    try:
+        if tstats:
+            db_exec("INSERT INTO topic_stats"
+                    " (project, topic_id, stem, created, model,"
+                    " prompt_tok, cached_tok, completion_tok, cost)"
+                    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (tproj, task.get("topic_id"), stem, finished_ts,
+                     tstats.get("model"), tstats.get("prompt_tokens"),
+                     tstats.get("cached_tokens"),
+                     tstats.get("completion_tokens"),
+                     tstats.get("cost")))
+    except Exception as e:
+        log(f"topic_stats: {e}")
     # пин сессии темы: следующая задача темы резюмит её через --resume
     sid = (tstats.get("session") or "")[:80]
     if sid and re.fullmatch(r"[A-Za-z0-9_-]+", sid):

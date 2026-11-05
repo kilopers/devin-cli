@@ -405,7 +405,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     ["Статус", t.task_status || null],
     ["Время выполнения", fmtDur(st.duration)],
     ["Модель", st.model || t.model || null],
-    ["Стоимость", costStr],
+    ["Стоимость", st.cost != null
+      ? "≈ $" + (st.cost < 0.01 ? st.cost.toFixed(4)
+                               : st.cost.toFixed(2))
+      : costStr],
     ["Токены", st.prompt_tokens != null || st.completion_tokens != null
       ? `prompt ${fmtNum(st.prompt_tokens)}` +
         ` (кэш ${fmtNum(st.cached_tokens)}` +
@@ -1107,22 +1110,34 @@ function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
         </IconButton>
       </Tooltip>
       <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
-        {projects.map(p => (
-          <MenuItem key={p} sx={{ fontSize: 13, display: "flex",
-                                  alignItems: "center" }}
-                    onClick={() => { setMenu(null); onTab(p); }}>
-            <WsDot color={wsColor(p)} />
-            <Box sx={{ flex: 1 }}>{p}</Box>
-            <IconButton size="small" sx={{ p: 0.2, ml: 1 }}
-              onClick={e => { e.stopPropagation();
-                              setWsMenu({ a: e.currentTarget, p }); }}>
-              <WorkspacesIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-            <IconButton size="small" sx={{ p: 0.2 }}
-              onClick={e => { e.stopPropagation(); onSettings?.(p); }}>
-              <TuneIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-          </MenuItem>))}
+        {(() => { let lastWid = -1;
+          return projects.map(p => {
+            const wid = (wsmap || {})[p];
+            const hdr = wid !== lastWid
+              ? (lastWid = wid,
+                 <ListSubheader key={"wsh" + wid}
+                   sx={{ lineHeight: "28px" }}>
+                   {((wsList || []).find(w => w.id === wid) || {}).name
+                    || "без пространства"}
+                 </ListSubheader>)
+              : null;
+            return [hdr,
+              <MenuItem key={p} sx={{ fontSize: 13, display: "flex",
+                                      alignItems: "center" }}
+                        onClick={() => { setMenu(null); onTab(p); }}>
+                <WsDot color={wsColor(p)} />
+                <Box sx={{ flex: 1 }}>{p}</Box>
+                <IconButton size="small" sx={{ p: 0.2, ml: 1 }}
+                  onClick={e => { e.stopPropagation();
+                                  setWsMenu({ a: e.currentTarget, p }); }}>
+                  <WorkspacesIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+                <IconButton size="small" sx={{ p: 0.2 }}
+                  onClick={e => { e.stopPropagation(); onSettings?.(p); }}>
+                  <TuneIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </MenuItem>];
+          }); })()}
         <MenuItem sx={{ color: "#5e6ad2", fontSize: 13 }}
                   onClick={() => { setMenu(null); onAdd?.(); }}>
           ➕ Добавить проект…
@@ -1137,6 +1152,111 @@ function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
           </MenuItem>))}
       </Menu>
     </Box>);
+}
+
+// статистика темы (topic_stats): таблица «задача от <дата> · модель ·
+// токены · цена» + итоги; история живёт отдельно от карточек —
+// удаление задачи её не трогает. «Очистить историю» стирает
+// только записи статистики (инлайн-подтверждение)
+function TopicStatsDlg({ dlg, project, onClose, toast }) {
+  const [data, setData] = useState(null);   // {rows,total}|"err"
+  const [sure, setSure] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const key = dlg?.key;
+  useEffect(() => {
+    setSure(false);
+    if (!key) return;
+    setData(null);
+    apiJson("/api/topic/stats?project=" + encodeURIComponent(project)
+            + "&topic=" + encodeURIComponent(key))
+      .then(d => setData(d.ok ? d : "err"))
+      .catch(() => setData("err"));
+  }, [key, project]);
+  const clear = async () => {
+    setBusy(true);
+    const d = await post("/api/topic/stats/clear",
+                         { project, topic: key }).catch(() => null);
+    setBusy(false); setSure(false);
+    if (d?.ok) { setData({ rows: [], total: {} });
+                 toast?.("История очищена"); }
+    else toast?.("Ошибка: " + (d?.error || "сеть"));
+  };
+  const fmtDate = ts => new Date(ts * 1000)
+    .toLocaleString("ru-RU", { day: "2-digit", month: "2-digit",
+                               hour: "2-digit", minute: "2-digit" });
+  const money = c => c == null ? "—"
+    : "$" + (c < 0.01 ? c.toFixed(4) : c.toFixed(2));
+  const rows = data && data !== "err" ? data.rows : [];
+  const tot = (data && data !== "err" && data.total) || {};
+  return (
+    <Dialog open={!!dlg} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle sx={{ fontSize: 16, py: 1.2,
+                         display: "flex", alignItems: "center" }}>
+        📊 Статистика — {dlg?.name}
+        <Box sx={{ flex: 1 }} />
+        <IconButton size="small" onClick={onClose}>
+          <CloseIcon sx={{ fontSize: 18 }} />
+        </IconButton>
+      </DialogTitle>
+      <DialogContent dividers sx={{ p: 1 }}>
+        {data === null &&
+          <Typography sx={{ p: 2, fontSize: 13 }}
+                      color="text.secondary">Загружаю…</Typography>}
+        {data === "err" &&
+          <Typography sx={{ p: 2, fontSize: 13 }}
+                      color="error">Не удалось загрузить</Typography>}
+        {rows.map(r => (
+          <Box key={r.id} sx={{ display: "flex", gap: 1, py: 0.4,
+                 fontSize: 12.5, flexWrap: "wrap",
+                 borderBottom: "1px solid", borderColor: "divider" }}>
+            <Typography component="span"
+              sx={{ fontSize: "inherit", minWidth: 130 }}>
+              задача от {fmtDate(r.created)}
+            </Typography>
+            <Typography component="span"
+              sx={{ fontSize: "inherit", color: "text.secondary",
+                    flex: 1, minWidth: 90 }}>
+              {r.model || "—"}
+            </Typography>
+            <Typography component="span"
+              sx={{ fontSize: "inherit",
+                    fontFamily: "ui-monospace, Menlo, monospace",
+                    color: "text.secondary" }}>
+              {fmtNum(r.prompt_tok)}·кэш {fmtNum(r.cached_tok)}
+              ·out {fmtNum(r.completion_tok)}
+            </Typography>
+            <Typography component="span"
+              sx={{ fontSize: "inherit", fontWeight: 600,
+                    minWidth: 56, textAlign: "right" }}>
+              {money(r.cost)}
+            </Typography>
+          </Box>))}
+        {data && data !== "err" && !rows.length &&
+          <Typography sx={{ p: 2, fontSize: 13 }}
+                      color="text.secondary">пока нет записей</Typography>}
+      </DialogContent>
+      <DialogActions sx={{ px: 2, py: 1, display: "flex",
+                           alignItems: "center", gap: 1 }}>
+        <Typography variant="body2" sx={{ fontSize: 12.5 }}>
+          итого: задач {tot.tasks || 0} · prompt {fmtNum(tot.prompt)}
+          (кэш {fmtNum(tot.cached)}) + out {fmtNum(tot.completion)}
+          {" · ≈ " + money(tot.cost || 0)}
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        {sure ? (<>
+          <Button size="small" color="error" variant="contained"
+            onClick={clear} disabled={busy}
+            sx={{ textTransform: "none", fontSize: 12 }}>
+            {busy ? "чищу…" : "Да, очистить"}</Button>
+          <Button size="small" onClick={() => setSure(false)}
+            sx={{ textTransform: "none", fontSize: 12 }}>Нет</Button>
+        </>) : (
+          <Button size="small" color="error" variant="outlined"
+            onClick={() => setSure(true)} disabled={!rows.length}
+            sx={{ textTransform: "none", fontSize: 12 }}>
+            Очистить историю</Button>)}
+      </DialogActions>
+    </Dialog>);
 }
 
 function ProjectSelect({ projects, current, onChange, onAdd,
@@ -1298,7 +1418,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onSettings, onMoveL, onMoveR,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
-                      onDict, dictOn }) {
+                      onDict, dictOn, onStats }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{
@@ -1329,7 +1449,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
           </Tooltip>}
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
-        {(onDelete || onSettings || onMoveL || onMoveR) &&
+        {(onDelete || onSettings || onMoveL || onMoveR || onStats) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -1341,6 +1461,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             <Menu anchorEl={menu} open={!!menu}
                   onClose={() => setMenu(null)}
                   onClick={e => e.stopPropagation()}>
+              {onStats &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onStats(); }}>
+                  📊 Статистика
+                </MenuItem>}
               {onSettings &&
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onSettings(); }}>
@@ -1422,9 +1547,9 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                           "&:hover": { bgcolor:
                             btnC.startsWith("#") ? btnC + "14"
                                                  : "action.hover" } }}>
-              {eff?.reply_mode === "say" ? "＋ заметка сюда"
-                : eff?.reply_mode === "ask" ? "＋ спросить сюда"
-                : "＋ задача сюда"}
+              {eff?.reply_mode === "say" ? "＋ заметка"
+                : eff?.reply_mode === "ask" ? "＋ спросить"
+                : "＋ задача"}
             </Button>
             {onDict &&
               <Tooltip title="надиктовать — текст в композер; в быстром режиме задача сразу в эту колонку">
@@ -1527,6 +1652,8 @@ export default function App() {
   const [addOpen, setAddOpen] = useState(false);    // add-project dialog
   // shared confirm dialog: {kind:"stop"|"cancel", name, stem} | null
   const [confirm, setConfirm] = useState(null);
+  // диалог «📊 Статистика» темы: {key: 'main'|topic_id, name}
+  const [statDlg, setStatDlg] = useState(null);
   // drawer keeps its scroll position across re-renders (selecting
   // mode/model inside it used to yank the list back to the top)
   const drawerBoxRef = useRef(null);
@@ -2519,6 +2646,10 @@ export default function App() {
                           mainDef.eff?.reply_mode)}
                         dictOn={dict?.kind === "col"
                                 && dict?.key === "main"}
+                        onStats={() => setStatDlg(
+                          { key: "main",
+                            name: "⭐ " + (mainDef.name
+                                          || "Главная") })}
                         onSettings={() => setTSetDlg(
                           { kind: "main", current: mainDef })}
                         onMoveL={mvL} onMoveR={mvR}
@@ -2548,6 +2679,9 @@ export default function App() {
                         tp.eff?.reply_mode)}
                       dictOn={dict?.kind === "col"
                               && dict?.key === String(tp.id)}
+                      onStats={() => setStatDlg(
+                        { key: String(tp.id),
+                          name: tp.name || `тема #${tp.id}` })}
                       more={colMore[String(tp.id)]}
                       busy={!!colBusy[String(tp.id)]}
                       onMore={() => loadColMore(String(tp.id))}
@@ -2575,6 +2709,8 @@ export default function App() {
                   onDict={() => toggleDictCol(String(tid))}
                   dictOn={dict?.kind === "col"
                           && dict?.key === String(tid)}
+                  onStats={() => setStatDlg(
+                    { key: String(tid), name: "тема #" + tid })}
                   more={colMore[String(tid)]}
                   busy={!!colBusy[String(tid)]}
                   onMore={() => loadColMore(String(tid))}
@@ -2740,6 +2876,9 @@ export default function App() {
         </Paper>)}
       </Box>
 
+      <TopicStatsDlg dlg={statDlg} project={project}
+                     onClose={() => setStatDlg(null)}
+                     toast={setToast} />
       <TopicSettings project={project} dlg={tSetDlg} topics={topics}
                      onClose={() => setTSetDlg(null)}
                      onSaved={id => { loadTasks();
