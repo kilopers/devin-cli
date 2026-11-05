@@ -28,12 +28,26 @@ def _instr_rows(user: str, project: str | None = None) -> list:
 def _api_task_tag():
     """«Тег задачи» — агент шлёт произвольную инфу (версия, прогресс,
     что делает), она рисуется бейджем на карточке задачи в веб-фиде.
-    kv.tag:<stem>; stem — свой ($TASK_STEM) или текущая running."""
+    kv.tag:<stem>; stem — свой ($TASK_STEM). Фолбэк «текущая running»
+    только когда бежит ровно одна задача — при параллельных прогонах
+    разных проектов угадывание сажало тег на чужую карточку."""
     if not _internal_auth():
         abort(403)
     b = _req_json()
-    stem = (b.get("stem") or "").strip() or (
-        Path(STATE["current_task"]).stem if STATE["current_task"] else "")
+    stem = (b.get("stem") or "").strip()
+    if not stem:
+        with _run_lock:
+            running = sorted(RUNNING_STEMS)
+        if len(running) == 1:
+            stem = running[0]
+        elif len(running) == 0:
+            stem = (Path(STATE["current_task"]).stem
+                    if STATE["current_task"] else "")
+        else:
+            return jsonify({"ok": False,
+                            "error": "идёт несколько задач — передай"
+                                     ' stem явно ("stem":"$TASK_STEM")'}
+                           ), 409
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", stem):
         return jsonify({"ok": False, "error": "bad stem"}), 400
     kv_set(f"tag:{stem}", (b.get("tag") or "")[:200])
