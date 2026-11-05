@@ -2846,7 +2846,8 @@ export default function App() {
 
         {/* десктоп: лента+сайдбар на всю ширину экрана — боковые
             отступы дают паддинги колонок (~12–16px от краёв) */}
-        <Box sx={{ flex: 1, display: "flex", width: "100%" }}>
+        <Box sx={{ flex: 1, display: "flex", width: "100%",
+                   minHeight: 0 }}>
           {view === "models"
             ? <ModelsPage accent={accent} toast={setToast}
                           onClose={() => setView("feed")} />
@@ -3006,8 +3007,10 @@ export default function App() {
           <Paper elevation={0} sx={{
             width: 290, flexShrink: 0, m: "0 12px 0 4px",
             display: { xs: "none", md: "block" },
-            alignSelf: "flex-start", position: "sticky", top: 80,
-            height: "calc(100vh - 80px)", borderRadius: "14px",
+            // высота — по ряду (низ экрана), своего calc нет:
+            // скроллится список внутри, страница — никогда
+            alignSelf: "stretch",
+            borderRadius: "14px",
             border: "1px solid", borderColor: "divider",
             overflowY: "auto", overflowX: "hidden",
             // pb как у ленты: нижние пункты докручиваются выше
