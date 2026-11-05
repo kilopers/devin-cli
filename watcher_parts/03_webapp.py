@@ -136,8 +136,18 @@ def api_tasks(project: str | None = None, limit: int = 5,
         stem = r["stem"]
         st = "running" if stem in running else r["status"]
         out = ""
+        starting = False
         if st == "running":
-            out = _tail(TASKS_DIR / ".progress" / f"{stem}.out")
+            outp = TASKS_DIR / ".progress" / f"{stem}.out"
+            out = _tail(outp)
+            try:
+                with open(outp, "rb") as fh:
+                    # devin CLI печатает «You're all set» в самом
+                    # начале своей работы — до этого момента devin-task
+                    # ещё в подготовке (прокси, git pull, auth)
+                    starting = b"all set" not in fh.read(16384)
+            except OSError:
+                starting = True
         elif st == "done":
             # старые записи ещё с тех-обвязкой — чистим при отдаче
             out = _clean_task_output(r["output"] or "")
@@ -190,6 +200,9 @@ def api_tasks(project: str | None = None, limit: int = 5,
             },
             "source": r["source"],
             "status": st,
+            # фаза запуска у running: devin ещё не начал работать —
+            # фронт красит бейдж светлее («запускается»)
+            "starting": starting,
             "task_status": r["task_status"] or "",
             "commit_offered": bool(r["commit_offered"]),
             "tag": kv_get(f"tag:{stem}"),
@@ -212,6 +225,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
                 f"{st}|{r['task_status']}|{r['commit_offered']}|{out}"
                 f"|{len(r['prompt'] or '')}|{r['prompt'][-64:]}"
                 f"|{bool(kv_get(f'fmt:{stem}'))}|{r.get('sort') or 0}"
+                f"|{starting}"
                 .encode()).hexdigest()[:12],
         })
     if before:

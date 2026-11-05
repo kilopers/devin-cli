@@ -183,10 +183,17 @@ const mdStyles = {
 function StatusChip({ t }) {
   const failed = t.status === "done" && t.task_status &&
     !/exit code: 0/.test(t.task_status);
+  // «starting» — devin-task ещё готовится (прокси/git/auth), сам Devin
+  // не начал работать: бейдж светлее и подпись «запускается»
+  const starting = t.status === "running" && t.starting;
   const color = failed || t.status === "running"
     ? (failed ? "error" : "info") : (t.status === "done" ? "success" : "default");
-  return <Chip size="small" color={color} sx={{ height: 24, fontSize: 12 }}
-    label={failed ? "ошибка" : (STATUS_RU[t.status] || t.status)}
+  return <Chip size="small" color={color}
+    variant={starting ? "outlined" : "filled"}
+    sx={{ height: 24, fontSize: 12 }}
+    label={failed ? "ошибка"
+                : starting ? "запускается"
+                           : (STATUS_RU[t.status] || t.status)}
     icon={t.status === "running"
       ? <Box component="span" sx={{ width: 10, height: 10, ml: "4px",
           border: "2px solid #90caf9", borderTopColor: "transparent",
