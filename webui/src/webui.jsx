@@ -41,6 +41,7 @@ import ArticleIcon from "@mui/icons-material/Article";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import RedoIcon from "@mui/icons-material/Redo";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -458,6 +459,36 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     } catch (e) { toast?.("Сеть: " + e); }
     setRunBusy(false);
   };
+  // «✨ оформить» — devin переоформляет текст заметки в markdown:
+  // результат падает в output (поллинг привезёт) → кнопка «вариант»
+  // открывает превью с «применить». Спиннер держим до смены output
+  const [fmtBusy, setFmtBusy] = useState(false);
+  const fmtBase = useRef("");
+  const [fmtOpen, setFmtOpen] = useState(false);
+  useEffect(() => {
+    if (fmtBusy && (t.output || "") !== fmtBase.current)
+      setFmtBusy(false);
+  }, [t.output, fmtBusy]);
+  const fmtNote = async () => {
+    if (fmtBusy) return;
+    fmtBase.current = t.output || "";
+    setFmtBusy(true);
+    try {
+      const d = await post("/api/task/format", { stem: t.stem });
+      if (!d.ok) {
+        toast?.("Ошибка: " + (d.error || "?"));
+        setFmtBusy(false);
+      }   // ок — ждём, пока поллинг привезёт новый output
+    } catch (e) { toast?.("Сеть: " + e); setFmtBusy(false); }
+  };
+  const fmtApply = async () => {
+    try {
+      const d = await post("/api/task/apply", { stem: t.stem });
+      if (d.ok) { setFmtOpen(false);
+                  toast?.("Оформление применено — исходник в «варианте»"); }
+      else toast?.("Ошибка: " + (d.error || "?"));
+    } catch (e) { toast?.("Сеть: " + e); }
+  };
   // мелкие мета-чипы шапки: один стиль, воздух вокруг текста
   const metaSx = { height: 22, fontSize: 11, fontWeight: 500,
                    borderRadius: "7px",
@@ -620,6 +651,30 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         : <ContentCopyIcon sx={{ fontSize: 15 }} />}
               </IconButton>
             </Tooltip>
+            {isNote && (
+              <Tooltip title="оформить текст в markdown через Devin — результат появится кнопкой «✨ вариант»">
+                <IconButton size="small" disabled={fmtBusy}
+                  onClick={e => { e.stopPropagation(); fmtNote(); }}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  {fmtBusy
+                    ? <Box component="span" sx={{
+                        width: 13, height: 13, borderRadius: "50%",
+                        border: "2px solid #5e6ad2",
+                        borderTopColor: "transparent",
+                        animation: "rot .8s linear infinite" }} />
+                    : <AutoAwesomeIcon sx={{ fontSize: 15 }} />}
+                </IconButton>
+              </Tooltip>
+            )}
+            {isNote && !!t.output && (
+              <Button size="small" variant="text"
+                onClick={e => { e.stopPropagation(); setFmtOpen(true); }}
+                sx={{ fontSize: 11, px: 1, height: 26,
+                      borderRadius: "7px", whiteSpace: "nowrap",
+                      textTransform: "none" }}>
+                ✨ вариант
+              </Button>
+            )}
             {isNote
               ? <Tooltip title="отправить в работу с настройками её колонки">
                   <Button size="small" variant="outlined"
@@ -644,17 +699,24 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               : <StatusChip t={t} />}
           </Box>
         </Box>
+        {isNote ? (
+          <Box ref={txtRef}
+            sx={{ fontSize: 13.5, lineHeight: 1.62,
+                  ...(open ? {} : { maxHeight: 76,
+                                    overflow: "hidden" }) }}>
+            <Markdown text={promptShown} />
+          </Box>
+        ) : (
         <Typography variant="body2" ref={txtRef}
-          onClick={!isNote && (canExpand || open)
+          onClick={(canExpand || open)
                    ? () => setOpen(o => !o) : undefined}
           sx={{ whiteSpace: "pre-wrap", fontWeight: 500, fontSize: 13.5,
                 lineHeight: 1.62,
-                cursor: !isNote && (canExpand || open) ? "pointer"
-                                                       : "inherit",
+                cursor: (canExpand || open) ? "pointer" : "inherit",
                 ...(!open && {
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
                   WebkitLineClamp: 3, overflow: "hidden" }) }}>
-          {promptShown}</Typography>
+          {promptShown}</Typography>)}
         {maybeCut && (
           <Typography variant="caption"
             onClick={e => { e.stopPropagation(); loadFull(); }}
@@ -745,6 +807,33 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 появления статистики или export-файл недоступен)
               </Typography>)}
           </DialogContent>
+        </Dialog>
+        <Dialog open={fmtOpen} onClose={() => setFmtOpen(false)}
+                maxWidth="md" fullWidth slotProps={dlgSlotProps}>
+          <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
+            ✨ Оформленный вариант заметки
+            <Tooltip title="закрыть">
+              <IconButton size="small" onClick={() => setFmtOpen(false)}
+                sx={{ position: "absolute", right: 12, top: 10,
+                      color: "text.secondary" }}>
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          </DialogTitle>
+          <DialogContent dividers
+                         sx={{ "& .md": { maxHeight: "none" } }}>
+            <Markdown text={t.output || ""} />
+          </DialogContent>
+          <DialogActions>
+            <Button size="small" onClick={() => setFmtOpen(false)}
+                    sx={{ textTransform: "none" }}>
+              Отмена
+            </Button>
+            <Button size="small" variant="contained" onClick={fmtApply}
+                    sx={{ textTransform: "none" }}>
+              Применить — заменить текст (исходник вернётся в «вариант»)
+            </Button>
+          </DialogActions>
         </Dialog>
         <Dialog open={outOpen} onClose={() => setOutOpen(false)}
                 maxWidth="md" fullWidth slotProps={dlgSlotProps}>

@@ -905,6 +905,135 @@ def _api_task_continue():
     return jsonify({"ok": True, "stem": stem})
 
 
+def _fmt_worker(stem: str) -> None:
+    """Фоновый прогон «✨ оформить»: отдельный devin-task (свежая
+    сессия — пин темы и --continue не нужны) переоформляет текст
+    заметки в markdown. Результат кладём в tasks.output (status
+    остаётся note) — фронт ловит его поллингом и показывает
+    превью-диалог. Падения — тоже в output с префиксом «Ошибка
+    оформления:», apply их отвергает."""
+    fstem = stem + ".fmt"
+    try:
+        row = task_row(stem) or {}
+        tproj = row.get("project")
+        task_user = (row.get("user") or _project_owner(tproj)
+                     or WEB_ADMIN_USER)
+        progress_dir = TASKS_DIR / ".progress"
+        progress_dir.mkdir(exist_ok=True)
+        task_file = progress_dir / f"{fstem}.task.txt"
+        out_path = progress_dir / f"{fstem}.out"
+        if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
+            workdir = PROJECTS_ROOT / tproj
+        else:
+            _, workdir = current_project()
+        task_file.write_text(
+            "Переоформи текст ниже в аккуратный markdown: заголовки, "
+            "списки, таблицы, код-блоки — где уместно. Смысл и язык "
+            "не меняй, ничего не додумывай и не дополняй. Верни "
+            "ТОЛЬКО markdown — без пояснений и без ограждения ```.\n\n"
+            + (row.get("prompt") or ""), encoding="utf-8")
+        env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
+                   TASK_STEM=fstem,
+                   DEVIN_MODEL=current_model(),
+                   DEVIN_WORKDIR=str(workdir),
+                   DEVIN_CONTINUE="false",
+                   REPLY_MODE="ask",
+                   DEVIN_PERMISSION_MODE=(
+                       os.environ.get("DEVIN_PERMISSION_MODE")
+                       or "dangerous"),
+                   DEVIN_EXPORT_FILE=str(progress_dir
+                                          / f"{fstem}.json"),
+                   GIT_AUTO_COMMIT="false",
+                   WINDSURF_API_KEY=uset("devin.api_key", task_user,
+                                         "WINDSURF_API_KEY"))
+        out_f = open(out_path, "w", errors="replace")
+        proc = subprocess.Popen(
+            [DEVIN_TASK], env=env,
+            stdout=out_f, stderr=subprocess.STDOUT,
+            text=True, start_new_session=True)
+        with _procs_lock:
+            _task_procs[fstem] = proc
+        try:
+            proc.wait(timeout=TASK_TIMEOUT)
+            body = (out_path.read_text(errors="replace")
+                    if out_path.exists() else "")
+        except subprocess.TimeoutExpired:
+            kill_task(fstem)
+            proc.wait()
+            body = "Ошибка оформления: таймаут"
+        finally:
+            with _procs_lock:
+                _task_procs.pop(fstem, None)
+            out_f.close()
+        body = _clean_task_output(body).strip()
+        if not body:
+            body = ("Ошибка оформления: пустой ответ"
+                    if proc.returncode == 0
+                    else f"Ошибка оформления: exit {proc.returncode}")
+        elif proc.returncode != 0:
+            body = "Ошибка оформления: " + body[:500]
+        db_exec("UPDATE tasks SET output=%s WHERE stem=%s"
+                " AND status='note'", (body, stem))
+    except Exception as e:
+        log(f"format {stem} failed: {e}")
+        try:
+            db_exec("UPDATE tasks SET output=%s WHERE stem=%s"
+                    " AND status='note'",
+                    (f"Ошибка оформления: {e}", stem))
+        except Exception:
+            pass
+    finally:
+        db_exec("DELETE FROM kv WHERE k=%s", (f"fmt:{stem}",))
+
+
+@app.post("/api/task/format")
+@login_required
+def _api_task_format():
+    """«✨ Оформить» на заметке: фоновый devin-task переоформляет её
+    текст в markdown → tasks.output; фронт показывает превью
+    «применить/отменить». status остаётся note."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "note":
+        return jsonify({"ok": False,
+                        "error": "оформлять можно только заметку"}), 409
+    if kv_get(f"fmt:{stem}"):
+        return jsonify({"ok": False, "error": "уже оформляется"}), 409
+    kv_set(f"fmt:{stem}", "1")
+    threading.Thread(target=_fmt_worker, args=(stem,),
+                     daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/task/apply")
+@login_required
+def _api_task_apply():
+    """«Применить» оформленный вариант: меняет местами prompt и
+    output — оформленное становится текстом заметки, исходник уходит
+    в output (повторный apply возвращает его обратно)."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    if row["status"] != "note":
+        return jsonify({"ok": False,
+                        "error": "применять можно к заметке"}), 409
+    out = (row["output"] or "").strip()
+    if not out or out.startswith("Ошибка оформления"):
+        return jsonify({"ok": False,
+                        "error": "нет оформленного варианта"}), 409
+    db_exec("UPDATE tasks SET prompt=%s, output=%s WHERE stem=%s",
+            (out, row["prompt"], stem))
+    log(f"task {stem} formatted variant applied")
+    return jsonify({"ok": True})
+
+
 @app.post("/api/task/delete")
 @login_required
 def _api_task_delete():

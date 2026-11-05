@@ -144,6 +144,10 @@ def api_tasks(project: str | None = None, limit: int = 5,
             cut = out.find("### Что изменилось в репо")
             if cut != -1:
                 out = out[:cut].rstrip()
+        elif st == "note":
+            # «✨ оформить» кладёт md-вариант в output заметки —
+            # фронт показывает превью-диалог
+            out = r["output"] or ""
         try:
             o = json.loads(kv_get(f"opts:{stem}") or "{}")
         except ValueError:
