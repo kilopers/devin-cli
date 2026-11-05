@@ -180,6 +180,30 @@ const mdStyles = {
     overflowY: "auto", margin: 0, fontFamily: MONO },
 };
 
+// время выполнения задачи: от старта Devin (tasks.started — очередь
+// не считается) до готовности; у идущей тикает каждую секунду своим
+// стейтом — memo(TaskCard) при этом не перерисовывается;
+// у старых карточек без started — ничего
+function Elapsed({ started, finished }) {
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (finished || !started) return undefined;
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [started, finished]);
+  if (!started) return null;
+  const s = Math.max(0, Math.floor(
+    ((finished ? finished * 1000 : now) - started * 1000) / 1000));
+  const hh = Math.floor(s / 3600), mm = Math.floor(s / 60) % 60,
+        ss = s % 60;
+  const pad = n => String(n).padStart(2, "0");
+  return (
+    <Typography component="span" variant="caption"
+                color="text.secondary" sx={{ fontSize: 12 }}>
+      &nbsp;({hh ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`})
+    </Typography>);
+}
+
 function StatusChip({ t }) {
   const failed = t.status === "done" && t.task_status &&
     !/exit code: 0/.test(t.task_status);
@@ -618,6 +642,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             <Typography variant="caption" color="text.secondary"
                         sx={{ fontSize: 12, mr: 0.2 }}>
               {new Date(t.created * 1000).toLocaleString("ru-RU")}
+              <Elapsed started={t.started} finished={t.finished} />
             </Typography>
             <Tooltip title="откуда поставлена задача">
               <Chip size="small" variant="outlined" sx={metaSx}

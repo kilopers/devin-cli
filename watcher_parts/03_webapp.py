@@ -230,6 +230,11 @@ def api_tasks(project: str | None = None, limit: int = 5,
                       or (f"тема #{r['topic_id']}" if r["topic_id"]
                           else "")),
             "created": int(r["created"]),
+            # время выполнения: started — когда задачу взял Devin
+            # (очередь не считается), finished — конец; у старых
+            # записей может не быть — тогда время не рисуем
+            "started": int(r["started"] or 0),
+            "finished": int(r["finished"] or 0),
             # место карточки в колонке канбана (dnd-перестановка)
             "sort": float(r.get("sort") or 0),
             "prompt": (r["prompt"] or "")[:2000],
