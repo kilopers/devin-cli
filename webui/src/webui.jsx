@@ -392,8 +392,18 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     ["Стоимость", costStr],
     ["Токены", st.prompt_tokens != null || st.completion_tokens != null
       ? `prompt ${fmtNum(st.prompt_tokens)}` +
-        ` (кэш ${fmtNum(st.cached_tokens)})` +
-        ` + completion ${fmtNum(st.completion_tokens)}` : null],
+        ` (кэш ${fmtNum(st.cached_tokens)}` +
+        (st.prompt_tokens
+          ? ` · ${Math.round((st.cached_tokens || 0) /
+                             st.prompt_tokens * 100)}%`
+          : "") + `)` +
+        ` + completion ${fmtNum(st.completion_tokens)}` : null,
+      "prompt — весь вход сессии (промпт, история диалога и выводы " +
+      "инструментов) на каждом шаге; кэш — часть prompt, которую " +
+      "провайдер взял из prefix-кэша (входит в prompt, считается " +
+      "дешевле); completion — вывод модели. «Переполнения» кэша " +
+      "нет: предел только у окна контекста — при подходе к нему " +
+      "сессия компактируется и работа продолжается."],
     ["Шагов сессии", st.steps != null ? fmtNum(st.steps) : null],
     ["Сессия", st.session || null],
   ].filter(([, v]) => v != null && v !== "");
@@ -607,7 +617,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               {t.name}
             </Typography>
             <Box sx={{ mt: 1 }}>
-              {infoRows.map(([k, v]) => (
+              {infoRows.map(([k, v, hint]) => (
                 <Box key={k} sx={{ display: "flex",
                                   justifyContent: "space-between",
                                   gap: 2, py: 0.7,
@@ -615,7 +625,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                   borderColor: "divider" }}>
                   <Typography variant="body2" color="text.secondary"
                               sx={{ fontSize: 13, flexShrink: 0 }}>
-                    {k}</Typography>
+                    {hint
+                      ? <Tooltip title={hint} placement="top-start">
+                          <Box component="span"
+                               sx={{ borderBottom: "1px dotted",
+                                     borderColor: "text.secondary",
+                                     cursor: "help" }}>{k}</Box>
+                        </Tooltip>
+                      : k}</Typography>
                   <Typography variant="body2"
                               sx={{ fontSize: 12.5, fontFamily: MONO,
                                     textAlign: "right",
