@@ -9,6 +9,7 @@ import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Chip from "@mui/material/Chip";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
@@ -88,9 +89,11 @@ export default function Composer({ project, sttStatus, toast, onSent,
                    borderRadius: "7px",
                    "& .MuiChip-label": { px: "9px" } };
   const attChip = att && (
-    <Chip size="small" icon={<AttachFileIcon />} label={att.name}
-          sx={chipSx} color="primary" variant="outlined"
-          onDelete={() => setAtt(null)} title="прикреплённый файл — убрать" />);
+    <Tooltip title="прикреплённый файл — крестик убирает">
+      <Chip size="small" icon={<AttachFileIcon />} label={att.name}
+            sx={chipSx} color="primary" variant="outlined"
+            onDelete={() => setAtt(null)} />
+    </Tooltip>);
   const chips = (
     <Box sx={{ display: "flex", gap: 0.7, flexWrap: "nowrap",
                justifyContent: "flex-start", overflowX: "auto", px: 0.5,
@@ -98,25 +101,31 @@ export default function Composer({ project, sttStatus, toast, onSent,
                "& .MuiChip-root": { flexShrink: 0 },
                "&::-webkit-scrollbar": { display: "none" } }}>
       {attChip}
-      <Chip size="small" clickable sx={chipSx}
-        label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
-        color={ov.mode ? "primary" : "default"}
-        variant={ov.mode ? "filled" : "outlined"}
-        onClick={() => setOv({ ...ov,
-          mode: curMode === "ask" ? "code" : "ask" })}
-        title={"режим следующей задачи" + (ov.mode ? " (разово)" : "")} />
-      <Chip size="small" clickable sx={chipSx}
-        label={curAc === "1" ? "Автокоммит" : "Ручной коммит"}
-        color={ov.ac ? "primary" : "default"}
-        variant={ov.ac ? "filled" : "outlined"}
-        onClick={() => setOv({ ...ov, ac: curAc === "1" ? "0" : "1" })}
-        title={"коммит после задачи" + (ov.ac ? " (разово)" : "")} />
-      <Chip size="small" clickable sx={chipSx}
-        label={"Модель: " + (curModel || "—")}
-        color={ov.model ? "primary" : "default"}
-        variant={ov.model ? "filled" : "outlined"}
-        onClick={e => setMAnchor(e.currentTarget)}
-        title={"модель следующей задачи" + (ov.model ? " (разово)" : "")} />
+      <Tooltip title={"режим следующей задачи" +
+                      (ov.mode ? " — переопределено разово" : "")}>
+        <Chip size="small" clickable sx={chipSx}
+          label={curMode === "ask" ? "💬 Спросить" : "🛠 Код"}
+          color={ov.mode ? "primary" : "default"}
+          variant={ov.mode ? "filled" : "outlined"}
+          onClick={() => setOv({ ...ov,
+            mode: curMode === "ask" ? "code" : "ask" })} />
+      </Tooltip>
+      <Tooltip title={"коммит после задачи" +
+                      (ov.ac ? " — переопределено разово" : "")}>
+        <Chip size="small" clickable sx={chipSx}
+          label={curAc === "1" ? "Автокоммит" : "Ручной коммит"}
+          color={ov.ac ? "primary" : "default"}
+          variant={ov.ac ? "filled" : "outlined"}
+          onClick={() => setOv({ ...ov, ac: curAc === "1" ? "0" : "1" })} />
+      </Tooltip>
+      <Tooltip title={"модель следующей задачи" +
+                      (ov.model ? " — переопределено разово" : "")}>
+        <Chip size="small" clickable sx={chipSx}
+          label={"Модель: " + (curModel || "—")}
+          color={ov.model ? "primary" : "default"}
+          variant={ov.model ? "filled" : "outlined"}
+          onClick={e => setMAnchor(e.currentTarget)} />
+      </Tooltip>
       <Menu anchorEl={mAnchor} open={!!mAnchor}
             onClose={() => setMAnchor(null)}>
         {models.map(m => (
@@ -362,49 +371,63 @@ export default function Composer({ project, sttStatus, toast, onSent,
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.8,
                      justifyContent: "flex-end", flexWrap: "nowrap" }}>
             {fileInput}
-            <IconButton size="small" title="прикрепить файл к задаче"
-                        onClick={() => fileRef.current?.click()}>
-              <AttachFileIcon />
-            </IconButton>
-            <IconButton size="small" title="обсудить идею с Devin"
-                        onClick={() => setDiscussOpen(true)}>
-              <PsychologyIcon />
-            </IconButton>
-            <IconButton onClick={micClick} size="small"
-                        color={recording ? "error" : "default"}
-                        title="надиктовать голосом"
-                        sx={recording
-                          ? { animation: "pulse 1s infinite",
-                              "@keyframes pulse":
-                                { "50%": { opacity: 0.35 } } }
-                          : {}}>
-              {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
-            </IconButton>
+            <Tooltip title="прикрепить файл к задаче">
+              <IconButton size="small"
+                          onClick={() => fileRef.current?.click()}>
+                <AttachFileIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="обсудить идею с Devin">
+              <IconButton size="small"
+                          onClick={() => setDiscussOpen(true)}>
+                <PsychologyIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={recognizing ? "распознаю запись…"
+                            : recording ? "остановить запись"
+                            : "надиктовать голосом"}>
+              <IconButton onClick={micClick} size="small"
+                          color={recording ? "error" : "default"}
+                          sx={recording
+                            ? { animation: "pulse 1s infinite",
+                                "@keyframes pulse":
+                                  { "50%": { opacity: 0.35 } } }
+                            : {}}>
+                {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+              </IconButton>
+            </Tooltip>
             {lastAudio && !recognizing && (
-              <Button size="small" variant="outlined" color="warning"
-                      startIcon={<RefreshIcon sx={{ fontSize: 15 }} />}
-                      onClick={() => sendAudio(lastAudio)}
-                      title="отправить запись на распознавание ещё раз"
-                      sx={{ textTransform: "none", whiteSpace: "nowrap",
-                            fontSize: 12, px: 1, minWidth: 0 }}>
-                ещё раз
-              </Button>
+              <Tooltip title="отправить запись на распознавание ещё раз">
+                <Button size="small" variant="outlined" color="warning"
+                        startIcon={<RefreshIcon sx={{ fontSize: 15 }} />}
+                        onClick={() => sendAudio(lastAudio)}
+                        sx={{ textTransform: "none", whiteSpace: "nowrap",
+                              fontSize: 12, px: 1, minWidth: 0 }}>
+                  ещё раз
+                </Button>
+              </Tooltip>
             )}
-            <Typography variant="caption" color="text.secondary"
-                        sx={{ minWidth: 38, whiteSpace: "nowrap",
-                              textAlign: "center" }}>
-              {shownStat}
-            </Typography>
-            <Button variant="contained" size="small" onClick={send}
+            <Tooltip title="счётчик символов / статус диктовки">
+              <Typography variant="caption" color="text.secondary"
+                          sx={{ minWidth: 38, whiteSpace: "nowrap",
+                                textAlign: "center" }}>
+                {shownStat}
+              </Typography>
+            </Tooltip>
+            <Tooltip title="отправить — Ctrl+Enter">
+              <span>
+                <Button variant="contained" size="small" onClick={send}
                     disabled={busy} endIcon={<SendIcon sx={{fontSize: 15}} />}
                     sx={{ whiteSpace: "nowrap", px: 2, minWidth: 0,
                           height: 36, borderRadius: "9px",
                           textTransform: "none", fontWeight: 600,
                           boxShadow: "none",
                           "&:hover": { boxShadow: "none" } }}>
-              {collect ? "+ В задачу"
-                       : (curMode === "ask" ? "Спросить" : "В работу")}
-            </Button>
+                  {collect ? "+ В задачу"
+                           : (curMode === "ask" ? "Спросить" : "В работу")}
+                </Button>
+              </span>
+            </Tooltip>
           </Box>
         </Grid>
       </Grid>

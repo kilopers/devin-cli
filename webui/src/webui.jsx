@@ -264,7 +264,12 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     if (!text.trim()) return;
     setWorkBusy(true);
     try {
-      const body = { text, mode: "code" };
+      // один и тот же вопрос голым текстом Devin снова читает как
+      // вопрос — добавляем указание реализовать его предложение
+      const body = {
+        text: "Давай сделаем по твоему предложению из предыдущего "
+              + "ответа — реализуй его.\n\nИсходный вопрос:\n" + text,
+        mode: "code" };
       if (t.project) body.project = t.project;
       if (t.tid) body.topic = String(t.tid);
       const d = await post("/api/tasks", body);
@@ -510,11 +515,13 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 maxWidth="xs" fullWidth slotProps={dlgSlotProps}>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             Статистика задачи
-            <IconButton size="small" onClick={() => setInfo(false)}
-              sx={{ position: "absolute", right: 12, top: 10,
-                    color: "text.secondary" }}>
-              <CloseIcon sx={{ fontSize: 18 }} />
-            </IconButton>
+            <Tooltip title="закрыть">
+              <IconButton size="small" onClick={() => setInfo(false)}
+                sx={{ position: "absolute", right: 12, top: 10,
+                      color: "text.secondary" }}>
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
           </DialogTitle>
           <DialogContent sx={{ pb: 2.5 }}>
             <Typography variant="caption" color="text.secondary"
@@ -578,11 +585,13 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                             textTransform: "none", whiteSpace: "nowrap" }}>
                 {workBusy ? "отправляю…" : "▶ в работу"}
               </Button>)}
-            <IconButton size="small" onClick={() => setOutOpen(false)}
-              sx={{ position: "absolute", right: 12, top: 10,
-                    color: "text.secondary" }}>
-              <CloseIcon sx={{ fontSize: 18 }} />
-            </IconButton>
+            <Tooltip title="закрыть">
+              <IconButton size="small" onClick={() => setOutOpen(false)}
+                sx={{ position: "absolute", right: 12, top: 10,
+                      color: "text.secondary" }}>
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
           </DialogTitle>
           <DialogContent dividers
                          sx={{ "& .md": { maxHeight: "none" } }}>
@@ -649,18 +658,21 @@ function ProjectSelect({ projects, current, onChange, onAdd,
                   sx={{ display: "flex", alignItems: "center" }}>
           <WsDot color={wsColor(p)} />
           <Box sx={{ flex: 1 }}>{p}</Box>
-          <IconButton size="small"
-            title="перенести в пространство"
-            onClick={e => { e.stopPropagation();
-                            setWsMenu({ a: e.currentTarget, p }); }}
-            sx={{ p: 0.2, ml: 1 }}>
-            <WorkspacesIcon sx={{ fontSize: 15 }} />
-          </IconButton>
-          <IconButton size="small" title="настройки проекта"
-            onClick={e => { e.stopPropagation(); onSettings?.(p); }}
-            sx={{ p: 0.2 }}>
-            <TuneIcon sx={{ fontSize: 15 }} />
-          </IconButton>
+          <Tooltip title="перенести в пространство">
+            <IconButton size="small"
+              onClick={e => { e.stopPropagation();
+                              setWsMenu({ a: e.currentTarget, p }); }}
+              sx={{ p: 0.2, ml: 1 }}>
+              <WorkspacesIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="настройки проекта">
+            <IconButton size="small"
+              onClick={e => { e.stopPropagation(); onSettings?.(p); }}
+              sx={{ p: 0.2 }}>
+              <TuneIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
         </MenuItem>];
       })}
       <MenuItem value="__add__" sx={{ color: "#5e6ad2", fontSize: 13 }}>
@@ -1180,10 +1192,12 @@ export default function App() {
              onToggle={() => togglePanel("files")}
              icon={<FolderOpenIcon sx={{ fontSize: 16, ml: 0.5 }} />}
              right={
-               <IconButton size="small" title="обновить"
-                           onClick={() => setTreeVer(v => v + 1)}>
-                 <RefreshIcon sx={{ fontSize: 16 }} />
-               </IconButton>}>
+               <Tooltip title="обновить список файлов">
+                 <IconButton size="small"
+                             onClick={() => setTreeVer(v => v + 1)}>
+                   <RefreshIcon sx={{ fontSize: 16 }} />
+                 </IconButton>
+               </Tooltip>}>
         <Box sx={{ px: 1 }}>
           <FileTree key={project + ":" + treeVer}
                     project={project} onError={setToast}
@@ -1293,23 +1307,26 @@ export default function App() {
                              onSettings={p => setPSetOpen(p)} />
             )}
             {multiMode && (
-              <Button size="small" variant="outlined" color="inherit"
-                disabled={!project}
-                onClick={() => post("/api/project/settings",
-                    { project, fast: fast ? "0" : "1" }).then(d => {
-                  setToast(d.ok
-                    ? (fast ? "Обычный режим" : "Быстрый режим — голос сразу в работу")
-                    : "Ошибка: " + (d.error || "?"));
-                  if (d.ok) setFast(!fast);
-                }).catch(() => setToast("Сеть: не сохранил режим"))}
-                startIcon={fast ? <FlashOnIcon /> : <FlashOffIcon />}
-                title="Быстрый: распознанный голос сразу уходит в задачу"
-                sx={{ display: { xs: "none", md: "inline-flex" },
-                      color: fast ? "#ffd54f" : "rgba(255,255,255,.75)",
-                      borderColor: "rgba(255,255,255,.35)", fontSize: 12,
-                      textTransform: "none" }}>
+              <Tooltip title={fast
+                ? "Быстрый режим ВКЛ — распознанный голос сразу уходит в задачу"
+                : "Быстрый режим — голосовая задача без подтверждения"}>
+                <Button size="small" variant="outlined" color="inherit"
+                  disabled={!project}
+                  onClick={() => post("/api/project/settings",
+                      { project, fast: fast ? "0" : "1" }).then(d => {
+                    setToast(d.ok
+                      ? (fast ? "Обычный режим" : "Быстрый режим — голос сразу в работу")
+                      : "Ошибка: " + (d.error || "?"));
+                    if (d.ok) setFast(!fast);
+                  }).catch(() => setToast("Сеть: не сохранил режим"))}
+                  startIcon={fast ? <FlashOnIcon /> : <FlashOffIcon />}
+                  sx={{ display: { xs: "none", md: "inline-flex" },
+                        color: fast ? "#ffd54f" : "rgba(255,255,255,.75)",
+                        borderColor: "rgba(255,255,255,.35)", fontSize: 12,
+                        textTransform: "none" }}>
                 {fast ? "Быстрый" : "Обычный"}
               </Button>
+              </Tooltip>
             )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
@@ -1391,20 +1408,24 @@ export default function App() {
             </Typography>
             {(brInfo.branches || [])
               .find(b => b.current && b.dirty > 0) &&
-              <Button size="small" variant="contained" color="success"
-                      onClick={repoCommit}
+              <Tooltip title="закоммитить незакоммиченные изменения и запушить">
+                <Button size="small" variant="contained" color="success"
+                        onClick={repoCommit}
+                        sx={{ fontSize: { xs: 10, md: 11 },
+                              px: { xs: 0.8, md: 1.5 }, py: 0,
+                              height: { xs: 22, md: 24 },
+                              whiteSpace: "nowrap", minWidth: 0 }}>
+                  ✅ коммит+пуш</Button>
+              </Tooltip>}
+            <Tooltip title="переключить/создать ветку репозитория">
+              <Button size="small" variant="outlined"
+                      onClick={openBranchDlg}
                       sx={{ fontSize: { xs: 10, md: 11 },
                             px: { xs: 0.8, md: 1.5 }, py: 0,
                             height: { xs: 22, md: 24 },
                             whiteSpace: "nowrap", minWidth: 0 }}>
-                ✅ коммит+пуш</Button>}
-            <Button size="small" variant="outlined"
-                    onClick={openBranchDlg}
-                    sx={{ fontSize: { xs: 10, md: 11 },
-                          px: { xs: 0.8, md: 1.5 }, py: 0,
-                          height: { xs: 22, md: 24 },
-                          whiteSpace: "nowrap", minWidth: 0 }}>
-              🌿 ветка</Button>
+                🌿 ветка</Button>
+            </Tooltip>
           </Box>}
 
         {/* бар темы: «＋ Новая тема» → «⭐ Главная» → темы проекта;
@@ -1513,10 +1534,12 @@ export default function App() {
                     {p.attach && (
                       <Chip size="small" icon={<AttachFileIcon />}
                             label={p.attach.name} />)}
-                    <IconButton size="small" title="убрать из задачи"
-                                onClick={() => delBatchPart(i)}>
-                      <CloseIcon sx={{ fontSize: 15 }} />
-                    </IconButton>
+                    <Tooltip title="убрать из задачи">
+                      <IconButton size="small"
+                                  onClick={() => delBatchPart(i)}>
+                        <CloseIcon sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </Tooltip>
                   </Paper>))}
               </Box>)}
             <Box sx={{ display: "flex", justifyContent: "center",
@@ -1563,10 +1586,12 @@ export default function App() {
                    onToggle={() => togglePanel("files")}
                    icon={<FolderOpenIcon sx={{ fontSize: 16, ml: 0.5 }} />}
                    right={
-                     <IconButton size="small" title="обновить"
-                                 onClick={() => setTreeVer(v => v + 1)}>
-                       <RefreshIcon sx={{ fontSize: 16 }} />
-                     </IconButton>}>
+                     <Tooltip title="обновить список файлов">
+                       <IconButton size="small"
+                                   onClick={() => setTreeVer(v => v + 1)}>
+                         <RefreshIcon sx={{ fontSize: 16 }} />
+                       </IconButton>
+                     </Tooltip>}>
               <Box sx={{ px: 1 }}>
                 <FileTree key={project + ":" + treeVer}
                           project={project} onError={setToast}
