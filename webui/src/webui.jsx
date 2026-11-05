@@ -1592,7 +1592,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
   return (
     <Paper variant="outlined" sx={{ position: "relative",
       width: { xs: "82vw", sm: 300, md: 320 }, flexShrink: 0,
-      height: "100%", display: "flex", flexDirection: "column",
+      // minHeight:0 — иначе длинный список растягивает колонку
+      // (min-height:auto у flex-item'а) и всю страницу за собой;
+      // высота колонки фиксирована — крутится только список внутри
+      height: "100%", minHeight: 0,
+      display: "flex", flexDirection: "column",
       borderRadius: "12px", scrollSnapAlign: "start",
       borderColor: sel ? (boostColor(color) || accent || "primary.main")
                        : "divider",
