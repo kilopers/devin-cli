@@ -334,9 +334,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
     <Paper elevation={0} sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0, borderTop: "1px solid", borderColor: "divider" }}>
-      <Box sx={{ maxWidth: 1280, mx: "auto", px: 1.5 }}>{chips}</Box>
+      <Box sx={{ px: 1.5 }}>{chips}</Box>
       <Grid container spacing={1} sx={{
-        maxWidth: 1280, mx: "auto", px: 1.5, pb: 1.5, pt: 0,
+        px: 1.5, pb: 1.5, pt: 0,
         alignItems: "flex-end" }}>
         <Grid size={{ xs: 12, sm: "grow" }}>
           <Box sx={{ display: "flex", alignItems: "flex-end", gap: 0.5 }}>

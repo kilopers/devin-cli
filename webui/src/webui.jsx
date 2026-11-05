@@ -1416,8 +1416,9 @@ export default function App() {
           {drawer}
         </SwipeableDrawer>
 
-        <Box sx={{ flex: 1, display: "flex", width: "100%", maxWidth: 1280,
-                   mx: "auto" }}>
+        {/* десктоп: лента+сайдбар на всю ширину экрана — боковые
+            отступы дают паддинги колонок (~12–16px от краёв) */}
+        <Box sx={{ flex: 1, display: "flex", width: "100%" }}>
           {view === "models"
             ? <ModelsPage accent={accent} toast={setToast}
                           onClose={() => setView("feed")} />
