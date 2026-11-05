@@ -752,7 +752,9 @@ export default function App() {
   const conn = useConnStatus(status.version);
   // мобильная версия: двойной тап по открытой модалке закрывает её —
   // MUI-диалоги реагируют на Escape, шлём его на корни всех модалок
-  const mob = useMediaQuery(t2 => t2.breakpoints.down("md"));
+  // строкой, не коллбэком по теме: ThemeProvider рендерится ВНУТРИ
+  // App, на уровне хуков контекста темы ещё нет (t → null → падение)
+  const mob = useMediaQuery(theme.breakpoints.down("md"));
   useEffect(() => {
     if (!mob) return;
     let lastT = 0, lastX = 0, lastY = 0;
