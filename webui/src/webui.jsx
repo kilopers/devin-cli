@@ -219,7 +219,11 @@ function StatusChip({ t }) {
     ? (failed ? "error" : "info") : (t.status === "done" ? "success" : "default");
   return <Chip size="small" color={color}
     variant={starting ? "outlined" : "filled"}
-    sx={{ height: 24, fontSize: 12 }}
+    sx={{ height: 24, fontSize: 12,
+          // у running слева спиннер — текст визуально ближе к краю:
+          // чуть больше левый паддинг лейбла, чтобы слева/справа ровно
+          ...(t.status === "running"
+            ? { "& .MuiChip-label": { pl: "10px" } } : {}) }}
     label={failed ? "ошибка"
                 : starting ? "запускается"
                            : (STATUS_RU[t.status] || t.status)}
