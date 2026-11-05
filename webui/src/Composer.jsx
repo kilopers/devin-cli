@@ -15,6 +15,7 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Typography from "@mui/material/Typography";
 import MicIcon from "@mui/icons-material/Mic";
+import StopIcon from "@mui/icons-material/Stop";
 import MenuIcon from "@mui/icons-material/Menu";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
@@ -414,7 +415,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                                 sx={{ minWidth: 0 }} />
         <BottomNavigationAction
           label={recording ? "Стоп" : "Запись"}
-          icon={recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+          icon={recording ? <StopIcon />
+            : recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
           onClick={micClick}
           sx={{ minWidth: 0,
                 color: recording ? "error.light" : "#fff",
@@ -501,7 +503,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                                 "@keyframes pulse":
                                   { "50%": { opacity: 0.35 } } }
                             : {}}>
-                {recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+                {recording ? <StopIcon />
+                  : recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
               </IconButton>
             </Tooltip>
             {lastAudio && !recognizing && (

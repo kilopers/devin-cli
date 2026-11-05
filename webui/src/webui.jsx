@@ -13,6 +13,7 @@ import {
   SwipeableDrawer, TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import MicIcon from "@mui/icons-material/Mic";
+import StopIcon from "@mui/icons-material/Stop";
 import AddIcon from "@mui/icons-material/Add";
 import { STT_RATE, resample, encodeWav } from "./audio.js";
 import PersonIcon from "@mui/icons-material/Person";
@@ -240,7 +241,8 @@ const PendOverlay = () => (
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
                                                sel, onNote, onCont, cols,
-                                               onDict, pending, pend }) {
+                                               onDict, dictOn, pending,
+                                               pend }) {
   // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
@@ -726,12 +728,15 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               </Tooltip>
             )}
             {isNote && !editing && onDict && (
-              <Tooltip title="надиктовать текст в заметку">
+              <Tooltip title={dictOn ? "стоп запись"
+                                     : "надиктовать текст в заметку"}>
                 <IconButton size="small"
                   onClick={e => { e.stopPropagation(); onDict(t); }}
                   sx={{ p: "3px",
-                        color: sel ? "error.main" : "text.secondary" }}>
-                  <MicIcon sx={{ fontSize: 15 }} />
+                        color: dictOn || sel ? "error.main"
+                                             : "text.secondary" }}>
+                  {dictOn ? <StopIcon sx={{ fontSize: 15 }} />
+                          : <MicIcon sx={{ fontSize: 15 }} />}
                 </IconButton>
               </Tooltip>
             )}
@@ -1118,11 +1123,10 @@ function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
         </Box>))}
       <Tooltip title="открыть проект в новой вкладке">
         <IconButton size="small" onClick={e => setMenu(e.currentTarget)}
-                    sx={{ color: acc, border: "1.5px dashed",
-                          borderColor: acc, borderRadius: "8px",
-                          width: 30, height: 28, mb: 0.4,
-                          flexShrink: 0 }}>
-          <AddIcon sx={{ fontSize: 17 }} />
+                    sx={{ color: acc, borderRadius: "8px",
+                          width: 26, height: 26, flexShrink: 0,
+                          "&:hover": { bgcolor: "rgba(28,33,40,.07)" } }}>
+          <AddIcon sx={{ fontSize: 19 }} />
         </IconButton>
       </Tooltip>
       <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
@@ -1569,14 +1573,17 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 : "＋ задача"}
             </Button>
             {onDict &&
-              <Tooltip title="надиктовать — текст в композер; в быстром режиме задача сразу в эту колонку">
+              <Tooltip title={dictOn
+                ? "стоп запись"
+                : "надиктовать — текст в композер; в быстром режиме задача сразу в эту колонку"}>
                 <IconButton size="small"
                   onClick={e => { e.stopPropagation(); onDict(); }}
                   sx={{ border: "1.5px dashed", borderRadius: "9px",
                         width: 32, flexShrink: 0,
                         color: dictOn ? "error.main" : btnC,
                         borderColor: dictOn ? "error.main" : btnC }}>
-                  <MicIcon sx={{ fontSize: 15 }} />
+                  {dictOn ? <StopIcon sx={{ fontSize: 15 }} />
+                          : <MicIcon sx={{ fontSize: 15 }} />}
                 </IconButton>
               </Tooltip>}
             </Box>); })()}
@@ -1964,7 +1971,9 @@ export default function App() {
           onNote={toggleNote} onCont={toggleCont}
           onStop={askStop} onCancel={askCancel}
           onDel={askDel} toast={setToast} cols={boardCols}
-          onDict={toggleDict} pending={pendSet.has(t.stem)}
+          onDict={toggleDict}
+          dictOn={dict?.kind === "note" && dict?.stem === t.stem}
+          pending={pendSet.has(t.stem)}
           pend={pendRun} />);
     });
     if (dropAt?.col === key && dropAt.idx >= list.length)
