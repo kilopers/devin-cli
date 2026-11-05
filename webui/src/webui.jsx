@@ -2887,7 +2887,12 @@ export default function App() {
                        // страница не скроллится, низ колонок
                        // прилегает к композеру)
                        flex: 1, minHeight: 0,
-                       scrollSnapType: { xs: "x proximity", md: "none" },
+                       // mandatory (не proximity): колонка
+                       // доснапливается к ближайшей границе
+                       // ВСЕГДА, даже при остановке посередине —
+                       // proximity снапит только рядом с точкой
+                       scrollSnapType: { xs: "x mandatory",
+                                         md: "none" },
                        "&::-webkit-scrollbar": { height: 8 } }}>
               {/* доска = «Главная» + темы в общем порядке (sort);
                   главная — такая же колонка: двигается, но не
