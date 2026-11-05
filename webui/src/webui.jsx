@@ -381,9 +381,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   label={t.ac === "1" ? "⚡ автокоммит"
                                       : "✋ коммит вручную"} />
             {t.topic &&
-              <Chip size="small" variant="outlined" sx={metaSx}
-                    title="тема задачи"
-                    label={"🧵 " + t.topic} />}
+              <Tooltip title="тема задачи">
+                <Chip size="small" variant="outlined" sx={metaSx}
+                      label={"🧵 " + t.topic} />
+              </Tooltip>}
             {t.tag &&
               <Chip size="small" color="primary"
                     sx={{ ...metaSx,
@@ -1379,21 +1380,27 @@ export default function App() {
                           width: { xs: "100%", md: "auto" },
                           minWidth: { md: 150 } }}>
               <MenuItem value="__new__"
-                        title="новая тема — первая задача стартует свою сессию Devin"
                         sx={{ fontSize: 12.5, color: "#5e6ad2",
                               fontWeight: 600 }}>
-                ＋ Новая тема</MenuItem>
-              <MenuItem value="main" sx={{ fontSize: 12.5 }}
-                        title="главная ветка проекта — общая сессия">
-                ⭐ Главная</MenuItem>
+                <Tooltip placement="right"
+                         title="новая тема — первая задача стартует свою сессию Devin">
+                  <span>＋ Новая тема</span>
+                </Tooltip></MenuItem>
+              <MenuItem value="main" sx={{ fontSize: 12.5 }}>
+                <Tooltip placement="right"
+                         title="главная ветка проекта — общая сессия">
+                  <span>⭐ Главная</span>
+                </Tooltip></MenuItem>
               {topics.map(t => (
                 <MenuItem key={t.id} value={String(t.id)}
-                          title={t.has_session
-                            ? "🔁 закреплённая сессия — следующая задача продолжит её"
-                            : "сессии ещё нет — первая задача темы стартует свою"}
                           sx={{ fontSize: 12.5 }}>
-                  {t.name || `тема #${t.id}`}
-                  {t.has_session ? " · 🔁" : ""}
+                  <Tooltip placement="right"
+                           title={t.has_session
+                             ? "🔁 закреплённая сессия — следующая задача продолжит её"
+                             : "сессии ещё нет — первая задача темы стартует свою"}>
+                    <span>{t.name || `тема #${t.id}`}
+                      {t.has_session ? " · 🔁" : ""}</span>
+                  </Tooltip>
                 </MenuItem>))}
             </Select>
           </Box>)}
