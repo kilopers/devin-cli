@@ -209,6 +209,95 @@ function Elapsed({ started, finished }) {
     </Tooltip>);
 }
 
+// текущее VPN-подключение mihomo в шапке: чип с выбранной нодой,
+// меню-переключатель и кнопка замера задержек (пул по 6, прогресс
+// «N из M» прямо на месте иконки); mihomo API недоступен — не рисуем
+function ProxySel() {
+  const [info, setInfo] = useState(null);
+  const [delays, setDelays] = useState({});
+  const [prog, setProg] = useState(null);
+  const [anchor, setAnchor] = useState(null);
+  useEffect(() => {
+    fetch("/api/mihomo").then(r => r.json())
+      .then(d => setInfo(d.ok ? d : { on: false }))
+      .catch(() => setInfo({ on: false }));
+  }, []);
+  if (!info || !info.on) return null;
+  const ping = async () => {
+    if (prog) return;
+    const nodes = info.nodes || [];
+    setProg({ done: 0, total: nodes.length });
+    let done = 0;
+    const step = async name => {
+      try {
+        const r = await fetch("/api/mihomo/delay?name=" +
+                              encodeURIComponent(name))
+          .then(r => r.json());
+        setDelays(m => ({ ...m, [name]: r.delay || 0 }));
+      } catch { setDelays(m => ({ ...m, [name]: 0 })); }
+      done += 1;
+      setProg(p => p && { total: p.total, done });
+    };
+    for (let i = 0; i < nodes.length; i += 6)
+      await Promise.all(nodes.slice(i, i + 6).map(step));
+    setProg(null);
+  };
+  const choose = name => {
+    setAnchor(null);
+    fetch("/api/mihomo/select", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }) })
+      .then(r => r.json())
+      .then(d => d.ok && setInfo(i => ({ ...i, now: name })))
+      .catch(() => {});
+  };
+  const cur = delays[info.now];
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.3,
+               flexShrink: 0 }}>
+      <Tooltip title={`VPN mihomo «${info.group}» — нажмите, чтобы переключить ноду`}>
+        <Chip size="small" variant="outlined"
+              onClick={e => setAnchor(e.currentTarget)}
+              label={"🌐 " + info.now + (cur ? ` · ${cur} мс` : "")}
+              sx={{ height: 22, fontSize: 11, color: "#fff",
+                    borderColor: "rgba(255,255,255,.55)",
+                    maxWidth: 220,
+                    "& .MuiChip-label": { px: "8px", overflow: "hidden",
+                                          textOverflow: "ellipsis" } }} />
+      </Tooltip>
+      <Tooltip title={prog ? `опрос нод — ${prog.done} из ${prog.total}`
+                           : "замерить задержку всех нод"}>
+        <IconButton size="small" color="inherit" disabled={!!prog}
+                    onClick={ping} sx={{ p: 0.3 }}>
+          {prog
+            ? <Typography sx={{ fontSize: 10, color: "#fff",
+                                fontFamily: MONO, minWidth: 40,
+                                textAlign: "center" }}>
+                {prog.done}/{prog.total}
+              </Typography>
+            : <RefreshIcon sx={{ fontSize: 16 }} />}
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={anchor} open={!!anchor}
+            onClose={() => setAnchor(null)}
+            PaperProps={{ sx: { maxHeight: 420 } }}>
+        {(info.nodes || []).map(n =>
+          <MenuItem key={n} dense selected={n === info.now}
+                    onClick={() => choose(n)}
+                    sx={{ fontSize: 12.5, gap: 1 }}>
+            <Box component="span" sx={{ flexGrow: 1 }}>{n}</Box>
+            <Typography component="span"
+                        sx={{ fontSize: 11, fontFamily: MONO,
+                              color: delays[n] ? "success.main"
+                                               : "text.disabled" }}>
+              {delays[n] === undefined ? ""
+                 : delays[n] ? `${delays[n]} мс` : "✕"}
+            </Typography>
+          </MenuItem>)}
+      </Menu>
+    </Box>);
+}
+
 function StatusChip({ t }) {
   const failed = t.status === "done" && t.task_status &&
     !/exit code: 0/.test(t.task_status);
@@ -2622,6 +2711,7 @@ export default function App() {
                 </Button>
               </Tooltip>
             )}
+            <ProxySel />
             <Tooltip title="профиль">
               <IconButton color="inherit"
                           onClick={e => setProfMenu(e.currentTarget)}>

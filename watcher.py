@@ -131,6 +131,10 @@ MYSQL = {
 # с хоста. Стартует только при наличии config.yaml, слушает 127.0.0.1:7890.
 MIHOMO_DIR = Path(os.environ.get("MIHOMO_DIR", "/mihomo"))
 MIHOMO_PROXY = os.environ.get("MIHOMO_PROXY", "http://127.0.0.1:7890")
+# Clash REST API mihomo (external-controller) — только localhost
+# внутри контейнера, secret не нужен; селект-группа из конфига
+MIHOMO_API = os.environ.get("MIHOMO_API", "http://127.0.0.1:9090")
+MIHOMO_GROUP = os.environ.get("MIHOMO_GROUP", "Прокси")
 
 _proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 if _proxy:

@@ -1238,3 +1238,62 @@ def _sec_between(a: str | None, b: str | None):
 
 
 _JOBS_CACHE: dict = {}
+
+
+# --- mihomo: текущая нода, переключение, замер задержек -----------------
+
+def _miho(method: str, path: str, body=None, timeout: int = 6):
+    """Тонкий прокси в Clash REST API mihomo (external-controller,
+    только localhost — secret не нужен). None — API недоступен."""
+    req = urllib.request.Request(
+        MIHOMO_API + path, method=method,
+        data=(json.dumps(body).encode() if body is not None else None),
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode()
+            return json.loads(raw) if raw.strip() else {}
+    except Exception:
+        return None
+
+
+@app.get("/api/mihomo")
+@login_required
+def _api_mihomo():
+    grp = _miho("GET", "/proxies/" + urllib.parse.quote(MIHOMO_GROUP))
+    if not grp or "all" not in grp:
+        return jsonify({"ok": True, "on": False})
+    return jsonify({"ok": True, "on": True, "group": MIHOMO_GROUP,
+                    "now": grp.get("now") or "",
+                    "nodes": grp.get("all") or []})
+
+
+@app.post("/api/mihomo/select")
+@login_required
+def _api_mihomo_select():
+    d = request.get_json(silent=True) or {}
+    name = (d.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "нет имени"}), 400
+    if _miho("PUT", "/proxies/" + urllib.parse.quote(MIHOMO_GROUP),
+             {"name": name}) is None:
+        return jsonify({"ok": False,
+                        "error": "mihomo API недоступен"}), 502
+    return jsonify({"ok": True, "now": name})
+
+
+@app.get("/api/mihomo/delay")
+@login_required
+def _api_mihomo_delay():
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "нет имени"}), 400
+    res = _miho("GET",
+                "/proxies/" + urllib.parse.quote(name) +
+                "/delay?timeout=3000&url=" +
+                urllib.parse.quote(
+                    "http://www.gstatic.com/generate_204", safe=""),
+                timeout=7)
+    # 0 — таймаут/нода не ответила (фронт рисует ✕)
+    return jsonify({"ok": True,
+                    "delay": int((res or {}).get("delay") or 0)})
