@@ -1853,6 +1853,19 @@ export default function App() {
   // строкой, не коллбэком по теме: ThemeProvider рендерится ВНУТРИ
   // App, на уровне хуков контекста темы ещё нет (t → null → падение)
   const mob = useMediaQuery(theme.breakpoints.down("md"));
+  // высота фиксированного композера — доска заканчивается прямо
+  // над ним (зазор = верхнему отступу), без запаса «на глаз»:
+  // высота бара плавает (ряд чипов, мобильная навигация)
+  const [compH, setCompH] = useState(0);
+  useEffect(() => {
+    const el = document.getElementById("composer-bar");
+    if (!el) { setCompH(0); return; }
+    const f = () => setCompH(el.offsetHeight);
+    f();
+    const ro = new ResizeObserver(f);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [project, mob]);
   useEffect(() => {
     if (!mob) return;
     let lastT = 0, lastX = 0, lastY = 0;
@@ -2848,7 +2861,12 @@ export default function App() {
           : <>
           <Box sx={{ flex: 1, minWidth: 0, minHeight: 0,
                      display: "flex", flexDirection: "column",
-                     p: { xs: "8px 2px 8px", md: "16px 12px 16px" } }}>
+                     p: { xs: "8px 2px", md: "16px 12px 0" },
+                     // запас снизу = высота фиксированного композера +
+                     // зазор, равный верхнему отступу — колонки
+                     // заканчиваются ровно над баром
+                     pb: { xs: compH + 8 + "px",
+                           md: compH + 16 + "px" } }}>
             {/* канбан-доска: каждая тема — колонка со своими задачами,
                 листается влево-вправо (на мобильной — со снапом);
                 «целевая» колонка (клик по заголовку) — куда падают
@@ -2858,8 +2876,8 @@ export default function App() {
                        px: { xs: 0.6, md: 0 },
                        // доска занимает ровно оставшуюся высоту
                        // (flex-раскладка вместо жёсткого calc —
-                       // страница не скроллится, отступ снизу =
-                       // отступу сверху)
+                       // страница не скроллится, низ колонок
+                       // прилегает к композеру)
                        flex: 1, minHeight: 0,
                        scrollSnapType: { xs: "x proximity", md: "none" },
                        "&::-webkit-scrollbar": { height: 8 } }}>

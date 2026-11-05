@@ -369,7 +369,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
 
   if (mobile) return (<>
-    <Paper elevation={0} sx={{
+    <Paper elevation={0} id="composer-bar" sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0, borderTop: "1px solid", borderColor: "divider" }}>
       {chips}
@@ -451,7 +451,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
   </>);
 
   return (<>
-    <Paper elevation={0} sx={{
+    <Paper elevation={0} id="composer-bar" sx={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10,
       borderRadius: 0, borderTop: "1px solid", borderColor: "divider" }}>
       <Box sx={{ px: 1.5 }}>{chips}</Box>
