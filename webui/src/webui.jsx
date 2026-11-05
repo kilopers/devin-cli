@@ -876,15 +876,9 @@ const boostColor = hex => {
 // «Главная» не переименовывается и не удаляется — в её меню только
 // «⚙ Настройки».
 function TopicColumn({ name, sess, count, sel, accent, color, tset,
-                      eff, onSelect, onNewTask, onRename, onDelete,
+                      eff, onSelect, onNewTask, onDelete,
                       onSettings, empty, children, more, busy, onMore }) {
   const [menu, setMenu] = useState(null);
-  const [edit, setEdit] = useState(null);   // null или редактируемое имя
-  const saveEdit = () => {
-    const n = (edit || "").trim();
-    setEdit(null);
-    if (n && n !== name) onRename?.(n);
-  };
   return (
     <Paper variant="outlined" sx={{
       width: { xs: "82vw", sm: 300, md: 320 }, flexShrink: 0,
@@ -897,27 +891,15 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
            sx={{ display: "flex", alignItems: "center", gap: 0.6,
                  px: 1.1, py: 0.7, cursor: "pointer",
                  borderBottom: "1px solid", borderColor: "divider" }}>
-        {edit === null
-          ? <Tooltip title={sel
-                ? "целевая колонка — новые задачи падают сюда"
-                : "клик — новые задачи будут падать в эту тему"}>
-              <Typography variant="body2" noWrap
-                          sx={{ flex: 1, minWidth: 0, fontWeight: 600,
-                                fontSize: 13 }}>
-                {name}
-              </Typography>
-            </Tooltip>
-          : <TextField autoFocus fullWidth size="small"
-                       variant="standard" value={edit}
-                       onChange={e => setEdit(e.target.value)}
-                       onBlur={saveEdit}
-                       onClick={e => e.stopPropagation()}
-                       onKeyDown={e => {
-                         if (e.key === "Enter") {
-                           e.preventDefault(); saveEdit();
-                         } else if (e.key === "Escape") setEdit(null);
-                       }}
-                       sx={{ "& input": { fontSize: 13, py: 0 } }} />}
+        <Tooltip title={sel
+            ? "целевая колонка — новые задачи падают сюда"
+            : "клик — новые задачи будут падать в эту тему"}>
+          <Typography variant="body2" noWrap
+                      sx={{ flex: 1, minWidth: 0, fontWeight: 600,
+                            fontSize: 13 }}>
+            {name}
+          </Typography>
+        </Tooltip>
         {sess &&
           <Tooltip title="закреплённая devin-сессия — следующая задача темы продолжит её">
             <Typography component="span" sx={{ fontSize: 12,
@@ -925,7 +907,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
           </Tooltip>}
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
-        {(onRename || onDelete || onSettings) &&
+        {(onDelete || onSettings) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -941,11 +923,6 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onSettings(); }}>
                   ⚙ Настройки
-                </MenuItem>}
-              {onRename &&
-                <MenuItem dense sx={{ fontSize: 13 }}
-                  onClick={() => { setMenu(null); setEdit(name); }}>
-                  ✏️ Переименовать
                 </MenuItem>}
               {onDelete &&
                 <MenuItem dense sx={{ fontSize: 13, color: "error.main" }}
@@ -1304,15 +1281,6 @@ export default function App() {
   // «＋ Новая тема» — диалог настроек колонки (название, цвет,
   // дефолты задач); сохранение выбирает её целевой
   const createTopic = () => setTSetDlg({ kind: "create" });
-  const renameTopic = (id, name) =>
-    post("/api/topics", { action: "rename", project: projRef.current,
-                          id, name })
-      .then(d => {
-        if (d.ok)
-          setTopics(ts => ts.map(t => t.id === id ? { ...t, name } : t));
-        else setToast("Тема: " + (d.error || "?"));
-      })
-      .catch(() => setToast("Сеть: не переименовал тему"));
   const askDelTopic = (id, name) =>
     setConfirm({ kind: "topic_del", tid: id, name });
   // «＋ задача сюда» в колонке: выбирает тему целевой и фокусирует
@@ -1803,7 +1771,6 @@ export default function App() {
                   onMore={() => loadColMore(String(tp.id))}
                   onSettings={() => setTSetDlg(
                     { kind: "edit", topic: tp })}
-                  onRename={n => renameTopic(tp.id, n)}
                   onDelete={() =>
                     askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
                   {byTopic(tp.id).map(t =>
