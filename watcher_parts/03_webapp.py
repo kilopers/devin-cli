@@ -153,6 +153,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "commit_offered": bool(r["commit_offered"]),
             "tag": kv_get(f"tag:{stem}"),
             "stats": st_json,
+            "tid": r["topic_id"],
             "topic": (tmap.get(r["topic_id"])
                       or (f"тема #{r['topic_id']}" if r["topic_id"]
                           else "")),

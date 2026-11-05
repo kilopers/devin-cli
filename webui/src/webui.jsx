@@ -243,6 +243,35 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   }, [t.output, outOpen]);
   const succeeded = t.status === "done" &&
     !(t.task_status && !/exit code: 0/.test(t.task_status));
+  // «в работу»: у задачи-вопроса (reply_mode=ask) из модалки 📄 тот
+  // же промпт уходит обычной code-задачей в ту же тему. Кнопку
+  // подсвечиваем, когда в ответе Devin есть предложение реализации
+  // («если хочешь — сделаем» и т.п.)
+  const [workBusy, setWorkBusy] = useState(false);
+  const offersWork = t.mode === "ask" && succeeded &&
+    /если хочешь|могу (сделать|реализовать|добавить|исправить|помочь)|скажи[^\n.]{0,30}сделаю|давай сделаем|готов (сделать|реализовать)|предлагаю|shall i|could implement|can implement/i
+      .test(t.output || "");
+  const sendToWork = async () => {
+    if (workBusy) return;
+    let text = promptShown || "";
+    if (full === null && maybeCut) {
+      try {
+        const d = await apiJson("/api/task/" + t.stem + "/prompt");
+        if (d.ok) { setFull(d.prompt); text = d.prompt; }
+      } catch { /* сеть — отправим что есть */ }
+    }
+    if (!text.trim()) return;
+    setWorkBusy(true);
+    try {
+      const body = { text, mode: "code" };
+      if (t.project) body.project = t.project;
+      if (t.tid) body.topic = String(t.tid);
+      const d = await post("/api/tasks", body);
+      if (d.ok) { toast?.("Отправлено в работу"); setOutOpen(false); }
+      else toast?.("Ошибка: " + (d.error || "?"));
+    } catch (e) { toast?.("Сеть: " + e); }
+    setWorkBusy(false);
+  };
   // раскрывать есть что, только если текст задачи обрезан тремя
   // строками — вывод живёт в модалке 📄, «подробнее» его не дублирует
   const txtRef = useRef(null);
@@ -532,6 +561,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 maxWidth="md" fullWidth slotProps={dlgSlotProps}>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             {succeeded ? "Результат задачи" : "Вывод задачи"}
+            {t.mode === "ask" && t.status === "done" && (
+              <Button size="small"
+                      variant={offersWork ? "contained" : "outlined"}
+                      onClick={sendToWork} disabled={workBusy}
+                      sx={{ ml: 1.2, fontSize: 11.5, px: 1.2, py: 0.1,
+                            textTransform: "none", whiteSpace: "nowrap" }}>
+                {workBusy ? "отправляю…" : "▶ в работу"}
+              </Button>)}
             <IconButton size="small" onClick={() => setOutOpen(false)}
               sx={{ position: "absolute", right: 12, top: 10,
                     color: "text.secondary" }}>
