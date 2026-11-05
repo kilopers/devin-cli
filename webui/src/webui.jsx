@@ -267,10 +267,45 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                       maxHeight: "calc(100% - 16px)" } } }
     : undefined;
   const st = t.stats || {};
+  // стоимость задачи по тарифу модели: каталог /api/models (кэш,
+  // без fresh) догружаем при открытии «инфо»; цены парсятся из
+  // info.cost_summary вида «$4 / 1M Input · $0.2 / 1M Cached input ·
+  // $20 / 1M Output» (sidekick-цены fusion не трогаем — регистр букв)
+  const [prices, setPrices] = useState(null);
+  useEffect(() => {
+    if (info && prices === null)
+      apiJson("/api/models").then(d => setPrices(d.models || []))
+                            .catch(() => setPrices([]));
+  }, [info]);
+  const mdl = (prices || []).find(x => x.id === (st.model || t.model));
+  const csumm = mdl?.info?.cost_summary || "";
+  const price = kind => {
+    const m = csumm.match(
+      new RegExp(`\\$([\\d.]+)\\s*/\\s*1M\\s+${kind}`));
+    return m ? parseFloat(m[1]) : null;
+  };
+  // prompt_tokens включает закэшированную часть — считаем её по
+  // цене cached, остаток по цене input
+  const costParts = [
+    ["input", Math.max((st.prompt_tokens || 0) -
+                       (st.cached_tokens || 0), 0), price("Input")],
+    ["кэш", st.cached_tokens || 0, price("Cached input")],
+    ["output", st.completion_tokens || 0, price("Output")],
+  ].filter(([, , p]) => p != null);
+  const hasTok = st.prompt_tokens != null ||
+                 st.completion_tokens != null;
+  const cost = hasTok && costParts.length
+    ? costParts.reduce((s, [, n, p]) => s + n * p / 1e6, 0) : null;
+  const freeTier = mdl?.info?.cost_tier === "Free";
+  const costStr = freeTier ? "бесплатно"
+    : cost != null ? "≈ $" + (cost < 0.01 ? cost.toFixed(4)
+                                          : cost.toFixed(2))
+    : null;
   const infoRows = [
     ["Статус", t.task_status || null],
     ["Время выполнения", fmtDur(st.duration)],
     ["Модель", st.model || t.model || null],
+    ["Стоимость", costStr],
     ["Токены", st.prompt_tokens != null || st.completion_tokens != null
       ? `prompt ${fmtNum(st.prompt_tokens)}` +
         ` (кэш ${fmtNum(st.cached_tokens)})` +
@@ -474,6 +509,24 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </Box>
               ))}
             </Box>
+            {cost != null && (
+              <Typography variant="caption" color="text.secondary"
+                          sx={{ display: "block", mt: 1, fontSize: 11,
+                                wordBreak: "break-word" }}>
+                {costParts.map(([k, n, p]) =>
+                  `${k} ${fmtNum(n)} × $${p}/1M`).join(" + ")}
+                {csumm ? ` · тариф: ${csumm}` : ""}
+              </Typography>)}
+            {freeTier && (
+              <Typography variant="caption" color="text.secondary"
+                          sx={{ display: "block", mt: 1, fontSize: 11 }}>
+                модель бесплатная — тариф Free
+              </Typography>)}
+            {hasTok && prices !== null && cost == null && !freeTier && (
+              <Typography variant="caption" color="text.secondary"
+                          sx={{ display: "block", mt: 1, fontSize: 11 }}>
+                тариф модели неизвестен — стоимость не посчитана
+              </Typography>)}
             {st.prompt_tokens == null && st.completion_tokens == null && (
               <Typography variant="caption" color="text.secondary"
                           sx={{ display: "block", mt: 1.2 }}>
