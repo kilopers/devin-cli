@@ -618,6 +618,27 @@ def _api_task_cancel():
     return jsonify({"ok": True, "stem": stem})
 
 
+def drop_failed_task(stem: str) -> None:
+    """Стирание упавшей done-задачи (условия проверяет вызывающий):
+    запись tasks, kv-метки (tag/opts) и прогресс-файлы."""
+    db_exec("DELETE FROM tasks WHERE stem=%s", (stem,))
+    for k in (f"tag:{stem}", f"opts:{stem}"):
+        db_exec("DELETE FROM kv WHERE k=%s", (k,))
+    for p in (TASKS_DIR / ".progress" / f"{stem}.out",
+              TASKS_DIR / ".progress" / f"{stem}.json"):
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def is_failed_task(row: dict | None) -> bool:
+    """Карточка показывает 🔁/🗑 только у done-задачи с ошибкой."""
+    return bool(row) and row["status"] == "done" and \
+        bool(row["task_status"]) and \
+        "exit code: 0" not in (row["task_status"] or "")
+
+
 @app.post("/api/task/delete")
 @login_required
 def _api_task_delete():
@@ -630,19 +651,10 @@ def _api_task_delete():
     if row["status"] != "done":
         return jsonify({"ok": False,
                         "error": "удалять можно только завершённые"}), 409
-    if not row["task_status"] or \
-            "exit code: 0" in (row["task_status"] or ""):
+    if not is_failed_task(row):
         return jsonify({"ok": False,
                         "error": "удалять можно только упавшие"}), 409
-    db_exec("DELETE FROM tasks WHERE stem=%s", (stem,))
-    for k in (f"tag:{stem}", f"opts:{stem}"):
-        db_exec("DELETE FROM kv WHERE k=%s", (k,))
-    for p in (TASKS_DIR / ".progress" / f"{stem}.out",
-              TASKS_DIR / ".progress" / f"{stem}.json"):
-        try:
-            p.unlink(missing_ok=True)
-        except OSError:
-            pass
+    drop_failed_task(stem)
     log(f"web delete removed failed {stem}")
     return jsonify({"ok": True, "stem": stem})
 

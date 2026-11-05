@@ -280,7 +280,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     setWorkBusy(false);
   };
   // «повторить» на упавшей карточке: та же задача новой записью в
-  // очередь — промпт/проект/тема/режим/модель/автокоммит сохраняются
+  // очередь — промпт/проект/тема/режим/модель/автокоммит сохраняются;
+  // retry_of просит бэк стереть старую упавшую запись
   const [retryBusy, setRetryBusy] = useState(false);
   const retry = async () => {
     if (retryBusy) return;
@@ -294,14 +295,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     if (!text.trim()) return;
     setRetryBusy(true);
     try {
-      const body = { text,
+      const body = { text, retry_of: t.stem,
         ...(t.project ? { project: t.project } : {}),
         ...(t.tid ? { topic: String(t.tid) } : {}),
         ...(t.mode === "ask" ? { mode: "ask" } : {}),
         ...(t.model ? { model: t.model } : {}),
         ...(t.ac === "0" || t.ac === "1" ? { auto_commit: t.ac } : {}) };
       const d = await post("/api/tasks", body);
-      toast?.(d.ok ? "🔁 Задача поставлена в очередь"
+      toast?.(d.ok ? "🔁 Задача поставлена заново — старая удалена"
                   : "Ошибка: " + (d.error || "?"));
     } catch (e) { toast?.("Сеть: " + e); }
     setRetryBusy(false);
@@ -509,7 +510,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               </Tooltip>
             )}
             {t.status === "done" && !succeeded && (
-              <Tooltip title="повторить задачу — в очередь с теми же параметрами">
+              <Tooltip title="повторить задачу — в очередь с теми же параметрами, старая запись удалится">
                 <IconButton size="small" onClick={retry}
                   disabled={retryBusy}
                   sx={{ p: "3px", color: "text.secondary" }}>

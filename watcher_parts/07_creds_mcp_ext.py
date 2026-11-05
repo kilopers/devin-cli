@@ -298,6 +298,12 @@ def _api_task_new():
             topic_id = tid
     name = enqueue_task(text, project=project, prefix="web",
                         override_mode=mode, topic_id=topic_id)
+    # «повторить» упавшую: новая запись уже в очереди — старая
+    # (done + ошибка) стирается, если она ещё существует
+    retry_of = (body.get("retry_of") or "").strip()
+    if retry_of and is_failed_task(task_row(retry_of)):
+        drop_failed_task(retry_of)
+        log(f"retry replaced failed {retry_of} -> {name}")
     if topic_id:
         # безымянная тема → просим агента сформулировать название
         trow = db_query("SELECT name FROM topics WHERE id=%s",
