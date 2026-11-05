@@ -320,6 +320,14 @@ def _api_task_new():
                  f"http://127.0.0.1:{WEB_PORT}/api/internal/topic "
                  '{"action":"rename","id":' + str(topic_id) +
                  ',"name":"…"} с заголовком X-Internal-Token.', stem))
+    # скрытые инструкции от фронта («▶ в работу» подмешивает ответ
+    # Devin): дописываются в tasks.instr — попадают в промпт при
+    # запуске, на карточке задачи не видны
+    instr_extra = (body.get("instr") or "").strip()
+    if instr_extra:
+        stem = name.removesuffix(".txt")
+        db_exec("UPDATE tasks SET instr=CONCAT(instr,%s) WHERE stem=%s",
+                ("\n\n" + instr_extra[:8000], stem))
     o = {}
     if atts:
         o["attach"] = atts[0] if len(atts) == 1 else atts

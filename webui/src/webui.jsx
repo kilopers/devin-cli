@@ -274,6 +274,12 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
         mode: "code" };
       if (t.project) body.project = t.project;
       if (t.tid) body.topic = String(t.tid);
+      // скрыто подмешиваем сам ответ Devin (его предложение) в
+      // инструкции задачи — новая сессия уже знает, что реализовать;
+      // на карточке этот текст не светится
+      if ((t.output || "").trim())
+        body.instr = "## Результат предыдущего ответа Devin\n" +
+                     t.output.trim().slice(0, 6000);
       const d = await post("/api/tasks", body);
       if (d.ok) { toast?.("Отправлено в работу"); setOutOpen(false); }
       else toast?.("Ошибка: " + (d.error || "?"));
