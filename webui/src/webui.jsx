@@ -3002,8 +3002,10 @@ export default function App() {
             width: 290, flexShrink: 0, m: "0 12px 0 4px",
             display: { xs: "none", md: "block" },
             // высота — по ряду (низ экрана), своего calc нет:
-            // скроллится список внутри, страница — никогда
-            alignSelf: "stretch",
+            // скроллится список внутри, страница — никогда;
+            // minHeight:0 — иначе длинный список панелей сам
+            // растянет сайдбар и страницу за собой
+            alignSelf: "stretch", minHeight: 0,
             borderRadius: "14px",
             border: "1px solid", borderColor: "divider",
             overflowY: "auto", overflowX: "hidden",
