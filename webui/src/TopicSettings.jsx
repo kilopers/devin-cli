@@ -25,6 +25,8 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   // dlg: {kind:"create"} | {kind:"edit", topic} | {kind:"main", current}
   const [name, setName] = useState("");
   const [color, setColor] = useState("");
+  const [agent, setAgent] = useState("");   // движок колонки: devin/claude
+  const [agents, setAgents] = useState([]); // настроенные из /api/agents
   const [model, setModel] = useState("");
   const [mode, setMode] = useState("");
   const [ac, setAc] = useState("");
@@ -45,19 +47,28 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setName(dlg.kind === "edit" ? (dlg.topic?.name || "")
           : dlg.kind === "main" ? (dlg.current?.name || "") : "");
     setColor(src.color || "");
+    setAgent(src.agent || "");
     setModel(src.model || "");
     setMode(src.reply_mode || "");
     setAc(src.auto_commit || "");
     setFast(src.fast || "");
     setSess("main");
-    get("/api/models").then(j => setModels(j.models || []))
+    get("/api/agents").then(j =>
+      setAgents((j.agents || []).filter(a => a.configured)))
       .catch(() => {});
   }, [dlg]);
+
+  // каталог моделей — выбранного движка (пусто = движок по умолчанию)
+  useEffect(() => {
+    if (!dlg) return;
+    get("/api/models" + (agent ? "?agent=" + agent : ""))
+      .then(j => setModels(j.models || [])).catch(() => {});
+  }, [dlg, agent]);
 
   const save = async () => {
     setBusy(true);
     try {
-      const body = { project, color, model, reply_mode: mode,
+      const body = { project, color, model, agent, reply_mode: mode,
                      auto_commit: ac, fast };
       const d = await post("/api/topics",
         isCreate ? { ...body, action: "create", name: name.trim(),
@@ -157,6 +168,19 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                 </Tooltip>))}
             </Box>
           </Box>
+          {agents.length > 0 &&
+            <TextField select label="Агент" size="small" fullWidth
+                       disabled={mode === "say"}
+                       value={agent}
+                       onChange={e => { setAgent(e.target.value);
+                                        setModel(""); }}
+                       helperText="движок задач колонки; модели — по нему">
+              <MenuItem value="">— по умолчанию —</MenuItem>
+              {agents.map(a => (
+                <MenuItem key={a.key} value={a.key}>
+                  {a.key === "claude" ? "🟣 " : "🔷 "}{a.label}
+                </MenuItem>))}
+            </TextField>}
           <TextField select label="Модель" size="small" fullWidth
                      disabled={mode === "say"}
                      value={model}

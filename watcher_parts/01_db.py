@@ -716,22 +716,29 @@ def _norm_model(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 
 
-def _model_cache() -> list:
-    try:
-        return json.loads(kv_get("models_cache") or "[]")
-    except Exception:
-        return []
+def _model_cache(agent: str = "devin") -> list:
+    """Каталог моделей движка из kv models_cache:<agent>; у devin
+    исторический ключ без суффикса — читаем его как фолбэк."""
+    for k in ((f"models_cache:{agent}", "models_cache")
+              if agent == "devin" else (f"models_cache:{agent}",)):
+        try:
+            m = json.loads(kv_get(k) or "[]")
+        except Exception:
+            m = []
+        if m:
+            return m
+    return []
 
 
-def _model_uid(model: str) -> str | None:
-    """uid модели в models_cache по uid ИЛИ по лейблу: в экспорте
+def _model_uid(model: str, agent: str = "devin") -> str | None:
+    """uid модели в models_cache движка по uid ИЛИ по лейблу: в экспорте
     сессии model_name человекочитаемый («Claude Opus 5.5 Low»),
     а id каталога — «claude-opus-5-5-low». Сначала точный матч
     по id/description (нужен для лейблов вида «Fusion (…)», которые
     в uid не нормализуются), затем нормализованный."""
     if not model:
         return None
-    models = _model_cache()
+    models = _model_cache(agent)
     def names(m):
         return (m.get("id"), m.get("description"),
                 (m.get("info") or {}).get("label"),
@@ -746,16 +753,16 @@ def _model_uid(model: str) -> str | None:
     return None
 
 
-def _model_costs(model: str) -> dict | None:
-    """$/1M {input, cached, output} по каталогу models_cache
+def _model_costs(model: str, agent: str = "devin") -> dict | None:
+    """$/1M {input, cached, output} по каталогу models_cache движка
     (info.cost_summary вида «$0.5 / 1M Input · $0.1 / 1M Cached
     input · $2 / 1M Output») или None — у бесплатной модели
     summary нет, неизвестная модель тоже. Аргумент — uid или
     лейбл, резолвится через _model_uid."""
-    uid = _model_uid(model)
+    uid = _model_uid(model, agent)
     if not uid:
         return None
-    for m in _model_cache():
+    for m in _model_cache(agent):
         if m.get("id") != uid:
             continue
         cs = (m.get("info") or {}).get("cost_summary") or ""
@@ -772,8 +779,10 @@ def _model_costs(model: str) -> dict | None:
 
 def _task_cost(st: dict) -> float | None:
     """Примерная стоимость задачи по тарифу её модели:
-    (prompt−cached)·input + cached·cached + completion·output."""
-    p = _model_costs(st.get("model") or "")
+    (prompt−cached)·input + cached·cached + completion·output.
+    Каталог — движка задачи (stats.agent)."""
+    p = _model_costs(st.get("model") or "",
+                     st.get("agent") or "devin")
     if not p:
         return None
     return round(max((st.get("prompt_tokens") or 0)
@@ -913,7 +922,7 @@ def _clean_task_output(text: str) -> str:
         s = s.strip()
         if not s:
             return True
-        if s.startswith("[devin-task]"):
+        if re.match(r"\[[a-z0-9_-]+-task\]", s):
             return "WARNING:" not in s and "ERROR:" not in s
         if s.startswith(("✓ ", "Already up to date", "From http",
                          "Fetching ", "Updating ", "Fast-forward",
@@ -970,7 +979,8 @@ def run_task(task: dict) -> None:
         opts = json.loads(kv_get(f"opts:{stem}") or "{}")
     except ValueError:
         opts = {}
-    ag = agent_def(task, opts)
+    akey = agent_of(task, opts)
+    ag = AGENTS[akey]
     instr = (task.get("instr") or "").strip()
     body_txt = (instr + "\n\n---\n\n" + task["prompt"]) if instr \
         else task["prompt"]
@@ -1023,10 +1033,17 @@ def run_task(task: dict) -> None:
         elif continue_mode():
             resume_id = kv_get(f"tsess:{tproj or ''}")
     resume_id = re.sub(r"[^A-Za-z0-9_-]+", "", resume_id or "")
+    # модель: оверрайд → задача → дефолт движка; у не-devin движков
+    # чужой id (наследованный от колонки) меняем на default_model
+    model_sel = (opts.get("model") or task.get("model") or "")
+    if akey != AGENT_DEFAULT and model_sel \
+            and model_sel not in {m["id"] for m in _model_cache(akey)}:
+        model_sel = ""
+    model_sel = model_sel or ag.get("default_model") or current_model()
     env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
                TASK_STEM=stem,
-               DEVIN_MODEL=(opts.get("model") or task.get("model")
-                            or current_model()),
+               AGENT=akey,
+               DEVIN_MODEL=model_sel,
                DEVIN_WORKDIR=str(workdir),
                # оверрайд модели → новая сессия: resume игнорит --model;
                # есть пин сессии темы → резюмим ЕЁ, --continue не нужен;
@@ -1060,6 +1077,8 @@ def run_task(task: dict) -> None:
                    else "false"),
                WINDSURF_API_KEY=uset("devin.api_key", task_user,
                                      "WINDSURF_API_KEY"),
+               ANTHROPIC_API_KEY=uset("claude.api_key", task_user,
+                                      "ANTHROPIC_API_KEY"),
                GIT_USER_NAME=uset("git.name", task_user, "GIT_USER_NAME",
                                   "devin-bot"),
                GIT_USER_EMAIL=uset("git.email", task_user,
@@ -1140,9 +1159,13 @@ def run_task(task: dict) -> None:
                          task.get("started") or started_ts,
                          finished_ts)
     if tstats:
-        cost = _task_cost(tstats)
-        if cost is not None:
-            tstats["cost"] = cost
+        tstats["agent"] = akey
+        # у claude в stats уже есть реальная стоимость прогона;
+        # оценку по тарифу считаем, только если своей нет
+        if tstats.get("cost") is None:
+            cost = _task_cost(tstats)
+            if cost is not None:
+                tstats["cost"] = cost
     db_exec("UPDATE tasks SET status='done',"
             " output=CONCAT(IFNULL(output,''),%s), task_status=%s,"
             " finished=%s, stats=%s WHERE stem=%s",

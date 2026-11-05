@@ -1,6 +1,7 @@
 # --- per-user settings & secrets (kv.us:<uid> = JSON) -------------------
 
 _SECRET_KEYS = {"stt.api_key", "gemini.api_key", "devin.api_key",
+                "claude.api_key",
                 "telegram.bot_token", "stt.base_url", "gitlab.base_url",
                 "ext_key"}
 
@@ -81,6 +82,7 @@ def migrate_env_secrets() -> None:
             "yandex.folder_id": "YANDEX_FOLDER_ID",
             "yandex.lang": "YANDEX_LANG",
             "devin.api_key": "WINDSURF_API_KEY",
+            "claude.api_key": "ANTHROPIC_API_KEY",
             "telegram.bot_token": "TELEGRAM_BOT_TOKEN",
             "gitlab.base_url": "GITLAB_BASE_URL",
             "git.name": "GIT_USER_NAME", "git.email": "GIT_USER_EMAIL",

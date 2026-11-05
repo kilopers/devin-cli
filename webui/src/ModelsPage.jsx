@@ -5,8 +5,8 @@
 import { useEffect, useState } from "react";
 import {
   AppBar, Box, Card, CardContent, Chip, CircularProgress, Collapse,
-  IconButton, ListItemButton, Radio, TextField, Toolbar, Tooltip,
-  Typography,
+  IconButton, ListItemButton, MenuItem, Radio, TextField, Toolbar,
+  Tooltip, Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
@@ -83,15 +83,26 @@ const ModelCard = ({ m, current, onPick }) => (
 export default function ModelsPage({ accent, onClose, toast }) {
   const [data, setData] = useState(null);   // null = грузим
   const [current, setCurrent] = useState("");
+  const [agent, setAgent] = useState("");   // движок каталога
+  const [agents, setAgents] = useState([]); // настроенные из /api/agents
   const [q, setQ] = useState("");           // фильтр по моделям
   const [openFam, setOpenFam] = useState({}); // family -> bool
 
   useEffect(() => {
-    setData(null);
-    apiJson("/api/models?fresh=1")
+    apiJson("/api/agents").then(j => {
+      const cfg = (j.agents || []).filter(a => a.configured);
+      setAgents(cfg);
+      if (!agent && cfg.length) setAgent(j.default || cfg[0].key);
+    }).catch(() => setAgent("devin"));
+  }, []);
+
+  useEffect(() => {
+    if (agent === "") return;
+    setData(null); setOpenFam({});
+    apiJson("/api/models?fresh=1&agent=" + agent)
       .then(d => { setData(d); setCurrent(d.current || ""); })
       .catch(e => setData({ error: String(e) }));
-  }, []);
+  }, [agent]);
 
   const pick = id => post("/api/model", { model: id })
     .then(d => { if (d.ok) { setCurrent(id); toast?.("Модель: " + id); } });
@@ -119,9 +130,25 @@ export default function ModelsPage({ accent, onClose, toast }) {
               sx={{ bgcolor: accent, top: 0, zIndex: 5 }}>
         <Toolbar variant="dense">
           <SmartToyIcon sx={{ mr: 1 }} />
-          <Typography variant="h6" sx={{ flex: 1, fontSize: 16 }}>
-            Модели Devin
-          </Typography>
+          {agents.length > 1 ? (
+            <TextField select size="small" value={agent}
+                       onChange={e => setAgent(e.target.value)}
+                       sx={{ mr: 1, "& .MuiInputBase-input": {
+                              color: "#fff", fontSize: 15,
+                              fontWeight: 600, py: 0.4 },
+                            "& .MuiOutlinedInput-notchedOutline": {
+                              borderColor: "rgba(255,255,255,.35)" },
+                            "& .MuiSvgIcon-root": { color: "#fff" } }}>
+              {agents.map(a => (
+                <MenuItem key={a.key} value={a.key}>
+                  {"Модели " + a.label}</MenuItem>))}
+            </TextField>
+          ) : (
+            <Typography variant="h6" sx={{ fontSize: 16, mr: 1 }}>
+              {"Модели " + (data?.agent_label ||
+                agents[0]?.label || "Devin")}
+            </Typography>)}
+          <Box sx={{ flex: 1 }} />
           {data?.fresh &&
             <Chip size="small" label="живой список"
                   sx={{ bgcolor: "rgba(255,255,255,.2)", color: "#fff",
@@ -154,7 +181,7 @@ export default function ModelsPage({ accent, onClose, toast }) {
                      justifyContent: "center", pt: 4 }}>
             <CircularProgress size={20} />
             <Typography color="text.secondary">
-              запрашиваю список у devin…</Typography>
+              {"запрашиваю список у " + agent + "…"}</Typography>
           </Box>)}
         {data?.error &&
           <Typography color="error">{data.error}</Typography>}

@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# claude-task — run Claude Code CLI non-interactively inside Docker.
+#
+# Launcher движка «claude» реестра AGENTS — тот же env-контракт, что и у
+# devin-task (git pull -> prompt -> агент -> commit & push), поэтому
+# run_task обращается к обоим одинаково.
+#
+# Configuration (env vars):
+#   DEVIN_WORKDIR            Repo directory inside the container (default: /workspace)
+#   DEVIN_TASK_FILE          Path to the task .txt file    (default: /task/task.txt)
+#   DEVIN_MODEL              Model to use                  (default: sonnet)
+#   DEVIN_PERMISSION_MODE    dangerous/bypass -> --dangerously-skip-permissions
+#   DEVIN_INSTRUCTIONS_FILE  Optional extra instructions file appended to the prompt
+#   DEVIN_EXTRA_ARGS         Extra flags appended to the claude invocation
+#   GIT_AUTO_COMMIT          "false" -> agent leaves changes uncommitted (default: true)
+#   DEVIN_CONTINUE           "true" -> --continue (resume last session of this workdir)
+#   REPLY_MODE               "ask" -> answer-only prompt (default: code)
+#   DEVIN_EXPORT_FILE        If set, relay writes the final result JSON here
+#   ANTHROPIC_API_KEY        Auth for claude (or ~/.claude.json OAuth)
+#   GIT_REPO_URL / GIT_BRANCH / GIT_USER_NAME / GIT_USER_EMAIL / GIT_SSH_COMMAND
+set -euo pipefail
+
+log()  { printf '\033[1;34m[claude-task]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[claude-task] WARNING:\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[1;31m[claude-task] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+
+WORKDIR="${DEVIN_WORKDIR:-/workspace}"
+TASK_FILE="${DEVIN_TASK_FILE:-/task/task.txt}"
+INSTRUCTIONS_FILE="${DEVIN_INSTRUCTIONS_FILE:-}"
+MODEL="${DEVIN_MODEL:-sonnet}"
+PERMISSION_MODE="${DEVIN_PERMISSION_MODE:-dangerous}"
+AUTO_COMMIT="${GIT_AUTO_COMMIT:-true}"
+CONTINUE="${DEVIN_CONTINUE:-false}"
+REPLY_MODE="${REPLY_MODE:-code}"
+
+# --- git setup -------------------------------------------------------------
+[ -n "${GIT_USER_NAME:-}" ]  && git config --global user.name  "$GIT_USER_NAME"
+[ -n "${GIT_USER_EMAIL:-}" ] && git config --global user.email "$GIT_USER_EMAIL"
+# Mounted repos are owned by the host uid — never fail on "dubious ownership".
+git config --global --add safe.directory '*'
+# Git always connects directly — overrides *_proxy env vars (also for the agent's own git calls).
+git config --global http.proxy ''
+# Accept new host keys without prompting; don't persist them (ssh dir may be read-only).
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null}"
+
+# --- proxy ------------------------------------------------------------------
+# claude/Anthropic API honours HTTPS_PROXY — nothing to write, just log it.
+PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+if [ -n "$PROXY_URL" ]; then
+    MASKED=$(printf '%s' "$PROXY_URL" | sed -E 's|(://)[^@]*@|\1***@|')
+    log "proxy enabled: $MASKED (claude API; git stays direct)"
+fi
+
+GIT_DIRECT=(env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u NO_PROXY -u no_proxy git)
+
+# --- 1. get the repo -------------------------------------------------------
+if [ ! -d "$WORKDIR/.git" ]; then
+    if [ -n "${GIT_REPO_URL:-}" ]; then
+        log "Cloning $GIT_REPO_URL -> $WORKDIR"
+        mkdir -p "$WORKDIR"
+        "${GIT_DIRECT[@]}" clone ${GIT_BRANCH:+--branch "$GIT_BRANCH"} "$GIT_REPO_URL" "$WORKDIR"
+    else
+        die "$WORKDIR is not a git repository. Mount one with -v /path/to/repo:$WORKDIR or set GIT_REPO_URL."
+    fi
+fi
+cd "$WORKDIR"
+
+# --- 2. pull latest --------------------------------------------------------
+if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+    log "Pulling latest changes (ff-only)"
+    "${GIT_DIRECT[@]}" pull --ff-only || die "git pull --ff-only failed (history diverged?). Fix the checkout and retry."
+else
+    warn "No upstream configured for the current branch — skipping git pull."
+fi
+log "HEAD: $(git log -1 --oneline)"
+
+# --- 3. auth check ---------------------------------------------------------
+command -v claude >/dev/null 2>&1 \
+    || die "claude CLI not found (npm i -g @anthropic-ai/claude-code)"
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ ! -f /root/.claude.json ]; then
+    warn "Not authenticated. Set ANTHROPIC_API_KEY or run claude auth."
+fi
+
+# --- 4. build the prompt ---------------------------------------------------
+[ -f "$TASK_FILE" ] || die "Task file not found: $TASK_FILE (mount it with -v /path/task.txt:$TASK_FILE:ro)"
+TASK="$(cat "$TASK_FILE")"
+[ -n "$(printf '%s' "$TASK" | tr -d '[:space:]')" ] || die "Task file is empty: $TASK_FILE"
+
+EXTRA=""
+if [ -n "$INSTRUCTIONS_FILE" ] && [ -f "$INSTRUCTIONS_FILE" ]; then
+    EXTRA="$(cat "$INSTRUCTIONS_FILE")"
+fi
+
+PROMPT_FILE="$(mktemp /tmp/claude-prompt.XXXXXX)"
+if [ "$REPLY_MODE" = "ask" ]; then
+cat > "$PROMPT_FILE" <<EOF
+You are running autonomously inside a Docker container. No human can answer questions — make reasonable decisions on your own.
+
+The repository at $WORKDIR has already been pulled to the latest upstream commit.
+
+Read the code and repo docs as needed, then answer this question:
+
+<question>
+$TASK
+</question>
+${EXTRA:+
+Additional instructions:
+<instructions>
+$EXTRA
+</instructions>
+}
+Answer concisely. Do NOT modify any files, do NOT run git add/commit/push,
+do NOT run tests or builds — only read and answer.
+EOF
+else
+cat > "$PROMPT_FILE" <<EOF
+You are running autonomously inside a Docker container. No human can answer questions — make reasonable decisions on your own.
+
+The repository at $WORKDIR has already been pulled to the latest upstream commit.
+
+First, read and follow the repository's own instructions and conventions (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, .devin/, .windsurf/, .cursor/rules, README.md — whatever exists).
+
+Then complete this task:
+
+<task>
+$TASK
+</task>
+${EXTRA:+
+Additional instructions:
+<instructions>
+$EXTRA
+</instructions>
+}
+When you are done:
+1. Verify your work — run the repo's tests/linters/build if they exist.
+EOF
+if [ "$AUTO_COMMIT" = "true" ]; then
+cat >> "$PROMPT_FILE" <<EOF
+2. Stage ALL changes: git add -A
+3. Commit with a clear, conventional message.
+4. Push to the current branch's upstream with git push. Do not force-push, do not open a PR.
+EOF
+else
+cat >> "$PROMPT_FILE" <<EOF
+2. Do NOT run git add, git commit or git push — leave all changes in the
+   working tree. A human will review and commit them via Telegram.
+EOF
+fi
+cat >> "$PROMPT_FILE" <<EOF
+
+Finally, print a short summary of what you did.
+EOF
+fi
+PROMPT="$(cat "$PROMPT_FILE")"
+
+# --- 5. run claude ----------------------------------------------------------
+CONTINUE_FLAG=""
+if [ "$CONTINUE" = "true" ]; then
+    CONTINUE_FLAG="--continue"
+    log "Continue mode: resuming this project's last session"
+fi
+PERM_ARGS=()
+case "$PERMISSION_MODE" in
+    dangerous|bypass) PERM_ARGS=(--dangerously-skip-permissions) ;;
+    *)                PERM_ARGS=(--permission-mode "$PERMISSION_MODE") ;;
+esac
+log "Running claude (model=$MODEL, permission=$PERMISSION_MODE)"
+# stream-json -> relay: в .out идёт читаемый лог, финальный result-JSON —
+# в DEVIN_EXPORT_FILE (его парсит сборщик статистики движка).
+# shellcheck disable=SC2086
+claude -p "$PROMPT" \
+      --model "$MODEL" \
+      "${PERM_ARGS[@]}" \
+      --output-format stream-json --verbose \
+      $CONTINUE_FLAG \
+      ${DEVIN_EXTRA_ARGS:-} "$@" \
+    | claude-relay.py "${DEVIN_EXPORT_FILE:-}"
+
+# --- 6. safety net ---------------------------------------------------------
+if [ "$AUTO_COMMIT" != "true" ]; then
+    log "GIT_AUTO_COMMIT=false — leaving working tree as the agent left it."
+    exit 0
+fi
+if [ -n "$(git status --porcelain)" ]; then
+    warn "Working tree still has uncommitted changes:"
+    git status --short >&2
+fi
+if git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 \
+    && [ -n "$(git log '@{u}..HEAD' --oneline)" ]; then
+    warn "Unpushed commits detected — pushing as a fallback."
+    "${GIT_DIRECT[@]}" push || warn "Fallback git push failed — push manually."
+fi
+
+log "Done."

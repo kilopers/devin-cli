@@ -1154,7 +1154,9 @@ def _fmt_worker(stem: str) -> None:
                                           / f"{fstem}.json"),
                    GIT_AUTO_COMMIT="false",
                    WINDSURF_API_KEY=uset("devin.api_key", task_user,
-                                         "WINDSURF_API_KEY"))
+                                         "WINDSURF_API_KEY"),
+                   ANTHROPIC_API_KEY=uset("claude.api_key", task_user,
+                                          "ANTHROPIC_API_KEY"))
         out_f = open(out_path, "w", errors="replace")
         started_ts = time.time()
         proc = subprocess.Popen(

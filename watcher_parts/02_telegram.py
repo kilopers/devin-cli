@@ -818,6 +818,11 @@ def devin_models() -> list:
         try:
             kv_set("models_cache", json.dumps(models, ensure_ascii=False))
             kv_set("models_cache_at", str(int(time.time())))
+            # per-agent ключи каталога (рядом с legacy — их читают
+            # _model_cache('devin') и /api/models?agent=devin)
+            kv_set("models_cache:devin",
+                   json.dumps(models, ensure_ascii=False))
+            kv_set("models_cache_at:devin", str(int(time.time())))
         except Exception:
             pass
     return models
@@ -850,14 +855,22 @@ def refresh_models() -> None:
 
 
 def models_refresh_cron(interval: int = 3600) -> None:
-    """Крон каталога моделей: раз в час перечитывает
-    `devin models list --format json` (info с ценами/лимитами может
-    меняться) — тот же полный снапшот, что и меню моделей в вебе;
-    лежит в kv models_cache и в _models_cache."""
+    """Крон каталогов моделей: раз в час перечитывает списки всех
+    настроенных движков AGENTS (devin models list / Anthropic
+    /v1/models) — снапшоты лежат в kv models_cache:<agent>."""
+    global _models_cache
     while True:
         time.sleep(interval)
         try:
-            refresh_models()
+            for k, ag in AGENTS.items():
+                if not agent_configured(k):
+                    continue
+                try:
+                    got = ag["models"]()
+                    if k == "devin" and got:
+                        _models_cache = got
+                except Exception as e:
+                    log(f"models refresh {k}: {e}")
         except Exception as e:
             log(f"models refresh cron: {e}")
 

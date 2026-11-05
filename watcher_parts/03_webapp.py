@@ -66,17 +66,32 @@ def api_projects() -> dict:
             "multi": multi_mode()}
 
 
-def api_models(fresh: bool = False) -> dict:
+def api_models(fresh: bool = False, agent: str = "") -> dict:
     global _models_cache
-    # fresh — страница «Модели»: синхронный вызов `devin models list`
-    # с полной выдачей; кэш при этом тоже обновляется
-    models = devin_models() if fresh else get_models()
-    if fresh and models:
-        _models_cache = models
-    return {"models": models, "current": current_model("web"),
-            "fresh": bool(fresh),
-            # метка последнего опроса devin models list (cron/веб)
-            "at": int(kv_get("models_cache_at") or 0)}
+    # каталог движка: ?agent=claude → его список и кэш; без параметра —
+    # движок по умолчанию юзера (в шапке или первый настроенный)
+    key = agent if agent in AGENTS else agent_default(_current_user())
+    ag = AGENTS[key]
+    if key == "devin":
+        # fresh — страница «Модели»: синхронный вызов `devin models
+        # list` с полной выдачей; кэш при этом тоже обновляется
+        models = devin_models() if fresh else get_models()
+        if fresh and models:
+            _models_cache = models
+        current = current_model("web")
+    else:
+        # у остальных движков свой источник; в кэше может лежать
+        # прошлый снапшот — fresh перезапрашивает у API
+        models = ag["models"]() if fresh else _model_cache(key)
+        if not models:
+            models = ag["models"]()
+        current = ag.get("default_model") or ""
+    at_key = f"models_cache_at:{key}"
+    at = int(kv_get(at_key) or kv_get("models_cache_at") or 0) \
+        if key == "devin" else int(kv_get(at_key) or 0)
+    return {"models": models, "current": current, "agent": key,
+            "agent_label": ag["label"],
+            "fresh": bool(fresh), "at": at}
 
 
 def _tail(path: Path, limit: int = 12000) -> str:

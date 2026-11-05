@@ -79,7 +79,12 @@ ENV GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFi
 RUN mkdir -p /root/.config/devin \
     && echo '{ "version": 1, "auto_update": false }' > /root/.config/devin/config.json
 
+# Claude Code CLI — движок «claude» реестра AGENTS (launcher claude-task).
+RUN npm i -g @anthropic-ai/claude-code
+
 COPY entrypoint.sh /usr/local/bin/devin-task
+COPY claude-task.sh /usr/local/bin/claude-task
+COPY claude-relay.py /usr/local/bin/claude-relay.py
 COPY watcher.py /app/watcher.py
 COPY watcher_parts/ /app/watcher_parts/
 COPY VERSION /app/VERSION
@@ -88,7 +93,8 @@ COPY templates/ /app/templates/
 COPY static/ /app/static/
 COPY --from=webui-build /repo/static/app/ /app/static/app/
 COPY bot.py /app/bot.py
-RUN chmod +x /usr/local/bin/devin-task /app/watcher.py /app/bot.py
+RUN chmod +x /usr/local/bin/devin-task /usr/local/bin/claude-task \
+        /usr/local/bin/claude-relay.py /app/watcher.py /app/bot.py
 
 WORKDIR /workspace
 

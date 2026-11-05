@@ -28,6 +28,7 @@ import Workspaces, { Dot as WsDot } from "./Workspaces.jsx";
 import ProjectSettings from "./ProjectSettings.jsx";
 import TuneIcon from "@mui/icons-material/Tune";
 import ModelsPage from "./ModelsPage.jsx";
+import AgentSel from "./AgentSel.jsx";
 import WorkspacesIcon from "@mui/icons-material/Layers";
 import Users from "./Users.jsx";
 import PeopleIcon from "@mui/icons-material/People";
@@ -1810,6 +1811,9 @@ export default function App() {
   const [colBusy, setColBusy] = useState({});
   const [status, setStatus] = useState({});
   const [models, setModels] = useState({ models: [], current: "" });
+  // движки реестра AGENTS: список+авторизация+дефолтный (/api/agents);
+  // null — ещё грузим; !any → пустое состояние вместо доски
+  const [agents, setAgents] = useState(null);
   const [mode, setMode] = useState("code");
   const [fast, setFast] = useState(false);       // дефолт проекта (pj)
   const [fastOv, setFastOv] = useState(null);    // сессионный оверрайд
@@ -2046,6 +2050,11 @@ export default function App() {
       const d = await apiJson("/api/models");
       if (!modelFocus.current) setModels(d);
     } catch (e) {}
+  }, []);
+
+  // реестр движков: список с флагами авторизации + дефолтный юзера
+  const loadAgents = useCallback(async () => {
+    try { setAgents(await apiJson("/api/agents")); } catch (e) {}
   }, []);
 
   const refreshProjects = async () => {
@@ -2543,10 +2552,10 @@ export default function App() {
     loadProjSettings();
   }, [loadProjSettings]);
   useEffect(() => {
-    loadStatus(); loadModels();
+    loadStatus(); loadModels(); loadAgents();
     const t = setInterval(() => { loadStatus(); loadTasks(); loadModels(); }, 3000);
     return () => clearInterval(t);
-  }, [loadStatus, loadTasks, loadModels]);
+  }, [loadStatus, loadTasks, loadModels, loadAgents]);
 
   // автоскролл ленты убран: поллинг (рост output у бегущей задачи)
   // не должен дёргать положение страницы — живой вывод и так идёт
@@ -2757,6 +2766,8 @@ export default function App() {
                 </Button>
               </Tooltip>
             )}
+            <AgentSel agents={agents} onChanged={loadAgents}
+                      toast={setToast} />
             <ProxySel />
             <Tooltip title="профиль">
               <IconButton color="inherit"
@@ -2880,6 +2891,27 @@ export default function App() {
           {view === "models"
             ? <ModelsPage accent={accent} toast={setToast}
                           onClose={() => setView("feed")} />
+          : (agents && !agents.any)
+            ? <Box sx={{ flex: 1, display: "flex", alignItems: "center",
+                         justifyContent: "center", p: 2 }}>
+                <Paper variant="outlined"
+                       sx={{ p: 3, maxWidth: 420, textAlign: "center",
+                             borderRadius: 3 }}>
+                  <Typography sx={{ fontSize: 15, fontWeight: 600, mb: 1 }}>
+                    🤖 Ни один агент не настроен
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary"
+                              sx={{ mb: 2 }}>
+                    Задачи выполняют движки (Devin, Claude). Добавьте ключ
+                    хотя бы одному — выбор и авторизация в чипе 🤖 в шапке
+                    или в Настройках аккаунта.
+                  </Typography>
+                  <Button variant="contained" size="small"
+                          onClick={() => setSetOpen(true)}>
+                    Открыть настройки
+                  </Button>
+                </Paper>
+              </Box>
           : !project
             ? <Box sx={{ flex: 1, display: "flex",
                          alignItems: "center",

@@ -12,6 +12,8 @@ import { apiJson as get, post } from "./api.js";
 export default function ProjectSettings({ project, onClose, toast,
                                           onDeleted, onPreview }) {
   const [model, setModel] = useState("");
+  const [agent, setAgent] = useState("");   // движок проекта: devin/claude
+  const [agents, setAgents] = useState([]); // настроенные из /api/agents
   const [askDel, setAskDel] = useState(false);
   const [mode, setMode] = useState("");
   const [autoCommit, setAutoCommit] = useState(false);
@@ -28,20 +30,30 @@ export default function ProjectSettings({ project, onClose, toast,
     if (!project) return;
     get("/api/project/settings?project=" + encodeURIComponent(project))
       .then(j => { setModel(j.model || ""); setMode(j.reply_mode || "");
+                   setAgent(j.agent || "");
                    setAutoCommit(j.auto_commit === "1");
                    setFast(j.fast || "");
                    setMainBranch(j.main_branch || "");
                    setMcp(j.mcp || ""); setIcon(j.icon || "");
                    setColor(j.color || ""); });
-    get("/api/models").then(j => setModels(j.models || []));
+    get("/api/agents").then(j =>
+      setAgents((j.agents || []).filter(a => a.configured)))
+      .catch(() => {});
     get("/api/branches?project=" + encodeURIComponent(project))
       .then(j => setBranches((j.branches || []).map(b => b.name)));
   }, [project]);
 
+  // каталог моделей — выбранного движка (пусто = движок по умолчанию)
+  useEffect(() => {
+    if (!project) return;
+    get("/api/models" + (agent ? "?agent=" + agent : ""))
+      .then(j => setModels(j.models || [])).catch(() => {});
+  }, [project, agent]);
+
   const save = async () => {
     setBusy(true);
     const j = await post("/api/project/settings", {
-      project, model, reply_mode: mode,
+      project, model, agent, reply_mode: mode,
       auto_commit: autoCommit ? "1" : "0", fast,
       main_branch: mainBranch.trim(), mcp: mcp.trim(),
       icon: icon.trim(), color: color.trim() });
@@ -67,6 +79,18 @@ export default function ProjectSettings({ project, onClose, toast,
           Пустые значения наследуются из настроек аккаунта.
         </Typography>
         <Stack spacing={2} sx={{ mt: 1.5 }}>
+          {agents.length > 0 &&
+            <TextField select label="Агент" size="small" fullWidth
+                       value={agent}
+                       onChange={e => { setAgent(e.target.value);
+                                        setModel(""); }}
+                       helperText="движок задач проекта; модели — по нему">
+              <MenuItem value="">— по умолчанию —</MenuItem>
+              {agents.map(a => (
+                <MenuItem key={a.key} value={a.key}>
+                  {a.key === "claude" ? "🟣 " : "🔷 "}{a.label}
+                </MenuItem>))}
+            </TextField>}
           <TextField select label="Модель" size="small" fullWidth
                      value={model}
                      onChange={e => setModel(e.target.value)}

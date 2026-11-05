@@ -4,6 +4,9 @@ SETTING_FIELDS = [
     # (key, label, секрет?, подсказка, env-фолбэк)
     ("devin.api_key", "Devin API ключ", True,
      "ключ аккаунта Devin — им задачи кладутся в CLI", "WINDSURF_API_KEY"),
+    ("claude.api_key", "Claude API ключ", True,
+     "ключ Anthropic для движка Claude — console.anthropic.com",
+     "ANTHROPIC_API_KEY"),
     ("stt.provider", "STT провайдер(ы)", False,
      "gemini / openai / yandex, через запятую — fallback-цепочка",
      "STT_PROVIDER"),
@@ -49,6 +52,7 @@ def _api_project_settings_get():
         panel = {}
     return jsonify({"ok": True,
                     "model": pj_get(p, "model"),
+                    "agent": pj_get(p, "agent"),
                     "reply_mode": pj_get(p, "reply_mode"),
                     "auto_commit": pj_get(p, "auto_commit"),
                     "fast": pj_get(p, "fast"),
@@ -73,6 +77,7 @@ def _api_project_settings_set():
                   ("reply_mode", ("", "ask", "code")),
                   ("auto_commit", ("", "0", "1")),
                   ("fast", ("", "0", "1")),
+                  ("agent", ("",) + tuple(AGENTS)),
                   ("main_branch", None),
                   ("icon", None),
                   ("color", None)):
@@ -246,7 +251,38 @@ def _api_projects():
 @login_required
 def _api_models():
     return jsonify(api_models(
-        fresh=request.args.get("fresh") == "1"))
+        fresh=request.args.get("fresh") == "1",
+        agent=(request.args.get("agent") or "").strip()))
+
+
+def _agents_state(user: str) -> dict:
+    """Движки для UI: список с флагом авторизации + дефолтный юзера.
+    Ничего не настроено → feed показывает пустое состояние."""
+    items = [{"key": k, "label": ag["label"],
+              "configured": agent_configured(k, user),
+              "auth_url": ag.get("auth_url") or "",
+              "cred_field": ag.get("cred_key") or ""}
+             for k, ag in AGENTS.items()]
+    return {"agents": items, "default": agent_default(user),
+            "any": any(i["configured"] for i in items)}
+
+
+@app.get("/api/agents")
+@login_required
+def _api_agents():
+    return jsonify(_agents_state(_current_user()))
+
+
+@app.post("/api/agents")
+@login_required
+def _api_agents_set():
+    body = _req_json()
+    a = (body.get("agent") or "").strip()
+    if a and a not in AGENTS:
+        return jsonify({"ok": False, "error": "неизвестный движок"}), 400
+    # движок «по умолчанию» юзера — выбор в шапке; пусто = сброс
+    us_set(_current_user(), "agent", a)
+    return jsonify({"ok": True, "default": agent_default(_current_user())})
 
 
 DISCUSS_PROMPT = """\
