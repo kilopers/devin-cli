@@ -410,6 +410,10 @@ def enqueue_task(text: str, chat_id: int | None = None,
     stem = f"{prefix}-{pname}-{aname}-{time.strftime('%m%d-%H%M%S')}"
     # дефолты колонки канбана: задачи темы наследуют её настройки,
     # проект (pj) — запасной уровень перед юзерскими/глобальными
+    # телеграм: тема из /topic-выбора юзера (us:<u>.tg_topic:<proj>),
+    # веб всегда шлёт topic_id явно
+    if scope != "web" and topic_id is None:
+        topic_id = _tg_topic_sel(author, proj)
     tdef = _topic_defaults(proj, topic_id) if proj else {}
     model = (tdef.get("model")
              or (pj_get(proj, "model") if proj else "")
@@ -424,7 +428,7 @@ def enqueue_task(text: str, chat_id: int | None = None,
                  or tdef.get("reply_mode")
                  or (pj_get(proj, "reply_mode") if proj else "")
                  or reply_mode(scope))
-    if override_mode in ("ask", "code"):
+    if override_mode in ("ask", "code", "say"):
         rmode = override_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
@@ -475,9 +479,14 @@ def _update_pending(pid: str, entry: dict) -> None:
              entry.get("message_id"), str(pid)))
 
 
-def _pending_text(entry: dict) -> str:
+def _pending_text(entry: dict, chat_id=None) -> str:
     proj = entry.get("project")
-    head = f"Проект: {proj}\n\n" if proj else ""
+    head = ""
+    if proj:
+        actor = (kv_get(f"tg_user:{chat_id}") if chat_id else "") \
+            or WEB_ADMIN_USER
+        head = (f"Проект: {proj} · тема "
+                f"{_tg_topic_label(actor, proj)}\n\n")
     return f"{head}{entry['text']}"
 
 
@@ -488,26 +497,36 @@ def _add_to_pending(chat_id, pid: str, entry: dict, extra: str) -> None:
     try:
         tg_api("editMessageText", chat_id=chat_id,
                message_id=entry.get("message_id"),
-               text=_pending_text(entry),
-               reply_markup=_confirm_keyboard(pid))
+               text=_pending_text(entry, chat_id),
+               reply_markup=_confirm_keyboard(pid, chat_id))
     except Exception as e:
         log(f"editMessageText failed ({e}), sending a new confirm message")
         res = tg_api("sendMessage", chat_id=chat_id,
-                     text=_pending_text(entry),
-                     reply_markup=_confirm_keyboard(pid))
+                     text=_pending_text(entry, chat_id),
+                     reply_markup=_confirm_keyboard(pid, chat_id))
         entry["message_id"] = res["result"]["message_id"]
         _update_pending(pid, entry)
     log(f"pending {pid} appended ({len(entry['text'])} chars total)")
 
 
-def _confirm_keyboard(pid: str) -> dict:
-    # «Кодировать» — задача в code-режиме, «Спросить» — ask-режим,
-    # «Отмена» — выбросить. ok: оставлен для совместимости со старыми
-    # сообщениями (дефолтный режим проекта/юзера).
+def _confirm_keyboard(pid: str, chat_id=None) -> dict:
+    # «Кодировать» — code-режим, «Спросить» — ask, «Заметка» — карточка
+    # в колонку без запуска агента (say), «Отмена» — выбросить.
+    # ok: оставлен для совместимости со старыми сообщениями
+    # (дефолтный режим проекта/юзера).
+    cur = ""
+    if chat_id:
+        actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+        cur = us_get(actor, "reply_mode") or ""
+
+    def _b(txt: str, m: str, cb: str) -> dict:
+        return {"text": ("✅ " if cur == m else "") + txt,
+                "callback_data": f"{cb}:{pid}"}
     return {"inline_keyboard": [[
-        {"text": "⚙️ Кодировать", "callback_data": f"cd:{pid}"},
-        {"text": "❓ Спросить", "callback_data": f"ask:{pid}"},
-        {"text": "❌ Отмена", "callback_data": f"no:{pid}"},
+        _b("⚙️ Кодировать", "code", "cd"),
+        _b("❓ Спросить", "ask", "ask"),
+        _b("📝 Заметка", "say", "note"),
+        _b("❌ Отмена", "", "no"),
     ]]}
 
 
@@ -604,14 +623,14 @@ def reply_mode(scope: str = "telegram") -> str:
     Web-скоуп — настройка юзера (us:<uid>.reply_mode); telegram — админ."""
     if scope == "web":
         m = us_get(_current_user(), "reply_mode")
-        if m in ("ask", "code"):
+        if m in ("ask", "code", "say"):
             return m
     if scope:
         m = kv_get(f"reply_mode_{scope}")
-        if m in ("ask", "code"):
+        if m in ("ask", "code", "say"):
             return m
     m = kv_get("reply_mode")
-    if m in ("ask", "code"):
+    if m in ("ask", "code", "say"):
         return m
     return os.environ.get("REPLY_MODE", "code")
 
@@ -630,9 +649,66 @@ def send_mode_menu(chat_id, msg_id=None) -> None:
     kb = [[{"text": ("✅ " if cur == "code" else "") + "🛠 Написание кода",
             "callback_data": "mode:code"}],
           [{"text": ("✅ " if cur == "ask" else "") + "💬 Ответ на вопрос",
-            "callback_data": "mode:ask"}]]
+            "callback_data": "mode:ask"}],
+          [{"text": ("✅ " if cur == "say" else "") + "📝 Заметка",
+            "callback_data": "mode:say"}]]
     text = ("Режим ответа: «код» — выполняет задачу и меняет репо; "
-            "«вопрос» — читает код и отвечает, ничего не трогая.")
+            "«вопрос» — читает код и отвечает, ничего не трогая; "
+            "«заметка» — карточка в колонку темы, агент не запускается.")
+    if msg_id:
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=text, reply_markup={"inline_keyboard": kb})
+    else:
+        tg_api("sendMessage", chat_id=chat_id, text=text,
+               reply_markup={"inline_keyboard": kb})
+
+
+def _tg_topics(proj: str) -> list:
+    """Темы проекта для tg-меню — те же колонки, что в веб-канбане."""
+    if not proj:
+        return []
+    return db_query("SELECT id, name FROM topics WHERE project=%s"
+                    " ORDER BY sort, id", (proj,))
+
+
+def _tg_topic_sel(author: str, proj: str) -> int | None:
+    """Выбранная в телеграме тема юзера (us:<u>.tg_topic:<proj>);
+    битая/чужая ссылка → «Главная» (None)."""
+    if not proj:
+        return None
+    t = us_get(author, f"tg_topic:{proj}")
+    if not t.isdigit():
+        return None
+    tid = int(t)
+    if not db_query("SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                    (tid, proj)):
+        return None
+    return tid
+
+
+def _tg_topic_label(author: str, proj: str) -> str:
+    tid = _tg_topic_sel(author, proj)
+    if not tid:
+        return "Главная"
+    r = db_query("SELECT name FROM topics WHERE id=%s", (tid,))
+    return (r[0]["name"] if r else "") or f"тема #{tid}"
+
+
+def send_topic_menu(chat_id, msg_id=None) -> None:
+    proj = current_project()[0] if multi_mode() else None
+    if not proj:
+        tg_send(chat_id, "Сначала выбери проект: /projects")
+        return
+    actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+    cur = _tg_topic_sel(actor, proj)
+    kb = [[{"text": ("✅ " if cur is None else "") + "⭐ Главная",
+            "callback_data": "topic:0"}]]
+    for t in _tg_topics(proj)[:15]:
+        kb.append([{"text": ("✅ " if cur == t["id"] else "")
+                            + (t["name"] or f"тема #{t['id']}"),
+                    "callback_data": f"topic:{t['id']}"}])
+    text = (f"Тема проекта «{proj}»: новые задачи упадут в её "
+            "колонку канбана (по умолчанию — «Главная»).")
     if msg_id:
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                text=text, reply_markup={"inline_keyboard": kb})
@@ -992,6 +1068,7 @@ def handle_command(chat_id, text: str) -> None:
         tg_api("sendMessage", chat_id=chat_id, text="Меню:",
                reply_markup={"inline_keyboard": [[
                    {"text": "📁 Проект", "callback_data": "cmd:projects"},
+                   {"text": "🧵 Тема", "callback_data": "cmd:topic"},
                    {"text": "🧠 Модели", "callback_data": "cmd:models"},
                    {"text": "🔁 Сессия", "callback_data": "cmd:session"},
                    {"text": "💬 Режим", "callback_data": "cmd:mode"},
@@ -1028,17 +1105,34 @@ def handle_command(chat_id, text: str) -> None:
             tg_send(chat_id, "Сейчас ничего не выполняется.")
     elif cmd == "mode":
         actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
-        if arg.strip() in ("ask", "code"):
+        if arg.strip() in ("ask", "code", "say"):
             us_set(actor, "reply_mode", arg.strip())
             log(f"reply mode -> {arg.strip()} (user {actor})")
             tg_send(chat_id, f"Режим ответа: {arg.strip()}.")
         else:
             send_mode_menu(chat_id)
+    elif cmd in ("topic", "topics"):
+        if arg.strip().isdigit():
+            actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+            proj = current_project()[0] if multi_mode() else None
+            tid = int(arg.strip())
+            if tid == 0 or db_query(
+                    "SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                    (tid, proj)):
+                us_set(actor, f"tg_topic:{proj}",
+                       str(tid) if tid else "")
+                tg_send(chat_id,
+                        f"Тема: {_tg_topic_label(actor, proj)}")
+            else:
+                tg_send(chat_id, "Тема не найдена — /topic")
+        else:
+            send_topic_menu(chat_id)
     elif cmd == "status":
         tg_send(chat_id, status_text())
     else:
         tg_send(chat_id,
-                "Команды: /menu, /models, /model <name>, /mode, /status.\n"
+                "Команды: /menu, /projects, /topic, /models, "
+                "/model <name>, /mode, /status.\n"
                 "Или пришли задачу текстом/голосовым.")
 
 
@@ -1087,16 +1181,40 @@ def handle_callback(cb: dict) -> None:
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
         send_mode_menu(chat_id, msg_id)
         return
+    if data == "cmd:topic":
+        tg_api("answerCallbackQuery", callback_query_id=cb_id)
+        send_topic_menu(chat_id, msg_id)
+        return
+    if action == "topic":
+        actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+        proj = current_project()[0] if multi_mode() else None
+        if not (pid == "0" or db_query(
+                "SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                (pid, proj))):
+            tg_api("answerCallbackQuery", callback_query_id=cb_id,
+                   text="Тема не найдена")
+            return
+        us_set(actor, f"tg_topic:{proj}", "" if pid == "0" else pid)
+        name = _tg_topic_label(actor, proj)
+        log(f"tg topic -> {name} (user {actor}, project {proj})")
+        tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
+               text=f"Тема: {name} — новые задачи в её колонку.",
+               reply_markup={"inline_keyboard": []})
+        tg_api("answerCallbackQuery", callback_query_id=cb_id,
+               text=f"Тема: {name}")
+        return
     if action == "mode":
-        if pid not in ("ask", "code"):
+        if pid not in ("ask", "code", "say"):
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Неизвестный режим")
             return
         actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
         us_set(actor, "reply_mode", pid)
         log(f"reply mode -> {pid} (user {actor})")
+        label = {"code": "код", "ask": "вопрос",
+                 "say": "заметка"}.get(pid, pid)
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
-               text=f"Режим ответа: {pid}.",
+               text=f"Режим ответа: {label}.",
                reply_markup={"inline_keyboard": []})
         tg_api("answerCallbackQuery", callback_query_id=cb_id)
         return
@@ -1161,10 +1279,11 @@ def handle_callback(cb: dict) -> None:
                text="Уже обработано или устарело")
         return
 
-    if action in ("ok", "cd", "ask"):
-        rmode = {"cd": "code", "ask": "ask"}.get(action)
+    if action in ("ok", "cd", "ask", "note"):
+        rmode = {"cd": "code", "ask": "ask", "note": "say"}.get(action)
         name = enqueue_task(entry["text"], chat_id, override_mode=rmode)
-        tag = {"cd": " — режим кода", "ask": " — вопрос"}.get(action, "")
+        tag = {"cd": " — режим кода", "ask": " — вопрос",
+               "note": " — заметка, агент не запускается"}.get(action, "")
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                text=f"{entry['text']}\n\n✅ Задача {name} в очереди{tag}.",
                reply_markup={"inline_keyboard": []})
@@ -1232,8 +1351,10 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
             pid = str(upd.get("update_id") or int(time.time() * 1000))
             tg_api("editMessageText", chat_id=chat_id,
                    message_id=status_msg,
-                   text=f"Проект: {project_label()}\n\nРаспознано:\n{text}",
-                   reply_markup=_confirm_keyboard(pid))
+                   text=_pending_text(
+                       {"text": f"Распознано:\n{text}",
+                        "project": project_label()}, chat_id),
+                   reply_markup=_confirm_keyboard(pid, chat_id))
             _save_pending({"chat_id": chat_id, "text": text,
                            "project": project_label(),
                            "message_id": status_msg,
@@ -1255,8 +1376,9 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
             pid = str(upd.get("update_id") or int(time.time() * 1000))
             res = tg_api("sendMessage", chat_id=chat_id,
                          text=_pending_text(
-                             {"text": text, "project": project_label()}),
-                         reply_markup=_confirm_keyboard(pid))
+                             {"text": text, "project": project_label()},
+                             chat_id),
+                         reply_markup=_confirm_keyboard(pid, chat_id))
             _save_pending({"chat_id": chat_id, "text": text,
                            "project": project_label(),
                            "message_id": res["result"]["message_id"],
@@ -1285,6 +1407,7 @@ def notify_chat(task_stem: str, response_text: str) -> None:
 _BOT_COMMANDS = [
     {"command": "menu", "description": "меню бота"},
     {"command": "projects", "description": "выбор проекта"},
+    {"command": "topic", "description": "выбор темы проекта"},
     {"command": "models", "description": "выбор модели"},
     {"command": "session", "description": "режим сессий"},
     {"command": "stop", "description": "убить текущую задачу"},
