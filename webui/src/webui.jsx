@@ -819,7 +819,8 @@ function Panel({ icon, title, chip, right, open, onToggle, children }) {
 // композера падают в неё (выделена акцентной рамкой). «Главная»
 // (tid = null) не переименовывается и не удаляется — меню ей не даём.
 function TopicColumn({ name, sess, count, sel, accent, onSelect,
-                      onNewTask, onRename, onDelete, empty, children }) {
+                      onNewTask, onRename, onDelete, empty, children,
+                      more, busy, onMore }) {
   const [menu, setMenu] = useState(null);
   const [edit, setEdit] = useState(null);   // null или редактируемое имя
   const saveEdit = () => {
@@ -895,20 +896,25 @@ function TopicColumn({ name, sess, count, sel, accent, onSelect,
       </Box>
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8 }}>
-        {children}
-        {!React.Children.count(children) &&
-          <Typography variant="caption" color="text.secondary"
-                      align="center" sx={{ py: 2, display: "block" }}>
-            {empty || "нет задач"}
-          </Typography>}
-      </Box>
-      <Box sx={{ px: 0.8, pb: 0.8 }}>
         <Button size="small" fullWidth onClick={onNewTask}
                 sx={{ textTransform: "none", fontSize: 12, py: 0.3,
                       color: "text.secondary", border: "1px dashed",
                       borderColor: "divider", borderRadius: "8px" }}>
           ＋ задача сюда
         </Button>
+        {children}
+        {!React.Children.count(children) &&
+          <Typography variant="caption" color="text.secondary"
+                      align="center" sx={{ py: 2, display: "block" }}>
+            {empty || "нет задач"}
+          </Typography>}
+        {more &&
+          <Button size="small" fullWidth onClick={onMore}
+                  disabled={busy}
+                  sx={{ textTransform: "none", fontSize: 12, py: 0.3,
+                        color: "text.secondary" }}>
+            {busy ? "загружаю…" : "загрузить ещё"}
+          </Button>}
       </Box>
     </Paper>
   );
@@ -927,8 +933,10 @@ export default function App() {
   // не удалили ли сохранённую тему
   const topicsLoaded = useRef(false);
   const [feed, setFeed] = useState(new Map());
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
+  // «загрузить ещё» в колонках канбана: ключ (main|tid) → has_more /
+  // идёт загрузка следующей страницы
+  const [colMore, setColMore] = useState({});
+  const [colBusy, setColBusy] = useState({});
   const [status, setStatus] = useState({});
   const [models, setModels] = useState({ models: [], current: "" });
   const [mode, setMode] = useState("code");
@@ -998,11 +1006,10 @@ export default function App() {
     return () => document.removeEventListener("touchend", h);
   }, [mob]);
   const modelFocus = useRef(false), modeFocus = useRef(false);
-  const firstLoad = useRef(true);
 
+  // свежие сверху: в колонках новые задачи первыми
   const items = useMemo(() =>
-    [...feed.values()].sort((a, b) => a.created - b.created), [feed]);
-  const oldestStem = items.length ? items[0].stem : null;
+    [...feed.values()].sort((a, b) => b.created - a.created), [feed]);
   // канбан: главная колонка — задачи без темы; именованные — по tid
   const mainItems = items.filter(t => !t.tid);
   const byTopic = id => items.filter(t => t.tid === id);
@@ -1023,16 +1030,25 @@ export default function App() {
     const p = projRef.current;
     if (!p) return;
     try {
-      // канбан-доска: грузим задачи всех тем разом, колонки
-      // разбираются на фронте по t.tid
-      const d = await apiJson("/api/tasks?project=" +
-        encodeURIComponent(p) + "&topic=all&limit=20");
-      apiJson("/api/topics?project=" + encodeURIComponent(p))
-        .then(td => {
-          if (td.ok) { topicsLoaded.current = true;
-                       setTopics(td.topics || []); }
-        })
-        .catch(() => {});
+      // канбан: у каждой колонки своя выдача — по 20 свежих задач,
+      // «загрузить ещё» внизу колонки догружает её страницы
+      let tkeys = ["main"];
+      try {
+        const td = await apiJson("/api/topics?project=" +
+          encodeURIComponent(p));
+        if (td.ok) {
+          topicsLoaded.current = true;
+          setTopics(td.topics || []);
+          tkeys = ["main",
+            ...(td.topics || []).map(t => String(t.id))];
+        }
+      } catch (e) { /* темы не пришли — опрашиваем хотя бы главную */ }
+      const pages = await Promise.all(tkeys.map(k =>
+        apiJson("/api/tasks?project=" + encodeURIComponent(p) +
+          "&topic=" + k + "&limit=20")
+          .then(d => ({ k, tasks: d.tasks || [],
+                        hasMore: !!d.has_more }))
+          .catch(() => null)));
       setFeed(m => {
         // выкидываем задачи чужих проектов — ответ опроса за старый
         // проект мог прилететь уже после переключения ws и висеть вечно
@@ -1041,40 +1057,46 @@ export default function App() {
         // keep object identity for unchanged tasks (h = server-side
         // content hash) — React.memo(TaskCard) then skips re-render and
         // the feed stops flickering on identical polls
-        d.tasks.forEach(t => {
+        pages.forEach(pg => pg && pg.tasks.forEach(t => {
+          const prev = n.get(t.stem);
+          if (!prev || prev.h !== t.h) n.set(t.stem, t);
+        }));
+        return n;
+      });
+      setColMore(prev => {
+        const n = { ...prev };
+        pages.forEach(pg => { if (pg) n[pg.k] = pg.hasMore; });
+        return n;
+      });
+    } catch (e) {}
+  }, []);
+
+  // «загрузить ещё» внизу колонки: следующая страница (20) — задачи
+  // старше самой старой показанной в этой теме
+  const loadColMore = async key => {
+    const p = projRef.current;
+    if (!p || colBusy[key]) return;
+    const colItems = key === "main" ? mainItems : byTopic(+key);
+    const before = colItems.length
+      ? colItems[colItems.length - 1].stem : null;
+    if (!before) return;
+    setColBusy(s => ({ ...s, [key]: true }));
+    try {
+      const d = await apiJson("/api/tasks?project=" +
+        encodeURIComponent(p) + "&topic=" + key +
+        "&limit=20&before=" + encodeURIComponent(before));
+      setFeed(m => {
+        const n = new Map(m);
+        (d.tasks || []).forEach(t => {
           const prev = n.get(t.stem);
           if (!prev || prev.h !== t.h) n.set(t.stem, t);
         });
         return n;
       });
-      if (firstLoad.current) { setHasMore(d.has_more); firstLoad.current = false; }
+      setColMore(s => ({ ...s, [key]: !!d.has_more }));
     } catch (e) {}
-  }, []);
-
-  const loadOlder = useCallback(async () => {
-    const p = projRef.current;
-    if (!hasMore || loadingOlder || !oldestStem || !p) return;
-    setLoadingOlder(true);
-    try {
-      const prevH = document.body.scrollHeight, prevY = window.scrollY;
-      const d = await apiJson("/api/tasks?project=" + encodeURIComponent(p) +
-        "&topic=all" +
-        "&limit=20&before=" + encodeURIComponent(oldestStem));
-      setFeed(m => {
-        const n = new Map(m);
-        let got = false;
-        d.tasks.forEach(t => {
-          const prev = n.get(t.stem);
-          if (!prev || prev.h !== t.h) { n.set(t.stem, t); got = true; }
-        });
-        setHasMore(got ? d.has_more : false);
-        return n;
-      });
-      requestAnimationFrame(() =>
-        window.scrollTo(0, prevY + document.body.scrollHeight - prevH));
-    } catch (e) {}
-    setLoadingOlder(false);
-  }, [hasMore, loadingOlder, oldestStem]);
+    setColBusy(s => ({ ...s, [key]: false }));
+  };
 
   const baseVer = useRef(null);   // version the page was loaded with
   const loadStatus = useCallback(async () => {
@@ -1138,7 +1160,7 @@ export default function App() {
       post("/api/ws/active", { id: pws })
         .then(() => { loadWs(); refreshProjects(); })
         .catch(() => {});
-    setFeed(new Map()); setHasMore(false); firstLoad.current = true;
+    setFeed(new Map()); setColMore({}); setColBusy({});
     setDrawerOpen(false);
     loadTasks();
   }, [multiMode, loadTasks, wsmap, wsInfo]);
@@ -1633,16 +1655,6 @@ export default function App() {
           : <>
           <Box sx={{ flex: 1, minWidth: 0,
                      p: { xs: "8px 2px 150px", md: "16px 12px 150px" } }}>
-            {hasMore &&
-              <Box sx={{ display: "flex", justifyContent: "center",
-                         py: 0.5 }}>
-                <Button size="small" variant="text"
-                        disabled={loadingOlder}
-                        onClick={loadOlder}
-                        sx={{ fontSize: 11, textTransform: "none" }}>
-                  {loadingOlder ? "загружаю…" : "загрузить ещё"}
-                </Button>
-              </Box>}
             {/* канбан-доска: каждая тема — колонка со своими задачами,
                 листается влево-вправо (на мобильной — со снапом);
                 «целевая» колонка (клик по заголовку) — куда падают
@@ -1656,6 +1668,8 @@ export default function App() {
                 count={mainItems.length} sel={topicSel === "main"}
                 accent={accent} onSelect={() => selectTopic("main")}
                 onNewTask={() => newTaskIn("main")}
+                more={colMore.main} busy={!!colBusy.main}
+                onMore={() => loadColMore("main")}
                 empty={!items.length
                   ? "Задач пока нет — напиши первую внизу."
                   : "нет задач"}>
@@ -1672,6 +1686,9 @@ export default function App() {
                   sel={topicSel === String(tp.id)} accent={accent}
                   onSelect={() => selectTopic(String(tp.id))}
                   onNewTask={() => newTaskIn(String(tp.id))}
+                  more={colMore[String(tp.id)]}
+                  busy={!!colBusy[String(tp.id)]}
+                  onMore={() => loadColMore(String(tp.id))}
                   onRename={n => renameTopic(tp.id, n)}
                   onDelete={() =>
                     askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
@@ -1688,7 +1705,10 @@ export default function App() {
                   count={byTopic(tid).length}
                   sel={topicSel === String(tid)} accent={accent}
                   onSelect={() => selectTopic(String(tid))}
-                  onNewTask={() => newTaskIn(String(tid))}>
+                  onNewTask={() => newTaskIn(String(tid))}
+                  more={colMore[String(tid)]}
+                  busy={!!colBusy[String(tid)]}
+                  onMore={() => loadColMore(String(tid))}>
                   {byTopic(tid).map(t =>
                     <TaskCard key={t.stem} t={t} hideTopic
                               onStop={askStop} onCancel={askCancel}
