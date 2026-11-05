@@ -26,9 +26,9 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   const [ac, setAc] = useState("");
   const [fast, setFast] = useState("");
   // чья сессия у темы — только при создании, потом не меняется:
-  // "own" — своя новая, "main" — общая сессия проекта (как у
-  // «Главной»), "<id>" — прицепиться к сессии существующей темы
-  const [sess, setSess] = useState("own");
+  // "main" — общая сессия проекта (как у «Главной», дефолт),
+  // "own" — своя новая, "<id>" — прицепиться к сессии темы
+  const [sess, setSess] = useState("main");
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -44,7 +44,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setMode(src.reply_mode || "");
     setAc(src.auto_commit || "");
     setFast(src.fast || "");
-    setSess("own");
+    setSess("main");
     get("/api/models").then(j => setModels(j.models || []))
       .catch(() => {});
   }, [dlg]);
@@ -107,11 +107,11 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                        value={sess}
                        onChange={e => setSess(e.target.value)}
                        helperText="задаётся при создании, изменить нельзя">
-              <MenuItem value="own">
-                🔁 новая сессия — у темы своя
-              </MenuItem>
               <MenuItem value="main">
                 ⭐ общая — как у «Главной»
+              </MenuItem>
+              <MenuItem value="own">
+                🔁 новая сессия — у темы своя
               </MenuItem>
               {(topics || []).filter(t => t.own_session).map(t => (
                 <MenuItem key={t.id} value={String(t.id)}>
