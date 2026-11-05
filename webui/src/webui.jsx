@@ -28,8 +28,7 @@ import Users from "./Users.jsx";
 import PeopleIcon from "@mui/icons-material/People";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import FlashOnIcon from "@mui/icons-material/FlashOn";
-import FlashOffIcon from "@mui/icons-material/FlashOff";
+
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
@@ -1659,22 +1658,6 @@ export default function App() {
                                     { project: p, ws: id })
                                  .then(() => refreshProjects())}
                              onSettings={p => setPSetOpen(p)} />
-            )}
-            {multiMode && (
-              <Tooltip title={effFast
-                ? "Быстрый режим ВКЛ — распознанный голос сразу уходит в задачу (дефолт — в настройках темы)"
-                : "Быстрый режим — голосовая задача без подтверждения (дефолт — в настройках темы)"}>
-                <Button size="small" variant="outlined" color="inherit"
-                  disabled={!project}
-                  onClick={toggleFast}
-                  startIcon={effFast ? <FlashOnIcon /> : <FlashOffIcon />}
-                  sx={{ display: { xs: "none", md: "inline-flex" },
-                        color: effFast ? "#ffd54f" : "rgba(255,255,255,.75)",
-                        borderColor: "rgba(255,255,255,.35)", fontSize: 12,
-                        textTransform: "none" }}>
-                {effFast ? "Быстрый" : "Обычный"}
-              </Button>
-              </Tooltip>
             )}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
