@@ -3045,15 +3045,19 @@ export default function App() {
               внутри один общий список; block-layout — секции не сжимаются
               и не наезжают друг на друга при длинных списках */}
           <Paper elevation={0} sx={{
-            width: 290, flexShrink: 0, m: "0 12px 0 4px",
+            width: 290, flexShrink: 0, m: "-2px 12px 0 4px",
             display: { xs: "none", md: "block" },
             // высота — по ряду (низ экрана), своего calc нет:
             // скроллится список внутри, страница — никогда;
             // minHeight:0 — иначе длинный список панелей сам
             // растянет сайдбар и страницу за собой
             alignSelf: "stretch", minHeight: 0,
-            borderRadius: "14px",
+            // как выпадашки из шапки (APPBAR_MENU): плоский верх
+            // без бордера и заход под бар — сайдбар «выходит»
+            // из шапки, а не висит карточкой
+            borderRadius: "0 0 14px 14px",
             border: "1px solid", borderColor: "divider",
+            borderTop: "none",
             overflowY: "auto", overflowX: "hidden",
             // pb как у ленты: нижние пункты докручиваются выше
             // фиксированного композера (иначе уходят под него)
