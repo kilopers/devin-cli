@@ -146,6 +146,17 @@ def init_db() -> None:
         UNIQUE KEY uq_proj_name (project, name),
         KEY idx_proj (project)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # чистка после бага «первая задача темы continue'ила последнюю
+    # сессию каталога»: пин темы, равный пину «главной» её проекта или
+    # продублированный у другой темы — это чужая сессия → NULL, тема
+    # начнёт собственную
+    db_exec("""UPDATE topics t JOIN kv k
+               ON k.k=CONCAT('tsess:', t.project) AND k.v=t.session_id
+               SET t.session_id=NULL WHERE t.session_id IS NOT NULL""")
+    db_exec("""UPDATE topics t JOIN topics o
+               ON o.project=t.project AND o.session_id=t.session_id
+               AND o.id<t.id
+               SET t.session_id=NULL WHERE t.session_id IS NOT NULL""")
     if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                     " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='instructions'"
                     " AND COLUMN_NAME='project'", (MYSQL["database"],)):
@@ -765,8 +776,11 @@ def run_task(task: dict) -> None:
                             or current_model()),
                DEVIN_WORKDIR=str(workdir),
                # оверрайд модели → новая сессия: resume игнорит --model;
-               # есть пин сессии темы → резюмим ЕЁ, --continue не нужен
-               DEVIN_CONTINUE=("true" if (ext or continue_mode())
+               # есть пин сессии темы → резюмим ЕЁ, --continue не нужен;
+               # новая тема без пина НЕ continue'ит последнюю сессию
+               # каталога (это чужая тема) — стартует свою
+               DEVIN_CONTINUE=("true" if (ext or
+                                          (not tid and continue_mode()))
                                     and not opts.get("model")
                                     and not resume_id
                                else "false"),

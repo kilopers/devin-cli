@@ -326,7 +326,9 @@ Chrome предложит «Установить приложение», на iP
   Лента фильтруется по теме
   (`GET /api/tasks?topic=`), у задачи чип 🧵. У темы пиннится
   `topics.session_id` (у главной — `kv tsess:<proj>`): следующая
-  задача темы идёт с `devin --resume` в её сессии. API тем:
+  задача темы идёт с `devin --resume` в её сессии; первая задача
+  новой темы стартует свою (`--continue` для тем не применяется).
+  API тем:
   `GET /api/topics`, `POST /api/topics` (create/rename/delete).
 
 Старый статус-эндпоинт остался на `/status`. JSON-API: `GET /api/projects`,
