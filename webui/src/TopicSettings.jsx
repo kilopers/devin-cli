@@ -9,11 +9,15 @@ import {
 } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
-// светлые тона — тёмная шапка и белые карточки читаются на них хорошо
+// светлые тона — тёмная шапка и белые карточки читаются на них хорошо;
+// второй ряд — те же оттенки чуть насыщеннее (Material 100)
 export const TOPIC_COLORS = [
   "#eceffc", "#e3f2fd", "#e0f7fa", "#e0f2f1",
   "#e8f5e9", "#f1f8e9", "#fffde7", "#fff3e0",
   "#fbe9e7", "#fce4ec", "#f3e5f5", "#eceff1",
+  "#c5cae9", "#bbdefb", "#b2ebf2", "#b2dfdb",
+  "#c8e6c9", "#dcedc8", "#fff9c4", "#ffe0b2",
+  "#ffccbc", "#f8bbd0", "#e1bee7", "#cfd8dc",
 ];
 
 export default function TopicSettings({ project, dlg, onClose, onSaved,
