@@ -115,7 +115,8 @@ def api_tasks(project: str | None = None, limit: int = 5,
         if st == "running":
             out = _tail(TASKS_DIR / ".progress" / f"{stem}.out")
         elif st == "done":
-            out = r["output"] or ""
+            # старые записи ещё с тех-обвязкой — чистим при отдаче
+            out = _clean_task_output(r["output"] or "")
             # история задач ещё содержит старый diff-блок в output —
             # обрезаем при отдаче, раздел «Изменения» покрывает это
             cut = out.find("### Что изменилось в репо")

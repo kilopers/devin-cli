@@ -700,6 +700,42 @@ def claim_task() -> dict | None:
     return None
 
 
+def _clean_task_output(text: str) -> str:
+    """Срезает тех-обвязку вывода по краям: строки [devin-task]
+    (кроме WARNING/ERROR — это реальные предупреждения проекта),
+    шум git pull/push и баннер `devin auth`. В модалке 📄 и в tg
+    нужен только результат агента."""
+    if not text:
+        return text
+    lines = ANSI.sub("", text).splitlines()
+    def noise(s: str) -> bool:
+        s = s.strip()
+        if not s:
+            return True
+        if s.startswith("[devin-task]"):
+            return "WARNING:" not in s and "ERROR:" not in s
+        if s.startswith(("✓ ", "Already up to date", "From http",
+                         "Fetching ", "Updating ", "Fast-forward",
+                         "remote: ", "To http", "Branch '")):
+            return True
+        if re.match(r"(create|delete|rename) mode \d+ ", s):
+            return True
+        if re.match(r"\d+ (insertions?|deletions?|files? changed)", s):
+            return True
+        if re.match(r"\S+\s*\|\s*\d+", s):       # diffstat " file | N +-"
+            return True
+        if re.match(r"[MADRCU?! ]{1,2}\s+\S", s):  # git status --short
+            return True
+        return False
+    i = 0
+    while i < len(lines) and noise(lines[i]):
+        i += 1
+    j = len(lines)
+    while j > i and noise(lines[j - 1]):
+        j -= 1
+    return "\n".join(lines[i:j]).strip()
+
+
 def run_task(task: dict) -> None:
     stem, name = task["stem"], _task_name(task["stem"])
     log(f"processing {name}")
@@ -877,6 +913,7 @@ def run_task(task: dict) -> None:
     finally:
         mcp_restore()
 
+    body = _clean_task_output(body)
     finished_ts = time.time()
     tstats = _collect_task_stats(export_path,
                                  task.get("started") or started_ts,
