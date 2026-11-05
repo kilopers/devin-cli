@@ -1833,53 +1833,74 @@ export default function App() {
                        px: { xs: 0.6, md: 0 },
                        scrollSnapType: { xs: "x proximity", md: "none" },
                        "&::-webkit-scrollbar": { height: 8 } }}>
-              <TopicColumn sess={false}
-                name={mainDef.name ? "⭐ " + mainDef.name
-                                   : "⭐ Главная"}
-                count={mainItems.length} sel={topicSel === "main"}
-                accent={accent} color={mainDef.color}
-                tset={mainDef} eff={mainDef.eff}
-                onSelect={() => selectTopic("main")}
-                onNewTask={() => newTaskIn("main")}
-                onSettings={() => setTSetDlg(
-                  { kind: "main", current: mainDef })}
-                more={colMore.main} busy={!!colBusy.main}
-                onMore={() => loadColMore("main")}
-                empty={!items.length
-                  ? "Задач пока нет — напиши первую внизу."
-                  : "нет задач"}>
-                {mainItems.map(t =>
-                  <TaskCard key={t.stem} t={t} hideTopic
+              {/* доска = «Главная» + темы в общем порядке (sort);
+                  главная — такая же колонка: двигается, но не
+                  удаляется */}
+              {(() => {
+                const cols = [
+                  { key: "main", sort: mainDef.sort || 0 },
+                  ...topics.map(t =>
+                    ({ key: String(t.id), sort: t.sort || t.id })),
+                ].sort((a, b) => (a.sort - b.sort)
+                       || String(a.key).localeCompare(String(b.key)));
+                return cols.map((c, ci) => {
+                  const mvL = ci > 0
+                    ? () => moveTopic(c.key, "left") : null;
+                  const mvR = ci < cols.length - 1
+                    ? () => moveTopic(c.key, "right") : null;
+                  if (c.key === "main")
+                    return (
+                      <TopicColumn key="main" sess={false}
+                        name={mainDef.name ? "⭐ " + mainDef.name
+                                           : "⭐ Главная"}
+                        count={mainItems.length}
+                        sel={topicSel === "main"}
+                        accent={accent} color={mainDef.color}
+                        tset={mainDef} eff={mainDef.eff}
+                        onSelect={() => selectTopic("main")}
+                        onNewTask={() => newTaskIn("main")}
+                        onSettings={() => setTSetDlg(
+                          { kind: "main", current: mainDef })}
+                        onMoveL={mvL} onMoveR={mvR}
+                        more={colMore.main} busy={!!colBusy.main}
+                        onMore={() => loadColMore("main")}
+                        empty={!items.length
+                          ? "Задач пока нет — напиши первую внизу."
+                          : "нет задач"}>
+                        {mainItems.map(t =>
+                          <TaskCard key={t.stem} t={t} hideTopic
                             sel={noteSel === t.stem} onNote={toggleNote}
                             onStop={askStop} onCancel={askCancel}
                             onDel={askDel} toast={setToast} />)}
-              </TopicColumn>
-              {topics.map((tp, ti) =>
-                <TopicColumn key={tp.id}
-                  name={tp.name || `тема #${tp.id}`}
-                  sess={tp.has_session}
-                  count={byTopic(tp.id).length}
-                  sel={topicSel === String(tp.id)} accent={accent}
-                  color={tp.color} tset={tp} eff={tp.eff}
-                  onSelect={() => selectTopic(String(tp.id))}
-                  onNewTask={() => newTaskIn(String(tp.id))}
-                  more={colMore[String(tp.id)]}
-                  busy={!!colBusy[String(tp.id)]}
-                  onMore={() => loadColMore(String(tp.id))}
-                  onSettings={() => setTSetDlg(
-                    { kind: "edit", topic: tp })}
-                  onMoveL={ti > 0
-                    ? () => moveTopic(tp.id, "left") : null}
-                  onMoveR={ti < topics.length - 1
-                    ? () => moveTopic(tp.id, "right") : null}
-                  onDelete={() =>
-                    askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
-                  {byTopic(tp.id).map(t =>
-                    <TaskCard key={t.stem} t={t} hideTopic
-                              sel={noteSel === t.stem} onNote={toggleNote}
-                              onStop={askStop} onCancel={askCancel}
-                              onDel={askDel} toast={setToast} />)}
-                </TopicColumn>)}
+                      </TopicColumn>);
+                  const tp = topics.find(
+                    t => String(t.id) === c.key);
+                  if (!tp) return null;
+                  return (
+                    <TopicColumn key={tp.id}
+                      name={tp.name || `тема #${tp.id}`}
+                      sess={tp.has_session}
+                      count={byTopic(tp.id).length}
+                      sel={topicSel === String(tp.id)} accent={accent}
+                      color={tp.color} tset={tp} eff={tp.eff}
+                      onSelect={() => selectTopic(String(tp.id))}
+                      onNewTask={() => newTaskIn(String(tp.id))}
+                      more={colMore[String(tp.id)]}
+                      busy={!!colBusy[String(tp.id)]}
+                      onMore={() => loadColMore(String(tp.id))}
+                      onSettings={() => setTSetDlg(
+                        { kind: "edit", topic: tp })}
+                      onMoveL={mvL} onMoveR={mvR}
+                      onDelete={() =>
+                        askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}>
+                      {byTopic(tp.id).map(t =>
+                        <TaskCard key={t.stem} t={t} hideTopic
+                          sel={noteSel === t.stem} onNote={toggleNote}
+                          onStop={askStop} onCancel={askCancel}
+                          onDel={askDel} toast={setToast} />)}
+                    </TopicColumn>);
+                });
+              })()}
               {/* задачи темы, которой ещё нет в списке (гонка опроса)
                   — временная колонка без меню */}
               {orphanTids.map(tid =>

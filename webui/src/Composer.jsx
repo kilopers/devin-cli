@@ -124,19 +124,30 @@ export default function Composer({ project, sttStatus, toast, onSent,
       </Tooltip>
       <Menu anchorEl={tAnchor} open={!!tAnchor}
             onClose={() => setTAnchor(null)}>
-        <MenuItem dense selected={!topic || topic === "main"}
-          sx={{ fontSize: 13 }}
-          onClick={() => { onTopic?.("main"); setTAnchor(null); }}>
-          {mainDef?.name ? "⭐ " + mainDef.name : "⭐ Главная"}
-        </MenuItem>
-        {(topics || []).map(t => (
-          <MenuItem key={t.id} dense
-            selected={String(t.id) === topic}
+        {/* порядок = как на доске: «Главная» в общем sort */}
+        {[
+          { key: "main", sort: mainDef?.sort || 0 },
+          ...(topics || []).map(t =>
+            ({ key: String(t.id), sort: t.sort || t.id })),
+        ].sort((a, b) => (a.sort - b.sort)
+               || String(a.key).localeCompare(String(b.key)))
+         .map(c => c.key === "main" ? (
+          <MenuItem key="main" dense
+            selected={!topic || topic === "main"}
             sx={{ fontSize: 13 }}
-            onClick={() => { onTopic?.(String(t.id));
+            onClick={() => { onTopic?.("main"); setTAnchor(null); }}>
+            {mainDef?.name ? "⭐ " + mainDef.name : "⭐ Главная"}
+          </MenuItem>
+         ) : (
+          <MenuItem key={c.key} dense
+            selected={c.key === topic}
+            sx={{ fontSize: 13 }}
+            onClick={() => { onTopic?.(c.key);
                              setTAnchor(null); }}>
-            {(t.name || `тема #${t.id}`) +
-             (t.has_session ? " · 🔁" : "")}
+            {(() => { const t = topics.find(
+                        x => String(x.id) === c.key) || {};
+              return (t.name || `тема #${c.key}`) +
+                     (t.has_session ? " · 🔁" : ""); })()}
           </MenuItem>))}
         {onNewTopic && project !== "workspace" &&
           <MenuItem dense sx={{ fontSize: 13, fontWeight: 600,

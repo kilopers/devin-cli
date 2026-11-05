@@ -183,7 +183,7 @@ def _api_instr_set():
 
 def _topic_rows(project: str) -> list:
     return db_query("SELECT id, name, session_id, own_session,"
-                    " session_topic_id, user, created, updated,"
+                    " session_topic_id, sort, user, created, updated,"
                     " color, model, reply_mode, auto_commit, fast"
                     " FROM topics WHERE project=%s"
                     " ORDER BY sort, id", (project,))
@@ -206,15 +206,20 @@ def _topic_settings_from(b: dict) -> dict:
     return st
 
 
-def _main_col_name(p: str) -> str:
-    """Своё имя «главной» колонки — ключ name в pj:<p>.tmain
-    (переименовать можно, удалить нельзя)."""
+def _main_col_json(p: str) -> dict:
+    """Сырой JSON настроек «главной» колонки (pj:<p>.tmain): ключи
+    TOPIC_SET_KEYS + name + sort."""
     try:
         d = json.loads(pj_get(p, "tmain") or "{}")
     except ValueError:
-        return ""
-    return ((d.get("name") or "").strip() if isinstance(d, dict)
-            else "")
+        d = {}
+    return d if isinstance(d, dict) else {}
+
+
+def _main_col_name(p: str) -> str:
+    """Своё имя «главной» колонки — ключ name в pj:<p>.tmain
+    (переименовать можно, удалить нельзя)."""
+    return (_main_col_json(p).get("name") or "").strip()
 
 
 @app.get("/api/topics")
@@ -244,6 +249,8 @@ def _api_topics_get():
                     # их чипами рисует шапка колонки
                     "main": dict(_topic_defaults(p, None),
                                  name=_main_col_name(p),
+                                 sort=(_main_col_json(p).get("sort")
+                                       or 0),
                                  eff=_eff_topic_defaults(p, None)),
                     "topics": out})
 
@@ -316,6 +323,41 @@ def _api_topics_set():
                 cur.pop("name", None)
         pj_set(p, "tmain", json.dumps(cur, ensure_ascii=False))
         return jsonify({"ok": True})
+    if act == "move":
+        # сдвиг колонки на доске влево/вправо — обмен местом с соседом;
+        # «главная» — такая же колонка (id="main", её sort лежит
+        # ключом sort в pj:<p>.tmain), удалить её нельзя, а двигать
+        # можно. Заодно нормализуем sort всей доски шагом 10.
+        dirn = (b.get("dir") or "").strip()
+        cols = ([("main", _main_col_json(p).get("sort") or 0)]
+                + [(r["id"], r["sort"])
+                   for r in db_query(
+                       "SELECT id, sort FROM topics WHERE project=%s",
+                       (p,))])
+        cols.sort(key=lambda kv: (kv[1], str(kv[0])))
+        keys = [c[0] for c in cols]
+        tgt = ("main" if str(b.get("id")) == "main"
+               else int(b.get("id") or 0))
+        if tgt not in keys:
+            return jsonify({"ok": False,
+                            "error": "нет такой темы"}), 404
+        i = keys.index(tgt)
+        j = i - 1 if dirn == "left" else (
+            i + 1 if dirn == "right" else -1)
+        if not (0 <= j < len(keys)):
+            return jsonify({"ok": False,
+                            "error": "некуда двигать"}), 400
+        keys[i], keys[j] = keys[j], keys[i]
+        tmj = _main_col_json(p)
+        for k, kk in enumerate(keys):
+            s = (k + 1) * 10
+            if kk == "main":
+                tmj["sort"] = s
+            else:
+                db_exec("UPDATE topics SET sort=%s WHERE id=%s",
+                        (s, kk))
+        pj_set(p, "tmain", json.dumps(tmj, ensure_ascii=False))
+        return jsonify({"ok": True})
     tid = int(b.get("id") or 0)
     if not db_query("SELECT 1 FROM topics WHERE id=%s AND project=%s",
                     (tid, p)):
@@ -358,28 +400,6 @@ def _api_topics_set():
         db_exec("UPDATE topics SET session_topic_id=NULL"
                 " WHERE session_topic_id=%s", (tid,))
         db_exec("DELETE FROM topics WHERE id=%s", (tid,))
-        return jsonify({"ok": True})
-    if act == "move":
-        # сдвиг колонки на доске влево/вправо — обмен местом с соседом;
-        # заодно нормализуем sort всей доски (шаг 10)
-        dirn = (b.get("dir") or "").strip()
-        ids = [r["id"] for r in
-               db_query("SELECT id FROM topics WHERE project=%s"
-                        " ORDER BY sort, id", (p,))]
-        try:
-            i = ids.index(tid)
-        except ValueError:
-            return jsonify({"ok": False,
-                            "error": "нет такой темы"}), 404
-        j = i - 1 if dirn == "left" else (
-            i + 1 if dirn == "right" else -1)
-        if not (0 <= j < len(ids)):
-            return jsonify({"ok": False,
-                            "error": "некуда двигать"}), 400
-        ids[i], ids[j] = ids[j], ids[i]
-        for k, tid2 in enumerate(ids):
-            db_exec("UPDATE topics SET sort=%s WHERE id=%s",
-                    ((k + 1) * 10, tid2))
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
 
