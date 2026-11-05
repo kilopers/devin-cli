@@ -199,6 +199,20 @@ const branchSuggest = prompt => {
   return `task/${slug}-${mmdd}`;
 };
 
+// выбор темы запоминаем per-проект: переживает переключения проектов
+// и закрытие приложения; «главная» в карту не пишется
+const TOPIC_LS = "devin.topic.sel";
+const loadTopicMap = () => {
+  try { return JSON.parse(localStorage.getItem(TOPIC_LS)) || {}; }
+  catch { return {}; }
+};
+const saveTopicSel = (p, v) => {
+  if (!p) return;
+  const m = loadTopicMap();
+  if (v === "main") delete m[p]; else m[p] = String(v);
+  try { localStorage.setItem(TOPIC_LS, JSON.stringify(m)); } catch {}
+};
+
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                toast }) {
   // свёрнута: заголовок + ~3 строки задачи; «подробнее» — slide-down
@@ -219,6 +233,11 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const [outOpen, setOutOpen] = useState(false);
   const succeeded = t.status === "done" &&
     !(t.task_status && !/exit code: 0/.test(t.task_status));
+  // в «подробнее» у успешной задачи — полный текст задачи (вывод
+  // Devin теперь в модалке «результат»): догружаем его при раскрытии
+  useEffect(() => {
+    if (open && succeeded && maybeCut) loadFull();
+  }, [open]);
   const st = t.stats || {};
   const infoRows = [
     ["Статус", t.task_status || null],
@@ -366,13 +385,17 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           <Box sx={{ mt: 1.5, pt: 1.5,
                      borderTop: "1px solid",
                      borderColor: "divider" }}>
-            {t.output
-              ? (t.status === "done"
-                  ? <Markdown text={t.output} />
-                  : <pre className="out">{t.output}</pre>)
-              : <Typography variant="body2" color="text.secondary">
-                  {t.status === "queued" ? "в очереди — вывод ещё пуст"
-                                        : "вывод пока пуст"}</Typography>}
+            {succeeded
+              ? <Typography variant="body2" color="text.secondary"
+                  sx={{ whiteSpace: "pre-wrap", fontSize: 13 }}>
+                  {promptShown}</Typography>
+              : (t.output
+                  ? (t.status === "done"
+                      ? <Markdown text={t.output} />
+                      : <pre className="out">{t.output}</pre>)
+                  : <Typography variant="body2" color="text.secondary">
+                      {t.status === "queued" ? "в очереди — вывод ещё пуст"
+                                            : "вывод пока пуст"}</Typography>)}
           </Box>
         </Collapse>
 
@@ -590,6 +613,9 @@ export default function App() {
   const [topicSel, setTopicSel] = useState("main");
   const topicRef = useRef("main");
   const [topics, setTopics] = useState([]);
+  // список тем текущего проекта уже загружен — можно проверять,
+  // не удалили ли сохранённую тему
+  const topicsLoaded = useRef(false);
   const [feed, setFeed] = useState(new Map());
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -658,7 +684,10 @@ export default function App() {
         encodeURIComponent(p) + "&topic=" + topicRef.current +
         "&limit=20");
       apiJson("/api/topics?project=" + encodeURIComponent(p))
-        .then(td => { if (td.ok) setTopics(td.topics || []); })
+        .then(td => {
+          if (td.ok) { topicsLoaded.current = true;
+                       setTopics(td.topics || []); }
+        })
         .catch(() => {});
       setFeed(m => {
         // выкидываем задачи чужих проектов — ответ опроса за старый
@@ -751,7 +780,10 @@ export default function App() {
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
-    setTopicSel("main"); topicRef.current = "main"; setTopics([]);
+    // тема проекта восстанавливается — выбор живёт в localStorage
+    const tsel = loadTopicMap()[p] || "main";
+    setTopicSel(tsel); topicRef.current = tsel;
+    setTopics([]); topicsLoaded.current = false;
     if (multiMode)
       post("/api/project", { project: p })
         .then(d => { if (!d.ok) setToast("Проект: " + (d.error || "?")); })
@@ -770,9 +802,17 @@ export default function App() {
   // тема проекта: переключение перезагружает ленту («обнуляется»)
   const selectTopic = v => {
     setTopicSel(v); topicRef.current = v;
+    saveTopicSel(projRef.current, v);
     setFeed(new Map()); setHasMore(false); firstLoad.current = true;
     loadTasks();
   };
+  // сохранённая тема могла быть удалена — откатываемся на «Главную»
+  // (но только когда список тем уже пришёл, не на пустом старте)
+  useEffect(() => {
+    if (topicsLoaded.current && topicSel !== "main" &&
+        !topics.some(t => String(t.id) === topicSel))
+      selectTopic("main");
+  }, [topics]);
   const createTopic = async () => {
     const p = projRef.current;
     if (!p) return;
@@ -883,6 +923,8 @@ export default function App() {
         const cur = (qp && projs.includes(qp)) ? qp
                                               : (d.current || projs[0]);
         setProject(cur); projRef.current = cur;
+        const tsel = loadTopicMap()[cur] || "main";
+        setTopicSel(tsel); topicRef.current = tsel;
         if (qp) {
           history.replaceState(null, "", location.pathname);
           if (cur === qp && d.projects.length)
