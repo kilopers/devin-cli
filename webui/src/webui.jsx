@@ -1393,13 +1393,16 @@ function TopicStatsDlg({ dlg, project, onClose, toast }) {
               {fmtNum(r.prompt_tok)}·кэш {fmtNum(r.cached_tok)}
               ·out {fmtNum(r.completion_tok)}
             </Typography>
-            {!!r.duration &&
+            <Tooltip title="время выполнения — от старта Devin до готовности, очередь не считается">
               <Typography component="span"
                 sx={{ fontSize: "inherit",
                       fontFamily: "ui-monospace, Menlo, monospace",
-                      color: "text.secondary", minWidth: 44 }}>
-                {fmtDur(r.duration)}
-              </Typography>}
+                      color: r.duration ? "text.primary"
+                                        : "text.disabled",
+                      minWidth: 52, textAlign: "right" }}>
+                {r.duration ? fmtDur(r.duration) : "—"}
+              </Typography>
+            </Tooltip>
             <Typography component="span"
               sx={{ fontSize: "inherit", fontWeight: 600,
                     minWidth: 56, textAlign: "right" }}>
