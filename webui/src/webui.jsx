@@ -215,7 +215,8 @@ const saveTopicSel = (p, v) => {
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                toast }) {
-  // свёрнута: заголовок + ~3 строки задачи; «подробнее» — slide-down
+  // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
+  // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
   // prompt с бэкенда — превью (2000): полный текст догружаем по кнопке
   const [full, setFull] = useState(null);
@@ -233,8 +234,27 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const [outOpen, setOutOpen] = useState(false);
   const succeeded = t.status === "done" &&
     !(t.task_status && !/exit code: 0/.test(t.task_status));
-  // в «подробнее» у успешной задачи — полный текст задачи (вывод
-  // Devin теперь в модалке «результат»): догружаем его при раскрытии
+  // раскрывать есть что, только если текст задачи обрезан тремя
+  // строками или у неуспешной задачи есть вывод — иначе «подробнее»
+  // не рисуем вовсе
+  const txtRef = useRef(null);
+  const openRef = useRef(false);
+  openRef.current = open;
+  const [clamped, setClamped] = useState(false);
+  useLayoutEffect(() => {
+    const measure = () => {
+      // в раскрытом виде текст не клампится — не меряем
+      const el = txtRef.current;
+      if (el && !openRef.current)
+        setClamped(el.scrollHeight > el.clientHeight + 1);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [promptShown]);
+  const canExpand = clamped || (!succeeded && !!t.output);
+  // у успешной задачи превью может быть обрезано на 2000 символах —
+  // догружаем полный текст при раскрытии
   useEffect(() => {
     if (open && succeeded && maybeCut) loadFull();
   }, [open]);
@@ -295,8 +315,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                      gap: 0.8, flexWrap: "wrap", minWidth: 0 }}>
             <Typography variant="caption" color="text.secondary"
                         sx={{ fontSize: 12, mr: 0.2 }}>
-              {t.name} · {new Date(t.created * 1000)
-                            .toLocaleString("ru-RU")}
+              {new Date(t.created * 1000).toLocaleString("ru-RU")}
             </Typography>
             <Chip size="small" variant="outlined" sx={metaSx}
                   label={SRC_RU[t.source] || t.source || ""} />
@@ -367,9 +386,12 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             <StatusChip t={t} />
           </Box>
         </Box>
-        <Typography variant="body2" onClick={() => setOpen(o => !o)}
+        <Typography variant="body2" ref={txtRef}
+          onClick={canExpand || open ? () => setOpen(o => !o)
+                                     : undefined}
           sx={{ whiteSpace: "pre-wrap", fontWeight: 500, fontSize: 13.5,
-                lineHeight: 1.62, cursor: "pointer",
+                lineHeight: 1.62,
+                cursor: canExpand || open ? "pointer" : "default",
                 ...(!open && {
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
                   WebkitLineClamp: 3, overflow: "hidden" }) }}>
@@ -381,24 +403,22 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   "&:hover": { textDecoration: "underline" } }}>
             … показать весь текст задачи
           </Typography>)}
+        {!succeeded && (
         <Collapse in={open} unmountOnExit>
           <Box sx={{ mt: 1.5, pt: 1.5,
                      borderTop: "1px solid",
                      borderColor: "divider" }}>
-            {succeeded
-              ? <Typography variant="body2" color="text.secondary"
-                  sx={{ whiteSpace: "pre-wrap", fontSize: 13 }}>
-                  {promptShown}</Typography>
-              : (t.output
-                  ? (t.status === "done"
-                      ? <Markdown text={t.output} />
-                      : <pre className="out">{t.output}</pre>)
-                  : <Typography variant="body2" color="text.secondary">
-                      {t.status === "queued" ? "в очереди — вывод ещё пуст"
-                                            : "вывод пока пуст"}</Typography>)}
+            {t.output
+              ? (t.status === "done"
+                  ? <Markdown text={t.output} />
+                  : <pre className="out">{t.output}</pre>)
+              : <Typography variant="body2" color="text.secondary">
+                  {t.status === "queued" ? "в очереди — вывод ещё пуст"
+                                        : "вывод пока пуст"}</Typography>}
           </Box>
-        </Collapse>
+        </Collapse>)}
 
+        {canExpand && (
         <Box onClick={() => setOpen(o => !o)}
              sx={{ display: "flex", alignItems: "center", gap: 0.4,
                    justifyContent: "center", cursor: "pointer", mt: 1.2,
@@ -411,7 +431,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           <ExpandMoreIcon sx={{
             fontSize: 16, transition: "transform .25s",
             transform: open ? "rotate(180deg)" : "none" }} />
-        </Box>
+        </Box>)}
         <Dialog open={info} onClose={() => setInfo(false)}
                 maxWidth="xs" fullWidth>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
