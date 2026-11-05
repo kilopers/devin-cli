@@ -1209,7 +1209,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
       bgcolor: color || "background.paper" }}>
       <Box onClick={onSelect}
            sx={{ display: "flex", alignItems: "center", gap: 0.6,
-                 px: 1.1, py: 0.7, cursor: "pointer",
+                 px: 1.1, py: 0.7, cursor: "pointer", flexShrink: 0,
                  borderBottom: "1px solid", borderColor: "divider" }}>
         <Tooltip title={sel
             ? "целевая колонка — новые задачи падают сюда"
@@ -1267,7 +1267,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
         // задачи темы; залитый чип = переопределено у самой темы,
         // контурный — наследуется из проекта/настроек
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.4,
-                   px: 0.9, py: 0.5,
+                   px: 0.9, py: 0.5, flexShrink: 0,
                    borderBottom: "1px solid", borderColor: "divider" }}>
           {tset?.own_session === 0 &&
             <Tooltip title={tset.session_topic_id
@@ -1324,6 +1324,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
       </Box>
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8, flex: 1, minHeight: 0, overflowY: "auto",
+                 "& > *": { flexShrink: 0 },
                  "&::-webkit-scrollbar": { width: 8 } }}
            onDragOver={onBodyOver} onDrop={onBodyDrop}>
         {children}
@@ -2210,7 +2211,7 @@ export default function App() {
                           onClose={() => setView("feed")} />
           : <>
           <Box sx={{ flex: 1, minWidth: 0,
-                     p: { xs: "8px 2px 150px", md: "16px 12px 150px" } }}>
+                     p: { xs: "8px 2px 0", md: "16px 12px 0" } }}>
             {/* канбан-доска: каждая тема — колонка со своими задачами,
                 листается влево-вправо (на мобильной — со снапом);
                 «целевая» колонка (клик по заголовку) — куда падают
