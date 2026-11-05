@@ -41,6 +41,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArticleIcon from "@mui/icons-material/Article";
 import ForumIcon from "@mui/icons-material/Forum";
 import Grid from "@mui/material/Grid";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson, post } from "./api.js";
 import Markdown from "./Markdown.jsx";
 import FileTree from "./FileTree.jsx";
@@ -258,6 +259,13 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   useEffect(() => {
     if (open && succeeded && maybeCut) loadFull();
   }, [open]);
+  // на мобильной модалки карточки растягиваем почти на всю ширину
+  // экрана (узкие отступы), на десктопе — как было
+  const dlgMobile = useMediaQuery(t2 => t2.breakpoints.down("md"));
+  const dlgSlotProps = dlgMobile
+    ? { paper: { sx: { m: 1, width: "calc(100% - 16px)",
+                      maxHeight: "calc(100% - 16px)" } } }
+    : undefined;
   const st = t.stats || {};
   const infoRows = [
     ["Статус", t.task_status || null],
@@ -433,7 +441,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             transform: open ? "rotate(180deg)" : "none" }} />
         </Box>)}
         <Dialog open={info} onClose={() => setInfo(false)}
-                maxWidth="xs" fullWidth>
+                maxWidth="xs" fullWidth slotProps={dlgSlotProps}>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             Статистика задачи
             <IconButton size="small" onClick={() => setInfo(false)}
@@ -475,7 +483,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           </DialogContent>
         </Dialog>
         <Dialog open={outOpen} onClose={() => setOutOpen(false)}
-                maxWidth="md" fullWidth>
+                maxWidth="md" fullWidth slotProps={dlgSlotProps}>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             Результат задачи
             <IconButton size="small" onClick={() => setOutOpen(false)}
