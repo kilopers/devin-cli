@@ -1040,7 +1040,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                           borderRadius: "6px" }} />
             </Tooltip>}
           {[
-            [eff.reply_mode === "ask" ? "💬 спросить" : "🛠 код",
+            [eff.reply_mode === "say" ? "📝 заметка"
+              : eff.reply_mode === "ask" ? "💬 спросить" : "🛠 код",
              tset?.reply_mode, "режим ответа"],
             [eff.auto_commit === "1" ? "⚡ автокоммит" : "✋ коммит вручную",
              tset?.auto_commit, "автокоммит после задачи"],

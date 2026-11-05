@@ -154,6 +154,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
             </Box>
           </Box>
           <TextField select label="Модель" size="small" fullWidth
+                     disabled={mode === "say"}
                      value={model}
                      onChange={e => setModel(e.target.value)}
                      helperText="пусто — модель проекта/настроек">
@@ -164,12 +165,16 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
           <TextField select label="Режим ответа" size="small" fullWidth
                      value={mode}
                      onChange={e => setMode(e.target.value)}
-                     helperText="пусто — режим проекта/настроек">
+                     helperText={mode === "say"
+                       ? "карточки-заметки — Devin их не получает"
+                       : "пусто — режим проекта/настроек"}>
             <MenuItem value="">— по умолчанию —</MenuItem>
+            <MenuItem value="say">📝 заметка</MenuItem>
             <MenuItem value="code">🛠 код</MenuItem>
             <MenuItem value="ask">💬 вопрос</MenuItem>
           </TextField>
           <TextField select label="Автокоммит" size="small" fullWidth
+                     disabled={mode === "say"}
                      value={ac}
                      onChange={e => setAc(e.target.value)}
                      helperText="коммит + push после задачи">
@@ -178,6 +183,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
             <MenuItem value="0">✋ вручную</MenuItem>
           </TextField>
           <TextField select label="Быстрый режим" size="small" fullWidth
+                     disabled={mode === "say"}
                      value={fast}
                      onChange={e => setFast(e.target.value)}
                      helperText="голосовая задача без подтверждения">

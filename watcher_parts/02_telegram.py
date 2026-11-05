@@ -431,6 +431,10 @@ def enqueue_task(text: str, chat_id: int | None = None,
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
                  rmode, author, bot, instr=_instr_block(author, proj),
                  topic_id=topic_id)
+    if rmode == "say":
+        # дефолт колонки «заметка»: карточка в колонке, но не в
+        # очереди — Devin её не получает (как mode=say из веба)
+        db_exec("UPDATE tasks SET status='note' WHERE stem=%s", (stem,))
     log(f"task {_task_name(stem)} queued in mysql, chat_id={chat_id}, "
         f"project={proj}, model={model}, mode={rmode}")
     return _task_name(stem)

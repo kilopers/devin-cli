@@ -198,7 +198,7 @@ def _topic_settings_from(b: dict) -> dict:
         st["color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
     if "model" in b:
         st["model"] = (b.get("model") or "").strip()[:80]
-    if "reply_mode" in b and (b.get("reply_mode") or "") in ("", "code", "ask"):
+    if "reply_mode" in b and (b.get("reply_mode") or "") in ("", "code", "ask", "say"):
         st["reply_mode"] = (b.get("reply_mode") or "")
     for k in ("auto_commit", "fast"):
         if k in b and (b.get(k) or "") in ("", "0", "1"):
