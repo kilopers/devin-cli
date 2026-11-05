@@ -1201,6 +1201,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
   return (
     <Paper variant="outlined" sx={{
       width: { xs: "82vw", sm: 300, md: 320 }, flexShrink: 0,
+      height: "100%", display: "flex", flexDirection: "column",
       borderRadius: "12px", scrollSnapAlign: "start",
       borderColor: sel ? (boostColor(color) || accent || "primary.main")
                        : "divider",
@@ -1306,9 +1307,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                           "& .MuiChip-label": { px: "6px" } }} />
             </Tooltip>))}
         </Box>}
-      <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
-                 gap: 0.8, minHeight: 60 }}
-           onDragOver={onBodyOver} onDrop={onBodyDrop}>
+      <Box sx={{ px: 0.8, pt: 0.8, flexShrink: 0 }}>
         {(() => { const btnC = boostColor(color) || accent
                                 || "#5e6ad2";
           return (
@@ -1322,6 +1321,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                                                  : "action.hover" } }}>
               ＋ задача сюда
             </Button>); })()}
+      </Box>
+      <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
+                 gap: 0.8, flex: 1, minHeight: 0, overflowY: "auto",
+                 "&::-webkit-scrollbar": { width: 8 } }}
+           onDragOver={onBodyOver} onDrop={onBodyDrop}>
         {children}
         {!React.Children.count(children) &&
           <Typography variant="caption" color="text.secondary"
@@ -2211,9 +2215,11 @@ export default function App() {
                 листается влево-вправо (на мобильной — со снапом);
                 «целевая» колонка (клик по заголовку) — куда падают
                 новые задачи из композера */}
-            <Box sx={{ display: "flex", gap: 1.2, alignItems: "flex-start",
+            <Box sx={{ display: "flex", gap: 1.2, alignItems: "stretch",
                        overflowX: "auto", pb: 1.2,
                        px: { xs: 0.6, md: 0 },
+                       height: { xs: "calc(100dvh - 206px)",
+                                 md: "calc(100dvh - 214px)" },
                        scrollSnapType: { xs: "x proximity", md: "none" },
                        "&::-webkit-scrollbar": { height: 8 } }}>
               {/* доска = «Главная» + темы в общем порядке (sort);
