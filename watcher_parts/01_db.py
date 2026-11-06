@@ -961,10 +961,15 @@ def _attach_disp_name(att_id: str) -> str:
 
 
 def _clean_task_output(text: str) -> str:
-    """Срезает тех-обвязку вывода по краям: строки [devin-task]
-    (кроме WARNING/ERROR — это реальные предупреждения проекта),
-    шум git pull/push и баннер `devin auth`. В модалке 📄 и в tg
-    нужен только результат агента."""
+    """Срезает тех-обвязку вывода по краям: строки [devin-task],
+    шум git pull/push и баннер `devin auth`. Верхний срез убирает
+    и WARNING/ERROR-строки [*-task] — это запуск-преамбула
+    (нет upstream, пропуск git pull и т.п.): из-за сохранённой
+    WARNING-строки стоппер обрывался на первой строке и весь
+    лаунч-блок с баннером оставался в ответе. WARNING/ERROR
+    в середине и хвосте по-прежнему сохраняются — это реальные
+    предупреждения. В модалке 📄 и в tg нужен только результат
+    агента."""
     if not text:
         return text
     lines = ANSI.sub("", text).splitlines()
@@ -988,7 +993,10 @@ def _clean_task_output(text: str) -> str:
             return True
         return False
     i = 0
-    while i < len(lines) and noise(lines[i]):
+    taskline = lambda s: bool(
+        re.match(r"\[[a-z0-9_-]+-task\]", s.strip()))
+    while i < len(lines) and (noise(lines[i])
+                              or taskline(lines[i])):
         i += 1
     j = len(lines)
     while j > i and noise(lines[j - 1]):
