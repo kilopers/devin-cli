@@ -1853,6 +1853,16 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
                       collapsed, onCollapse, full, onFull, chat }) {
   const [menu, setMenu] = useState(null);
+  // чат-колонка: следим за прокруткой треда — при уходе от низа
+  // показываем плавающую стрелку «к последнему сообщению»
+  const bodyRef = useRef(null);
+  const [chatUp, setChatUp] = useState(false);
+  const onBodyScroll = chat ? e => {
+    const b = e.currentTarget;
+    setChatUp(b.scrollHeight - b.scrollTop - b.clientHeight > 80);
+  } : undefined;
+  const toEnd = () => bodyRef.current?.scrollTo(
+    { top: bodyRef.current.scrollHeight, behavior: "smooth" });
   return (
     <Paper variant="outlined" sx={{ position: "relative",
       width: collapsed ? { xs: 36, md: 38 }
@@ -2112,8 +2122,12 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
               </Tooltip>}
             </Box>); })()}
       </Box>}
-      <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
+      <Box ref={bodyRef} onScroll={onBodyScroll}
+           sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8, flex: 1, minHeight: 0, overflowY: "auto",
+                 // скролл не «протекает» наружу: у края ленты крутится
+                 // только она, а не вся доска/страница
+                 overscrollBehavior: "contain",
                  "& > *": { flexShrink: 0 },
                  "&::-webkit-scrollbar": { width: 8 } }}
            onDragOver={chat ? undefined : onBodyOver}
@@ -2135,10 +2149,24 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
           <Button size="small" fullWidth onClick={onMore}
                   disabled={busy}
                   sx={{ textTransform: "none", fontSize: 12, py: 0.3,
-                        color: "text.secondary" }}>
+                        color: "text.secondary",
+                        // в чате «ещё» — старые сообщения, они сверху
+                        order: chat ? -1 : 0 }}>
             {busy ? "загружаю…" : "загрузить ещё"}
           </Button>}
       </Box>
+      {chat && chatUp &&
+        <Tooltip title="к последнему сообщению">
+          <IconButton size="small" onClick={toEnd}
+            sx={{ position: "absolute", right: 10, bottom: 10,
+                  zIndex: 2, width: 30, height: 30,
+                  bgcolor: accent || "primary.main", color: "#fff",
+                  boxShadow: "0 2px 8px rgba(28,33,40,.28)",
+                  "&:hover": { bgcolor:
+                    accent || "primary.dark" } }}>
+            <ExpandMoreIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>}
       </>)}
     </Paper>
   );
@@ -2659,14 +2687,17 @@ export default function App() {
 
   // тред чат-колонки: задачи старыми вверх (выдача DESC),
   // каждая — пара «вопрос → ответ» + автоскролл к последнему;
-  // h последнего — чтобы досcrollивать и при росте живого пузыря
+  // h последнего — чтобы досcrollивать и при росте живого пузыря;
+  // спейсер mt:auto прибивает тред к низу, когда сообщений мало —
+  // пустота остаётся сверху, лишнего скролла нет
   const chatMsgs = (list, key) => {
     const items = list.slice().reverse();
     const last = items[items.length - 1];
-    return items.map(t =>
-      <ChatMsg key={t.stem} t={t} accent={accent} />)
-      .concat(<ChatEnd key="__end" n={items.length}
-                       h={last ? last.h : ""} />);
+    return [<Box key="__top" sx={{ mt: "auto", height: 0 }} />]
+      .concat(items.map(t =>
+        <ChatMsg key={t.stem} t={t} accent={accent} />),
+        [<ChatEnd key="__end" n={items.length}
+                  h={last ? last.h : ""} />]);
   };
 
   const selectProject = useCallback(p => {
