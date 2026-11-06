@@ -57,6 +57,8 @@ def _api_project_settings_get():
         colhide = []
     return jsonify({"ok": True,
                     "colhide": colhide,
+                    "colfull": us_get(_current_user(),
+                                      f"colfull:{p}") or "",
                     "model": pj_get(p, "model"),
                     "agent": pj_get(p, "agent"),
                     "reply_mode": pj_get(p, "reply_mode"),
@@ -112,6 +114,10 @@ def _api_project_settings_set():
         us_set(_current_user(), f"colhide:{p}", json.dumps(
             [str(k)[:20] for k in body["colhide"]
              if isinstance(k, (str, int))][:50]))
+    # развёрнутая на всю доску колонка — один ключ (v1.8.88)
+    if "colfull" in body:
+        us_set(_current_user(), f"colfull:{p}",
+               str(body.get("colfull") or "")[:20])
     return jsonify({"ok": True})
 
 

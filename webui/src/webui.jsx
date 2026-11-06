@@ -59,6 +59,8 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import MenuIcon from "@mui/icons-material/Menu";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import OpenInFullIcon from "@mui/icons-material/OpenInFull";
+import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson, post } from "./api.js";
@@ -386,6 +388,22 @@ const saveColHide = (p, s) => {
   const m = loadColHideMap();
   if (s.size) m[p] = [...s]; else delete m[p];
   try { localStorage.setItem(COLHIDE_LS, JSON.stringify(m)); } catch {}
+};
+
+// развёрнутая на всю доску колонка per-проект (v1.8.88): источник
+// истины — us:<u>.colfull:<проект> на сервере (один ключ колонки),
+// localStorage — мгновенный кэш
+const COLFULL_LS = "devin.colfull";
+const loadColFullMap = () => {
+  try { return JSON.parse(localStorage.getItem(COLFULL_LS)) || {}; }
+  catch { return {}; }
+};
+const colFullGet = p => loadColFullMap()[p] || null;
+const saveColFull = (p, k) => {
+  if (!p) return;
+  const m = loadColFullMap();
+  if (k) m[p] = k; else delete m[p];
+  try { localStorage.setItem(COLFULL_LS, JSON.stringify(m)); } catch {}
 };
 
 // скелетон поверх карточки/колонки, пока действие идёт на сервере:
@@ -1729,12 +1747,16 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onBodyOver, onBodyDrop, loading,
                       onDict, dictOn, dictBusy, onStats, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
-                      collapsed, onCollapse }) {
+                      collapsed, onCollapse, full, onFull }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
       width: collapsed ? { xs: 36, md: 38 }
-                       : { xs: "82vw", sm: 300, md: 320 },
+             : full ? "auto"
+             : { xs: "82vw", sm: 300, md: 320 },
+      // развёрнутая колонка занимает всю ширину доски — правый
+      // сайдбар при этом остаётся на месте
+      flexGrow: full ? 1 : 0, minWidth: 0,
       flexShrink: 0, transition: "width .25s ease",
       // minHeight:0 — иначе длинный список растягивает колонку
       // (min-height:auto у flex-item'а) и всю страницу за собой;
@@ -1785,11 +1807,20 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             {name}
           </Typography>
         </Tooltip>
-        {onCollapse &&
+        {onCollapse && !full &&
           <Tooltip title="свернуть колонку в узкую полоску">
             <IconButton size="small" sx={{ p: 0.15, flexShrink: 0 }}
               onClick={e => { e.stopPropagation(); onCollapse(); }}>
               <ChevronLeftIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Tooltip>}
+        {onFull &&
+          <Tooltip title={full ? "вернуть обычный размер"
+                               : "развернуть на всю доску"}>
+            <IconButton size="small" sx={{ p: 0.15, flexShrink: 0 }}
+              onClick={e => { e.stopPropagation(); onFull(); }}>
+              {full ? <CloseFullscreenIcon sx={{ fontSize: 14 }} />
+                     : <OpenInFullIcon sx={{ fontSize: 14 }} />}
             </IconButton>
           </Tooltip>}
         {sess &&
@@ -2100,17 +2131,45 @@ export default function App() {
   // us:<u>.colhide:<проект> — одно состояние на всех устройствах,
   // localStorage — кэш для мгновенного применения до ответа API
   const [colHide, setColHide] = useState(() => colHideGet(null));
+  // развёрнутая на всю доску колонка (v1.8.88): ключ main|id или
+  // null; серверный us:<u>.colfull:<проект> — синк устройств
+  const [colFull, setColFull] = useState(() => colFullGet(null));
   useEffect(() => {
     setColHide(colHideGet(project));
+    setColFull(colFullGet(project));
   }, [project]);
-  const toggleColHide = key => setColHide(prev => {
-    const s = new Set(prev);
-    if (s.has(key)) s.delete(key); else s.add(key);
-    saveColHide(projRef.current, s);
+  const pushColHide = s =>
     post("/api/project/settings",
          { project: projRef.current, colhide: [...s] })
       .catch(() => {});
+  const pushColFull = v =>
+    post("/api/project/settings",
+         { project: projRef.current, colfull: v || "" })
+      .catch(() => {});
+  const toggleColHide = key => setColHide(prev => {
+    const s = new Set(prev);
+    const adding = !s.has(key);
+    if (adding) s.add(key); else s.delete(key);
+    saveColHide(projRef.current, s);
+    pushColHide(s);
+    // сворачивание развёрнутой колонки снимает её полноэкранность
+    if (adding && colFull === key) {
+      setColFull(null); saveColFull(projRef.current, null);
+      pushColFull(null);
+    }
     return s;
+  });
+  const toggleColFull = key => setColFull(prev => {
+    const v = prev === key ? null : key;
+    saveColFull(projRef.current, v);
+    pushColFull(v);
+    // разворот на всю доску несовместим со свёрнутой полоской
+    if (v && colHide.has(v)) {
+      const s = new Set(colHide); s.delete(v);
+      setColHide(s); saveColHide(projRef.current, s);
+      pushColHide(s);
+    }
+    return v;
   });
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
@@ -2778,6 +2837,11 @@ export default function App() {
           const s = new Set(d.colhide.map(String));
           setColHide(s); saveColHide(project, s);
         }
+        // то же для развёрнутой на всю доску колонки
+        if (d.ok && typeof d.colfull === "string") {
+          const v = d.colfull || null;
+          setColFull(v); saveColFull(project, v);
+        }
       })
       .catch(() => {});
   }, [project]);
@@ -3332,7 +3396,15 @@ export default function App() {
                   главная — такая же колонка: двигается, но не
                   удаляется */}
               {(() => {
+                // развёрнутая на всю доску колонка (v1.8.88): рендерим
+                // только её — остальные скрыты под ней; ключ от
+                // удалённой темы игнорируем
+                const fullKey = colFull &&
+                  (boardCols.some(c => c.key === colFull)
+                   || orphanTids.some(t => String(t) === colFull))
+                  ? colFull : null;
                 return boardCols.map((c, ci) => {
+                  if (fullKey && c.key !== fullKey) return null;
                   const mvL = ci > 0
                     ? () => moveTopic(c.key, "left") : null;
                   const mvR = ci < boardCols.length - 1
@@ -3374,8 +3446,11 @@ export default function App() {
                           ? "Задач пока нет — напиши первую внизу."
                           : "нет задач"}
                         loading={!booted}
-                        collapsed={colHide.has("main")}
+                        collapsed={fullKey !== "main"
+                                   && colHide.has("main")}
                         onCollapse={() => toggleColHide("main")}
+                        full={fullKey === "main"}
+                        onFull={() => toggleColFull("main")}
                         pending={pendSet.has("col:main")}>
                         {colCards(mainItems, "main")}
                       </TopicColumn>);
@@ -3417,8 +3492,11 @@ export default function App() {
                       onBodyOver={e => overCol(e, String(tp.id))}
                       onBodyDrop={e => dropCol(e, String(tp.id))}
                       loading={!booted}
-                      collapsed={colHide.has(String(tp.id))}
+                      collapsed={fullKey !== String(tp.id)
+                                 && colHide.has(String(tp.id))}
                       onCollapse={() => toggleColHide(String(tp.id))}
+                      full={fullKey === String(tp.id)}
+                      onFull={() => toggleColFull(String(tp.id))}
                       pending={pendSet.has("col:" + tp.id)}>
                       {colCards(byTopic(tp.id), String(tp.id))}
                     </TopicColumn>);
@@ -3426,7 +3504,9 @@ export default function App() {
               })()}
               {/* задачи темы, которой ещё нет в списке (гонка опроса)
                   — временная колонка без меню */}
-              {orphanTids.map(tid =>
+              {orphanTids
+                .filter(tid => !fullKey || String(tid) === fullKey)
+                .map(tid =>
                 <TopicColumn key={"t" + tid}
                   name={"тема #" + tid} sess={false}
                   count={byTopic(tid).length}
@@ -3446,12 +3526,15 @@ export default function App() {
                   onMore={() => loadColMore(String(tid))}
                   onBodyOver={e => overCol(e, String(tid))}
                   onBodyDrop={e => dropCol(e, String(tid))}
-                  collapsed={colHide.has(String(tid))}
+                  collapsed={fullKey !== String(tid)
+                             && colHide.has(String(tid))}
                   onCollapse={() => toggleColHide(String(tid))}
+                  full={fullKey === String(tid)}
+                  onFull={() => toggleColFull(String(tid))}
                   loading={!booted}>
                   {colCards(byTopic(tid), String(tid))}
                 </TopicColumn>)}
-              {project && project !== "workspace" &&
+              {project && project !== "workspace" && !fullKey &&
                 <Paper variant="outlined" onClick={createTopic}
                        sx={{ width: { xs: "55vw", sm: 190 },
                              flexShrink: 0, scrollSnapAlign: "start",
