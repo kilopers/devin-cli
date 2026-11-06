@@ -1103,8 +1103,13 @@ def do_commit(stem: str, workdir) -> str:
             out.append(o)
             if rc != 0:
                 return "\n".join(out)
-    rc, o = _git(workdir, "push")
-    out.append(o)
+    # у локального репо remote нет — push пропускаем, коммит остаётся
+    _, remotes = _git(workdir, "remote")
+    if remotes:
+        rc, o = _git(workdir, "push")
+        out.append(o)
+    else:
+        out.append("локальный репозиторий — push пропущен")
     return "\n".join(out) or "nothing to do"
 
 

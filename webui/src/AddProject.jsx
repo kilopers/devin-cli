@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
+  FormControlLabel, Checkbox,
   MenuItem, TextField, Typography,
 } from "@mui/material";
 import { post } from "./api.js";
@@ -42,6 +43,7 @@ export default function AddProject({ open, onClose, onAdded,
   const folderDirty = useRef(false);        // autofill until user edits
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [local, setLocal] = useState(false);   // «локальный репозиторий»
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);   // {ok, output|error}
 
@@ -73,7 +75,7 @@ export default function AddProject({ open, onClose, onAdded,
     setBusy(true); setResult(null);
     try {
       const d = await post("/api/project/add",
-                           { folder, url, token, ws });
+                           { folder, url, token, ws, local });
       setResult(d.ok ? { ok: true, output: d.output || "готово" }
                      : { ok: false, output: d.error || "?" });
       if (d.ok) onAdded?.(d.folder);
@@ -85,6 +87,7 @@ export default function AddProject({ open, onClose, onAdded,
 
   const close = () => {
     setResult(null); setFolder(""); setUrl(""); setToken("");
+    setLocal(false);
     folderDirty.current = false;
     onClose();
   };
@@ -104,9 +107,15 @@ export default function AddProject({ open, onClose, onAdded,
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column",
                            gap: 2, pt: "8px !important" }}>
+        <FormControlLabel
+          control={<Checkbox checked={local}
+                   onChange={e => setLocal(e.target.checked)} />}
+          label={"📁 Локальный репозиторий — без ссылки и токена, " +
+                 "просто пустой git в папке"} />
+        {!local && (
         <TextField label="Ссылка на репозиторий" size="small" value={url}
                    onChange={e => urlChanged(e.target.value)}
-                   placeholder="https://github.com/org/repo.git или git@gitlab.com:org/repo.git" />
+                   placeholder="https://github.com/org/repo.git или git@gitlab.com:org/repo.git" />)}
         <TextField label="Папка проекта" size="small" value={folder}
                    onChange={e => { folderDirty.current = true;
                                     setFolder(e.target.value); }}
@@ -121,13 +130,13 @@ export default function AddProject({ open, onClose, onAdded,
               <MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>))}
           </TextField>
         )}
-        {!sshNote && (
+        {!local && !sshNote && (
           <TextField label="Токен (необязательно)" size="small" type="password"
                      value={token}
                      onChange={e => setToken(e.target.value)}
                      helperText={tokenHint} />
         )}
-        {url.trim() && kind.kind !== "unknown" && (
+        {!local && url.trim() && kind.kind !== "unknown" && (
           <Typography variant="caption" sx={{
             fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11,
             color: "text.secondary", wordBreak: "break-all" }}>
@@ -136,7 +145,7 @@ export default function AddProject({ open, onClose, onAdded,
         )}
         {busy && (
           <Typography variant="caption" color="text.secondary">
-            клонирую…
+            {local ? "создаю…" : "клонирую…"}
           </Typography>
         )}
         {result && (
@@ -152,15 +161,17 @@ export default function AddProject({ open, onClose, onAdded,
         )}
         {result?.ok && (
           <Alert severity="success" sx={{ py: 0 }}>
-            Проект склонирован и добавлен
+            {local ? "Локальный репозиторий создан"
+                   : "Проект склонирован и добавлен"}
           </Alert>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={close} disabled={busy}>Закрыть</Button>
         <Button variant="contained" onClick={submit}
-                disabled={busy || !folder.trim() || !url.trim()}>
-          Клонировать
+                disabled={busy || !folder.trim() ||
+                          (!local && !url.trim())}>
+          {local ? "Создать" : "Клонировать"}
         </Button>
       </DialogActions>
     </Dialog>

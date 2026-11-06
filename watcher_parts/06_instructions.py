@@ -1474,6 +1474,7 @@ def _api_project_add():
     folder = (body.get("folder") or "").strip()
     url = (body.get("url") or "").strip()
     token = (body.get("token") or "").strip()
+    local = bool(body.get("local"))
     if not re.fullmatch(r"[A-Za-z0-9._-]+", folder or ""):
         return jsonify({"ok": False, "error":
                         "имя папки: только a-z, 0-9, точка, _ и -"}), 400
@@ -1483,6 +1484,39 @@ def _api_project_add():
     if (PROJECTS_ROOT / folder).exists():
         return jsonify({"ok": False,
                         "error": f"папка {folder} уже существует"}), 409
+    dest = PROJECTS_ROOT / folder
+    if local:
+        # «локальный репозиторий» (v1.8.92): без клона — просто
+        # папка + git init и пустой первый коммит, чтобы бар ветки
+        # сразу видел main и HEAD существовал
+        dest.mkdir()
+        out_lines, ok = [], True
+        for args in (("init", "-b", "main"),
+                     ("-c", "user.name=devin",
+                      "-c", "user.email=devin@local",
+                      "commit", "--allow-empty", "-m", "init")):
+            rc, o = _git(dest, *args)
+            out_lines.append(o)
+            if rc != 0:
+                ok = False
+                break
+        out = "\n".join(x for x in out_lines if x)
+        if not ok:
+            shutil.rmtree(dest, ignore_errors=True)
+            return jsonify({"ok": False,
+                            "error": out[-4000:]
+                                     or "git init failed"}), 500
+        db_exec("INSERT IGNORE INTO project_owner(name, owner)"
+                " VALUES(%s,%s)", (folder, _current_user()))
+        wsel = int(body.get("ws") or 0)
+        if wsel in [w["id"] for w in _user_ws(_current_user())]:
+            db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"
+                    " VALUES(%s,%s,%s)",
+                    (_current_user(), folder, wsel))
+        log(f"web added LOCAL project {folder} "
+            f"(owner {_current_user()})")
+        return jsonify({"ok": True, "folder": folder,
+                        "output": out[-4000:]})
     parsed = _parse_remote(url)
     if not parsed:
         return jsonify({"ok": False, "error":
