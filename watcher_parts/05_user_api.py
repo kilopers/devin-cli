@@ -65,6 +65,7 @@ def _api_project_settings_get():
                     "auto_commit": pj_get(p, "auto_commit"),
                     "fast": pj_get(p, "fast"),
                     "main_branch": pj_get(p, "main_branch"),
+                    "url": pj_get(p, "url"),
                     "icon": pj_get(p, "icon"),
                     "color": pj_get(p, "color"),
                     "mcp": pj_get(p, "mcp"),
@@ -94,6 +95,15 @@ def _api_project_settings_set():
         v = (body.get(k) or "").strip()[:200]
         if ok is None or v in ok:
             pj_set(p, k, v)
+    # ссылка проекта — кнопка «Проверить» в баре ветки (v1.8.91);
+    # только http(s) — javascript: и прочие схемы не храним
+    if "url" in body:
+        v = (body.get("url") or "").strip()[:300]
+        if v and not v.startswith(("http://", "https://")):
+            return jsonify({"ok": False,
+                            "error": "ссылка должна начинаться "
+                                     "с http:// или https://"}), 400
+        pj_set(p, "url", v)
     if "mcp" in body:
         v = (body.get("mcp") or "").strip()
         try:  # JSON-объект name → def либо пусто

@@ -25,6 +25,7 @@ export default function ProjectSettings({ project, onClose, toast,
   const [mcp, setMcp] = useState("");
   const [icon, setIcon] = useState("");
   const [color, setColor] = useState("");
+  const [url, setUrl] = useState("");
 
   useEffect(() => {
     if (!project) return;
@@ -35,7 +36,7 @@ export default function ProjectSettings({ project, onClose, toast,
                    setFast(j.fast || "");
                    setMainBranch(j.main_branch || "");
                    setMcp(j.mcp || ""); setIcon(j.icon || "");
-                   setColor(j.color || ""); });
+                   setColor(j.color || ""); setUrl(j.url || ""); });
     get("/api/agents").then(j =>
       setAgents((j.agents || []).filter(a => a.configured)))
       .catch(() => {});
@@ -56,7 +57,7 @@ export default function ProjectSettings({ project, onClose, toast,
       project, model, agent, reply_mode: mode,
       auto_commit: autoCommit ? "1" : "0", fast,
       main_branch: mainBranch.trim(), mcp: mcp.trim(),
-      icon: icon.trim(), color: color.trim() });
+      icon: icon.trim(), color: color.trim(), url: url.trim() });
     setBusy(false);
     if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(true); }
   };
@@ -128,6 +129,11 @@ export default function ProjectSettings({ project, onClose, toast,
             {branches.map(b => (
               <MenuItem key={b} value={b}>{b}</MenuItem>))}
           </TextField>
+          <TextField label="Ссылка проекта" size="small" fullWidth
+                     value={url}
+                     onChange={e => setUrl(e.target.value)}
+                     helperText="кнопка «Проверить» в баре ветки — открывает в новой вкладке; пусто — не показывается"
+                     placeholder="https://…" />
           <TextField label="Иконка проекта" size="small" fullWidth
                      value={icon}
                      onChange={e => setIcon(e.target.value)}

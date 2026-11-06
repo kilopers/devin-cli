@@ -2094,6 +2094,7 @@ export default function App() {
   }, [toast, toastNode]);
   const [projIcon, setProjIcon] = useState(""); // иконка активного проекта
   const [projColor, setProjColor] = useState(""); // цвет активного проекта
+  const [projUrl, setProjUrl] = useState("");    // ссылка «Проверить»
   const [colorPreview, setColorPreview] = useState(null); // превью из диалога настроек
   const [profileOpen, setProfileOpen] = useState(false);
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
@@ -2963,11 +2964,13 @@ export default function App() {
     if (!project || project === "workspace") return;
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
       .then(j => { if (j.ok) { setProjIcon(j.icon || "");
-                               setProjColor(j.color || ""); } })
+                               setProjColor(j.color || "");
+                               setProjUrl(j.url || ""); } })
       .catch(() => {});
   }, [project]);
   useEffect(() => {
     setProjIcon(""); setProjColor(""); setColorPreview(null);
+    setProjUrl("");
     loadProjSettings();
   }, [loadProjSettings]);
   useEffect(() => {
@@ -3320,6 +3323,19 @@ export default function App() {
                             whiteSpace: "nowrap", minWidth: 0 }}>
                 🌿 ветка</Button>
             </Tooltip>
+            {/* ссылка проекта из настроек — мини-кнопка «Проверить»
+                открывает её в новой вкладке; не задана — не рисуем */}
+            {projUrl &&
+              <Tooltip title={"открыть в новой вкладке: " + projUrl}>
+                <Button size="small" variant="outlined"
+                        component="a" href={projUrl}
+                        target="_blank" rel="noopener noreferrer"
+                        sx={{ fontSize: { xs: 10, md: 11 },
+                              px: { xs: 0.8, md: 1.5 }, py: 0,
+                              height: { xs: 22, md: 24 },
+                              whiteSpace: "nowrap", minWidth: 0 }}>
+                  🔗 Проверить</Button>
+              </Tooltip>}
           </Box>}
 
         <SwipeableDrawer open={drawerOpen}
