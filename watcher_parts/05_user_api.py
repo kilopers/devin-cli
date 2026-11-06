@@ -167,7 +167,7 @@ def _api_project_delete():
 @login_required
 def _api_attach():
     """Загрузить файл для прикрепления к задаче. Имя — ?name= или
-    заголовок X-Filename; тело — raw bytes (до 20 МБ). Ответ — id
+    заголовок X-Filename; тело — raw bytes (до 50 МБ). Ответ — id
     вложения, передаётся в /api/tasks полем attach."""
     name = (request.args.get("name")
             or request.headers.get("X-Filename") or "file")
