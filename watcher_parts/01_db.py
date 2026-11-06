@@ -889,6 +889,29 @@ def kill_task(stem: str | None = None) -> int:
         return n
 
 
+def _sess_gate_acquire(key: str | None, name: str = "") -> None:
+    """Блокирует воркера, пока «сессию» key держит другая задача —
+    --resume/--continue одной agent-сессии не должны идти параллельно
+    (бэкенд отвечает «session locked»). None — сессия свежая, ждать
+    нечего. wait(timeout) — страховка от потерянного notify."""
+    if not key:
+        return
+    with _SESS_GATES_CV:
+        if key in _SESS_GATES:
+            log(f"{name}: сессия занята ({_SESS_GATES[key]}), "
+                "жду освобождения")
+        while key in _SESS_GATES:
+            _SESS_GATES_CV.wait(timeout=30)
+        _SESS_GATES[key] = name or "?"
+
+
+def _sess_gate_release(key: str | None) -> None:
+    if key:
+        with _SESS_GATES_CV:
+            _SESS_GATES.pop(key, None)
+            _SESS_GATES_CV.notify_all()
+
+
 def claim_task() -> dict | None:
     """Атомарно забрать из очереди задачу проекта, который сейчас не
     выполняется. UPDATE-first: второй воркер ту же задачу не ухватит.
@@ -901,13 +924,19 @@ def claim_task() -> dict | None:
         with _run_lock:
             if proj in RUNNING_PROJS:
                 continue                    # этот проект уже в работе
+            # резерв проекта сразу, ДО UPDATE: между старыми check и
+            # add() было окно гонки — два воркера проходили проверку
+            # одновременно и брали задачи ОДНОГО проекта параллельно
+            # (та же сессия → «session locked»)
+            RUNNING_PROJS.add(proj)
         got = db_exec("UPDATE tasks SET status='running', started=%s"
                       " WHERE stem=%s AND status='queued'",
                       (time.time(), r["stem"]))
         if not got:                         # ухватил другой воркер
+            with _run_lock:
+                RUNNING_PROJS.discard(proj)
             continue
         with _run_lock:
-            RUNNING_PROJS.add(proj)
             RUNNING_STEMS.add(r["stem"])
         t = task_row(r["stem"])
         if t:
@@ -1135,34 +1164,49 @@ def run_task(task: dict) -> None:
             with _procs_lock:
                 _task_procs.pop(stem, None)
 
-    mcp_restore = _mcp_apply(tproj, ag)
+    # сессионный гейт: --resume цепляется к конкретной сессии
+    # (ключ = её id), --continue — к «последней сессии каталога»
+    # агента, поэтому все continue-прогоны одного движка идут строго
+    # по очереди; свежая сессия (None) — без ожидания
+    sess_key = (f"sess:{akey}:{resume_id}" if resume_id
+                else (f"cont:{akey}"
+                      if (ext or (not pin_tid and continue_mode()))
+                         and not opts.get("model") else None))
+    _sess_gate_acquire(sess_key, name)
     try:
-        status, body = _run_once(env)
+        mcp_restore = _mcp_apply(tproj, ag)
+        try:
+            status, body = _run_once(env)
 
-        # Ключ devin.api_key юзера может быть протухшим/обрезанным — CLI тогда
-        # падает на загрузке team settings («Invalid token»). Повторяем один
-        # раз с дефолтным ключом (env → credentials.toml), чтобы задача не
-        # умирала из-за чужого креда.
-        user_key = us_get(task_user, "devin.api_key")
-        default_key = os.environ.get("WINDSURF_API_KEY", "")
-        auth_bad = ("Invalid token" in body
-                    or "failed to get primary API key" in body
-                    or "failed to validate Devin token" in body)
-        if auth_bad and user_key and user_key != default_key:
-            log(f"{name}: devin.api_key юзера {task_user} отклонён, "
-                "повторяю с дефолтным ключом")
-            env2 = dict(env)
-            if default_key:
-                env2["WINDSURF_API_KEY"] = default_key
-            else:
-                env2.pop("WINDSURF_API_KEY", None)  # credentials.toml
-            note = (f"⚠️ devin.api_key юзера {task_user} не прошёл валидацию "
-                    "(Invalid token) — задача перезапущена с ключом "
-                    "по умолчанию. Обнови ключ в «Настройках».\n\n")
-            status, body = _run_once(env2)
-            body = note + body
+            # Ключ devin.api_key юзера может быть протухшим/обрезанным
+            # — CLI тогда падает на загрузке team settings («Invalid
+            # token»). Повторяем один раз с дефолтным ключом (env →
+            # credentials.toml), чтобы задача не умирала из-за чужого
+            # креда.
+            user_key = us_get(task_user, "devin.api_key")
+            default_key = os.environ.get("WINDSURF_API_KEY", "")
+            auth_bad = ("Invalid token" in body
+                        or "failed to get primary API key" in body
+                        or "failed to validate Devin token" in body)
+            if auth_bad and user_key and user_key != default_key:
+                log(f"{name}: devin.api_key юзера {task_user} "
+                    "отклонён, повторяю с дефолтным ключом")
+                env2 = dict(env)
+                if default_key:
+                    env2["WINDSURF_API_KEY"] = default_key
+                else:
+                    env2.pop("WINDSURF_API_KEY",
+                             None)  # credentials.toml
+                note = (f"⚠️ devin.api_key юзера {task_user} не прошёл "
+                        "валидацию (Invalid token) — задача "
+                        "перезапущена с ключом по умолчанию. Обнови "
+                        "ключ в «Настройках».\n\n")
+                status, body = _run_once(env2)
+                body = note + body
+        finally:
+            mcp_restore()
     finally:
-        mcp_restore()
+        _sess_gate_release(sess_key)
 
     body = _clean_task_output(body)
     finished_ts = time.time()

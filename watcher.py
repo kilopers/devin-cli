@@ -158,6 +158,12 @@ _procs_lock = threading.Lock()
 RUNNING_PROJS: set = set()
 RUNNING_STEMS: set = set()
 _run_lock = threading.Lock()
+# сессионный гейт (v1.8.81): ключ сессии -> имя задачи-держателя;
+# воркеры ждут на Condition, пока ключ освободится. Две задачи не
+# должны прицепляться к одной сессии агента параллельно — бэкенд
+# отвечает «session locked»
+_SESS_GATES: dict = {}
+_SESS_GATES_CV = threading.Condition(threading.Lock())
 WORKER_THREADS = max(1, min(int(os.environ.get("WORKER_THREADS", "3")
                                  or 1), 8))
 _mihomo_proc: subprocess.Popen | None = None
