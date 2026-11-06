@@ -1003,7 +1003,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   if (e.key === "Enter" && (e.ctrlKey || e.metaKey))
                     saveEdit(); }}
                 sx={{ "& .MuiInputBase-root":
-                      { fontSize: 13.5, lineHeight: 1.62 } }} />
+                      { fontSize: 12.5, lineHeight: 1.45 } }} />
               <Box sx={{ display: "flex", gap: 0.8, mt: 0.8 }}>
                 <Button size="small" variant="contained"
                   onClick={saveEdit} disabled={editBusy}
@@ -1021,9 +1021,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             </Box>
           ) : (
           <Box ref={txtRef}
-            sx={{ fontSize: 13.5, lineHeight: 1.62,
+            sx={{ fontSize: 12.5, lineHeight: 1.45,
                   overflowWrap: "anywhere", overflowX: "hidden",
-                  ...(open ? {} : { maxHeight: 110,
+                  ...(open ? {} : { maxHeight: 92,
                                     overflow: "hidden" }) }}>
             <Markdown text={promptShown} />
           </Box>
@@ -1032,8 +1032,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
         <Typography variant="body2" ref={txtRef}
           onClick={(canExpand || open)
                    ? () => setOpen(o => !o) : undefined}
-          sx={{ whiteSpace: "pre-wrap", fontWeight: 500, fontSize: 13.5,
-                lineHeight: 1.62,
+          sx={{ whiteSpace: "pre-wrap", fontWeight: 400, fontSize: 12.5,
+                lineHeight: 1.45,
                 cursor: (canExpand || open) ? "pointer" : "inherit",
                 ...(!open && {
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
