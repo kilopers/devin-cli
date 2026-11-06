@@ -106,17 +106,21 @@ def _chat_tail(path: Path, marker: bytes | None,
                limit: int = 40000) -> str:
     """Живой вывод для чат-пузыря (колонки «💬 Диалог»): всё, что
     агент напечатал после строки start_marker — баннер auth/git-pull
-    и [devin-task]-обвязка срезаны, ANSI снят. У движков без маркера
-    чистится просто хвост файла."""
+    и [devin-task]-обвязка срезаны, ANSI снят. Пока маркер ещё не
+    напечатан, отдаём пусто: иначе в пузырь на пару секунд
+    просачивалась запуск-обвязка (WARNING-префикс у [devin-task]
+    выживает в _clean_task_output) — пузырь мигал и дёргал высоту
+    треда. У движков без маркера чистится просто хвост файла."""
     try:
         data = path.read_bytes()
     except OSError:
         return ""
     if marker:
         pos = data.find(marker)
-        if pos != -1:
-            eol = data.find(b"\n", pos)
-            data = data[eol + 1:] if eol != -1 else b""
+        if pos == -1:
+            return ""
+        eol = data.find(b"\n", pos)
+        data = data[eol + 1:] if eol != -1 else b""
     if len(data) > limit:
         # хвост обрезан — выравниваем по первой строке, чтобы не
         # показывать оборванное начало
