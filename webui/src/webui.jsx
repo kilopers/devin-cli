@@ -1599,7 +1599,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onSettings, onMoveL, onMoveR,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
-                      onDict, dictOn, dictBusy, onStats, pending }) {
+                      onDict, dictOn, dictBusy, onStats, pending,
+                      skel }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
@@ -1763,6 +1764,9 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                  "& > *": { flexShrink: 0 },
                  "&::-webkit-scrollbar": { width: 8 } }}
            onDragOver={onBodyOver} onDrop={onBodyDrop}>
+        {skel &&
+          <Skeleton variant="rounded" height={76}
+                    sx={{ borderRadius: "10px", flexShrink: 0 }} />}
         {children}
         {loading && !React.Children.count(children) &&
           [0, 1, 2].map(i => (
@@ -2329,6 +2333,11 @@ export default function App() {
   // иначе после «стоп» непонятно, что происходит
   const [dictProc, setDictProc] = useState(null);
   const [dictInfo, setDictInfo] = useState("");
+  // скелетон-карточка в целевой колонке: пока диктуем и идёт
+  // распознавание/постановка (быстрый режим) — видно, что карточка
+  // вот-вот появится; при ошибке пропадает, при ок — подменяется
+  // настоящей после loadTasks
+  const [dictSkel, setDictSkel] = useState(null);
   const [compInj, setCompInj] = useState({ text: "", n: 0 });
   // продиктованная командная фраза в начале речи — «заметка сюда»,
   // «задача сюда», «спросить», «плюс задача» — не часть текста,
@@ -2359,6 +2368,7 @@ export default function App() {
       if (!d.ok || !txt) {
         setToast(d.ok ? "Ничего не распознано"
                       : "STT: " + (d.error || "?"));
+        setDictSkel(null);
       } else if (r.target.kind === "note") {
         const a = await post("/api/task/append",
                              { stem: r.target.stem, text: txt });
@@ -2366,6 +2376,9 @@ export default function App() {
                       : "append: " + (a.error || "?"));
         loadTasks();
       } else if (effFast) {
+        // тогл быстрого могли включить уже после начала записи —
+        // добиваем скелетон на время постановки
+        setDictSkel(r.target.key);
         const a = await post("/api/tasks", {
           project: project === "workspace" ? null : project,
           text: txt, topic: r.target.key,
@@ -2373,12 +2386,16 @@ export default function App() {
           ...(r.target.mode === "ask" ? { mode: "ask" } : {}) });
         setToast(a.ok ? "Задача поставлена"
                       : "Ошибка: " + (a.error || "?"));
-        loadTasks();
+        // скелетон живёт до прихода настоящей карточки; при ошибке
+        // просто гасим — toast выше объяснил
+        await loadTasks();
+        setDictSkel(null);
       } else {
+        setDictSkel(null);
         setCompInj(c => ({ text: txt, n: c.n + 1 }));
         document.getElementById("composer-input")?.focus();
       }
-    } catch (e) { setToast("STT сеть: " + e); }
+    } catch (e) { setToast("STT сеть: " + e); setDictSkel(null); }
     setDictProc(null);
   };
   const startDict = async target => {
@@ -2402,9 +2419,12 @@ export default function App() {
           new Date(Date.now() - t0).toISOString().substr(14, 5)), 250),
         timer: setTimeout(stopDict, 300000) };
       setDict(target); setDictInfo("00:00");
+      // быстрый режим + диктовка из колонки → задача ляжет в неё:
+      // скелетон-карточка сразу показывает «процесс идёт»
+      if (target.kind === "col" && effFast) setDictSkel(target.key);
     } catch (e) {
       setToast("Микрофон: " + e);
-      setDict(null); setNoteSel(null);
+      setDict(null); setNoteSel(null); setDictSkel(null);
     }
   };
   const toggleDict = t => {
@@ -2986,6 +3006,7 @@ export default function App() {
                                 && dict?.key === "main"}
                         dictBusy={dictProc?.kind === "col"
                                   && dictProc?.key === "main"}
+                        skel={dictSkel === "main"}
                         onStats={() => setStatDlg(
                           { key: "main",
                             name: "⭐ " + (mainDef.name
@@ -3022,6 +3043,7 @@ export default function App() {
                               && dict?.key === String(tp.id)}
                       dictBusy={dictProc?.kind === "col"
                                 && dictProc?.key === String(tp.id)}
+                      skel={dictSkel === String(tp.id)}
                       onStats={() => setStatDlg(
                         { key: String(tp.id),
                           name: tp.name || `тема #${tp.id}` })}
@@ -3055,6 +3077,7 @@ export default function App() {
                           && dict?.key === String(tid)}
                   dictBusy={dictProc?.kind === "col"
                             && dictProc?.key === String(tid)}
+                  skel={dictSkel === String(tid)}
                   onStats={() => setStatDlg(
                     { key: String(tid), name: "тема #" + tid })}
                   more={colMore[String(tid)]}
