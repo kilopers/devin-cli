@@ -516,6 +516,7 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
 function ChatEnd({ n, h, last }) {
   const ref = useRef(null);
   const prev = useRef(null);
+  const first = useRef(true);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -524,9 +525,15 @@ function ChatEnd({ n, h, last }) {
     prev.current = last;
     const near = !box || box.scrollHeight - box.scrollTop
                  - box.clientHeight < 120;
-    // scrollTop напрямую, не scrollIntoView: тот скроллит ВСЕ
-    // прокручиваемые предки — мог дёргать и окно, и саму доску
-    if (isNew || near) box.scrollTop = box.scrollHeight;
+    // scrollTo бокса напрямую, не scrollIntoView: тот скроллит ВСЕ
+    // прокручиваемые предки — мог дёргать и окно, и саму доску.
+    // Новое сообщение — плавно (мессенджер-поведение); открытие
+    // колонки и рост живого пузыря — мгновенно, иначе длинный
+    // тред «пролетал» бы анимацией при каждом чихе
+    if (isNew || near)
+      box.scrollTo({ top: box.scrollHeight,
+        behavior: isNew && !first.current ? "smooth" : "auto" });
+    first.current = false;
   }, [n, h, last]);
   // height: "1px" строкой — sx height:1 превратил бы якорь в 100%
   // высоты скролл-бокса (пустой экран под тредом)
@@ -1860,7 +1867,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onDict, dictOn, dictBusy, onStats, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
                       collapsed, onCollapse, full, onFull, chat,
-                      onReset }) {
+                      onReset, kick }) {
   const [menu, setMenu] = useState(null);
   // чат-колонка: следим за прокруткой треда — при уходе от низа
   // показываем плавающую стрелку «к последнему сообщению»
@@ -1881,6 +1888,13 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
     if (b) setChatUp(b.scrollHeight - b.scrollTop
                      - b.clientHeight > 80);
   });
+  // «сразу к низу»: юзер отправил сообщение в эту чат-колонку —
+  // крутим плавно сразу, не дожидаясь поллинга с новым пузырём
+  useEffect(() => {
+    if (!chat || !kick) return;
+    const b = bodyRef.current;
+    if (b) b.scrollTo({ top: b.scrollHeight, behavior: "smooth" });
+  }, [kick]);
   const toEnd = () => bodyRef.current?.scrollTo(
     { top: bodyRef.current.scrollHeight, behavior: "smooth" });
   return (
@@ -2754,6 +2768,14 @@ export default function App() {
     setTopicSel(v); topicRef.current = v;
     saveTopicSel(projRef.current, v);
   };
+  // «сразу к низу»: отправка сообщения в чат-колонку плавно крутит
+  // её тред к концу сразу (кик), не дожидаясь прихода пузыря по
+  // поллингу; сам пузырь потом доскролливает ChatEnd-ом
+  const [endKick, setEndKick] = useState(null);
+  const kickEnd = key => {
+    const tp = topics.find(t => String(t.id) === String(key));
+    if (tp?.chat) setEndKick({ key: String(key), n: Date.now() });
+  };
   // сохранённая тема могла быть удалена — откатываемся на «Главную»
   // (но только когда список тем уже пришёл, не на пустом старте)
   useEffect(() => {
@@ -2960,6 +2982,7 @@ export default function App() {
           ...(r.target.mode === "ask" ? { mode: "ask" } : {}) });
         setToast(a.ok ? "Задача поставлена"
                       : "Ошибка: " + (a.error || "?"));
+        if (a.ok) kickEnd(r.target.key);
         // скелетон живёт до прихода настоящей карточки; при ошибке
         // просто гасим — toast выше объяснил
         await loadTasks();
@@ -3724,6 +3747,8 @@ export default function App() {
                         ? () => askResetTopic(
                             tp.id, tp.name || `тема #${tp.id}`)
                         : null}
+                      kick={endKick && endKick.key === String(tp.id)
+                            ? endKick.n : 0}
                       onBodyOver={tp.chat ? null
                         : e => overCol(e, String(tp.id))}
                       onBodyDrop={tp.chat ? null
@@ -3902,7 +3927,8 @@ export default function App() {
 
         {project && <Composer project={project} sttStatus={status.stt_status}
                   inject={compInj}
-                  toast={setToast} onSent={loadTasks} accent={accent}
+                  toast={setToast} accent={accent}
+                  onSent={() => { kickEnd(topicSel); loadTasks(); }}
                   note={noteSel ? feed.get(noteSel) : null}
                   onNoteDone={() => setNoteSel(null)}
                   cont={contSel ? feed.get(contSel) : null}
