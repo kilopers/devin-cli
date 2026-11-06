@@ -953,6 +953,13 @@ def claim_task() -> dict | None:
     return None
 
 
+def _attach_disp_name(att_id: str) -> str:
+    """Отображаемое имя вложения: att_id = <user>-<hex8>-<имя>
+    (формат /api/attach) — возвращает часть после токена."""
+    m = re.match(r"^.*?-[0-9a-f]{8}-(.*)$", att_id or "")
+    return m.group(1) if m else (att_id or "file")
+
+
 def _clean_task_output(text: str) -> str:
     """Срезает тех-обвязку вывода по краям: строки [devin-task]
     (кроме WARNING/ERROR — это реальные предупреждения проекта),

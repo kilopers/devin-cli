@@ -596,6 +596,45 @@ def _api_task_prompt(stem: str):
     return jsonify({"ok": True, "prompt": r["prompt"] or ""})
 
 
+@app.get("/api/task/<stem>/attach")
+@app.get("/api/task/<stem>/attach/<int:i>")
+@login_required
+def _api_task_attach(stem: str, i: int = 0):
+    """Прикреплённый файл задачи. До запуска живёт в ATTACH_DIR по id
+    из opts:<stem>.attach; после — в .progress/<stem>.attach(.N).
+    Отдаётся inline: картинки показываются в чат-пузырях «💬 Диалог»,
+    остальное открывается/скачивается по ссылке-чипу."""
+    import mimetypes
+    from flask import send_file
+    if not re.match(r"^[A-Za-z0-9_-]+$", stem):
+        abort(404)
+    rows = db_query("SELECT project FROM tasks WHERE stem=%s", (stem,))
+    if not rows or (rows[0]["project"]
+                    and not _owns_project(rows[0]["project"])):
+        abort(404)
+    try:
+        o = json.loads(kv_get(f"opts:{stem}") or "{}")
+    except ValueError:
+        o = {}
+    att = o.get("attach")
+    atts = att if isinstance(att, list) else ([att] if att else [])
+    name = _attach_disp_name(atts[i]) if 0 <= i < len(atts) else ""
+    # после запуска задачи файл переезжает рядом с промптом
+    cand = TASKS_DIR / ".progress" / (
+        f"{stem}.attach" if i == 0 else f"{stem}.attach.{i + 1}")
+    if not cand.is_file() and 0 <= i < len(atts) \
+            and "/" not in atts[i]:
+        queued = ATTACH_DIR / atts[i]
+        if queued.is_file():
+            cand = queued
+    if not cand.is_file():
+        abort(404)
+    dl = name or cand.name
+    mime = mimetypes.guess_type(dl)[0] or "application/octet-stream"
+    return send_file(cand, mimetype=mime, as_attachment=False,
+                     download_name=dl)
+
+
 @app.get("/api/files")
 @login_required
 def _api_files():

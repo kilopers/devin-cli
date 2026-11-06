@@ -244,6 +244,10 @@ def api_tasks(project: str | None = None, limit: int = 5,
         emodel = r["model"] or ""
         eac = (o.get("ac") if o.get("ac") is not None
                else (cd.get("auto_commit") or "0"))
+        # вложения задачи (opts.attach — id из /api/attach):
+        # имена для показа в чат-пузырях «💬 Диалог»
+        att = o.get("attach")
+        atts = att if isinstance(att, list) else ([att] if att else [])
         items.append({
             "name": _task_name(stem),
             "stem": stem,
@@ -284,6 +288,9 @@ def api_tasks(project: str | None = None, limit: int = 5,
             # записей может не быть — тогда время не рисуем
             "started": int(r["started"] or 0),
             "finished": int(r["finished"] or 0),
+            # имена прикреплённых файлов — чат-пузырь рисует
+            # фото картинкой, файл чипом (GET /api/task/<stem>/attach/<i>)
+            "atts": [_attach_disp_name(a) for a in atts],
             # место карточки в колонке канбана (dnd-перестановка)
             "sort": float(r.get("sort") or 0),
             "prompt": (r["prompt"] or "")[:2000],

@@ -462,9 +462,31 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
     borderColor: "divider",
     "& .md": { maxHeight: "none", overflowY: "visible",
                fontSize: 13 } };
+  const txt = (t.prompt || "").trim();
+  // вложения в пузыре юзера: картинка — миниатюрой (клик —
+  // полный размер), прочий файл — чип-ссылка 📎
+  const attEls = (t.atts || []).map((a, i) => {
+    const url = "/api/task/" + t.stem + "/attach/" + i;
+    const img = /\.(jpe?g|png|gif|webp|avif|bmp|heic|svg)$/i.test(a);
+    const gap = txt || i ? 0.5 : 0;
+    return img ? (
+      <Box key={i} component="img" src={url} alt={a}
+           onClick={() => window.open(url, "_blank")}
+           sx={{ display: "block", maxWidth: "100%", maxHeight: 280,
+                 borderRadius: "8px", mt: gap, cursor: "zoom-in" }} />
+    ) : (
+      <Box key={i} component="a" href={url} target="_blank"
+           sx={{ display: "inline-flex", alignItems: "center",
+                 gap: 0.6, mt: gap, mr: 0.5, px: 0.9, py: 0.4,
+                 borderRadius: "8px", bgcolor: "rgba(255,255,255,.18)",
+                 color: "#fff", fontSize: 12, textDecoration: "none",
+                 "&:hover": { bgcolor: "rgba(255,255,255,.3)" } }}>
+        📎 {a}
+      </Box>);
+  });
   return (<>
     <Paper elevation={0} sx={mine}>
-      {(t.prompt || "").trim()}</Paper>
+      {txt}{attEls}</Paper>
     <Paper elevation={0} sx={theirs}>
       {t.status === "queued" &&
         <Typography variant="caption" color="text.secondary">
