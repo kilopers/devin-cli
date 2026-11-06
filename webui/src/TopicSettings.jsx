@@ -210,7 +210,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                      value={mode}
                      onChange={e => setMode(e.target.value)}
                      helperText={mode === "say"
-                       ? "карточки-заметки — Devin их не получает"
+                       ? "карточки-заметки — агент их не получает"
                        : "пусто — режим проекта/настроек"}>
             <MenuItem value="">— по умолчанию —</MenuItem>
             <MenuItem value="say">📝 заметка</MenuItem>

@@ -470,10 +470,10 @@ export default function Composer({ project, sttStatus, toast, onSent,
             placeholder={(cont ? "Доделать в этой карточке — тот же текст, та же сессия"
              : say
              ? (note ? "Дописать в карточку…"
-                     : "Заметка в колонку — Devin её не получит")
+                     : "Заметка в колонку — агент её не получит")
              : curMode === "ask"
              ? `Вопрос по «${project || "…"}»`
-             : `Задача для Devin по проекту «${project || "…"}»`) +
+             : `Задача для агента по проекту «${project || "…"}»`) +
                          " — Ctrl+Enter чтобы отправить"}
             value={text}
             onChange={e => setText(e.target.value)}

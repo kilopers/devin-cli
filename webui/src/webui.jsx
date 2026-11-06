@@ -214,7 +214,7 @@ function Elapsed({ started, finished }) {
         ss = s % 60;
   const pad = n => String(n).padStart(2, "0");
   return (
-    <Tooltip title="время выполнения — от старта Devin до готовности, очередь не считается">
+    <Tooltip title="время выполнения — от старта агента до готовности, очередь не считается">
       <Chip size="small" variant="outlined"
             color={finished ? "default" : "info"}
             sx={{ height: 18, fontSize: 10, fontWeight: 600, ml: 0.4,
@@ -440,7 +440,7 @@ function ChatBusy({ t }) {
                mt: t.cout ? 0.6 : 0 }}>
       <CircularProgress size={11} thickness={6} />
       <Typography variant="caption" color="info.main">
-        {(t.agent || "Devin") + " " + what}
+        {"Агент " + what}
       </Typography>
     </Box>);
 }
@@ -947,7 +947,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             <Tooltip title={(t.mode === "ask"
               ? "режим «вопрос» — только чтение"
               : t.mode === "say"
-              ? "карточка-заметка — не уходит Devin"
+              ? "карточка-заметка — не уходит агенту"
               : "режим «код» — полный доступ") +
               " — отличается от дефолта колонки"}>
               <Chip size="small" variant="outlined" sx={metaSx}
@@ -1101,7 +1101,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
               </Tooltip>
             )}
             {isNote && (
-              <Tooltip title="оформить текст в markdown через Devin — результат появится кнопкой «✨ вариант»">
+              <Tooltip title="оформить текст в markdown через агента — результат появится кнопкой «✨ вариант»">
                 <IconButton size="small" disabled={fmtOn}
                   onClick={e => { e.stopPropagation(); fmtNote(); }}
                   sx={{ p: "3px", color: "text.secondary" }}>
@@ -1355,7 +1355,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 ? (t.output
                     ? <Markdown text={t.output} />
                     : <Typography variant="body2" color="text.secondary">
-                        вывод пуст — Devin ничего не вернул</Typography>)
+                        вывод пуст — агент ничего не вернул</Typography>)
                 : ((frozenOut ?? t.output)
                     ? <pre className="out" ref={outRef}
                            style={{ maxHeight: "60vh" }}>
@@ -1647,7 +1647,7 @@ function TopicStatsDlg({ dlg, project, onClose, toast }) {
               {fmtNum(r.prompt_tok)}·кэш {fmtNum(r.cached_tok)}
               ·out {fmtNum(r.completion_tok)}
             </Typography>
-            <Tooltip title="время выполнения — от старта Devin до готовности, очередь не считается">
+            <Tooltip title="время выполнения — от старта агента до готовности, очередь не считается">
               <Typography component="span"
                 sx={{ fontSize: "inherit",
                       fontFamily: "ui-monospace, Menlo, monospace",
@@ -3721,7 +3721,7 @@ export default function App() {
                              borderStyle: "dashed", borderColor: "divider",
                              "&:hover": { borderColor:
                                accent || "primary.main" } }}>
-                  <Tooltip title="новая тема — первая задача стартует свою сессию Devin">
+                  <Tooltip title="новая тема — первая задача стартует свою сессию агента">
                     <Box sx={{ px: 1.1, py: 0.8, display: "flex",
                                alignItems: "center", gap: 0.6 }}>
                       <Typography sx={{ fontSize: 13, fontWeight: 600,
