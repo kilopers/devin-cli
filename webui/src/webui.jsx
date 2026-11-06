@@ -2460,8 +2460,21 @@ export default function App() {
   const [tplNew, setTplNew] = useState(null); // {col, name}
   const [tplNewText, setTplNewText] = useState("");
   const [tplNewBusy, setTplNewBusy] = useState(false);
+  const [tplNewFmt, setTplNewFmt] = useState(false);
   const openTplNew = (col, name) => {
     setTplNew({ col, name }); setTplNewText(""); };
+  const fmtTplNew = async () => {
+    if (tplNewFmt || !tplNewText.trim()) return;
+    setTplNewFmt(true);
+    try {
+      const d = await post("/api/text/format", {
+        project: project === "workspace" ? null : project,
+        text: tplNewText });
+      if (d.ok) setTplNewText(d.text);
+      else setToast("Ошибка: " + (d.error || "?"));
+    } catch (e) { setToast("Сеть: " + e); }
+    setTplNewFmt(false);
+  };
   const saveTplNew = async () => {
     if (tplNewBusy || !tplNewText.trim()) return;
     setTplNewBusy(true);
@@ -3554,18 +3567,28 @@ export default function App() {
         </DialogTitle>
         <DialogContent sx={{ pt: "12px !important" }}>
           <TextField multiline fullWidth minRows={6} maxRows={16}
-            autoFocus value={tplNewText} disabled={tplNewBusy}
+            autoFocus value={tplNewText}
+            disabled={tplNewBusy || tplNewFmt}
             onChange={e => setTplNewText(e.target.value)}
             placeholder="Текст шаблона задачи"
             sx={{ "& .MuiInputBase-root":
                    { fontSize: 13, lineHeight: 1.55 } }} />
         </DialogContent>
         <DialogActions sx={{ px: 2, pb: 1.5 }}>
+          <Button onClick={fmtTplNew}
+            disabled={tplNewFmt || tplNewBusy || !tplNewText.trim()}
+            startIcon={tplNewFmt
+              ? <CircularProgress size={13} thickness={6} />
+              : <AutoAwesomeIcon sx={{ fontSize: 15 }} />}
+            sx={{ textTransform: "none", fontSize: 12.5 }}>
+            {tplNewFmt ? "оформляю…" : "✨ Оформить"}
+          </Button>
+          <Box sx={{ flex: 1 }} />
           <Button onClick={() => setTplNew(null)}
                   sx={{ textTransform: "none" }}>Отмена</Button>
           <Button variant="contained" disableElevation
             onClick={saveTplNew}
-            disabled={tplNewBusy || !tplNewText.trim()}
+            disabled={tplNewBusy || tplNewFmt || !tplNewText.trim()}
             sx={{ textTransform: "none", borderRadius: "9px" }}>
             {tplNewBusy ? "сохраняю…" : "Создать шаблон"}
           </Button>
