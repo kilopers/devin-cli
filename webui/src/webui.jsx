@@ -522,7 +522,9 @@ function ChatEnd({ n, h }) {
                  - box.clientHeight < 120;
     if (near) el.scrollIntoView({ block: "end" });
   }, [n, h]);
-  return <Box ref={ref} sx={{ height: 1, flexShrink: 0 }} />;
+  // height: "1px" строкой — sx height:1 превратил бы якорь в 100%
+  // высоты скролл-бокса (пустой экран под тредом)
+  return <Box ref={ref} sx={{ height: "1px", flexShrink: 0 }} />;
 }
 
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
