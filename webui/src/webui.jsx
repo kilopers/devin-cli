@@ -508,20 +508,24 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
   </>);
 });
 
-// якорь автоскролла треда: докручивает родительский скролл-бокс
-// вниз при новом сообщении (n) и при росте живого пузыря (h);
-// только если юзер и так у низа — иначе каждый поллинг сносил
-// бы чтение выше
-function ChatEnd({ n, h }) {
+// якорь автоскролла треда: новое сообщение (смена last-стема
+// нижнего пузыря) докручивает всегда — как в мессенджере, своё
+// отправленное/пришедшее не должно прятаться за экраном; рост
+// живого пузыря (h) — только если юзер и так у низа, иначе
+// каждый поллинг сносил бы чтение выше
+function ChatEnd({ n, h, last }) {
   const ref = useRef(null);
+  const prev = useRef(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const box = el.parentElement;
+    const isNew = !!last && last !== prev.current;
+    prev.current = last;
     const near = !box || box.scrollHeight - box.scrollTop
                  - box.clientHeight < 120;
-    if (near) el.scrollIntoView({ block: "end" });
-  }, [n, h]);
+    if (isNew || near) el.scrollIntoView({ block: "end" });
+  }, [n, h, last]);
   // height: "1px" строкой — sx height:1 превратил бы якорь в 100%
   // высоты скролл-бокса (пустой экран под тредом)
   return <Box ref={ref} sx={{ height: "1px", flexShrink: 0 }} />;
@@ -1864,6 +1868,17 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
     const b = e.currentTarget;
     setChatUp(b.scrollHeight - b.scrollTop - b.clientHeight > 80);
   } : undefined;
+  // ↓-кнопка должна появляться и без скролл-события: новое
+  // сообщение или рост живого пузыря молча увеличивают
+  // scrollHeight — перепроверяем дистанцию до низа после
+  // каждого рендера (setChatUp тем же значением рендер не
+  // перезапускает)
+  useEffect(() => {
+    if (!chat) return;
+    const b = bodyRef.current;
+    if (b) setChatUp(b.scrollHeight - b.scrollTop
+                     - b.clientHeight > 80);
+  });
   const toEnd = () => bodyRef.current?.scrollTo(
     { top: bodyRef.current.scrollHeight, behavior: "smooth" });
   return (
@@ -2705,7 +2720,8 @@ export default function App() {
       .concat(items.map(t =>
         <ChatMsg key={t.stem} t={t} accent={accent} />),
         [<ChatEnd key="__end" n={items.length}
-                  h={last ? last.h : ""} />]);
+                  h={last ? last.h : ""}
+                  last={last ? last.stem : ""} />]);
   };
 
   const selectProject = useCallback(p => {
