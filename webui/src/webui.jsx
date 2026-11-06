@@ -422,8 +422,33 @@ const PendOverlay = () => (
             bgcolor: "rgba(94,106,210,.08)" }} />
   </Box>);
 
+// строка активности в пузыре running-задачи: до первого живого
+// текста — «подключается…», пока текст прибывает — «печатает…»,
+// при паузе дольше ~4с — «думает…» (t.h меняется при притоке
+// вывода, поллинг ленты его перезапускает)
+function ChatBusy({ t }) {
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    setIdle(false);
+    const tm = setTimeout(() => setIdle(true), 4000);
+    return () => clearTimeout(tm);
+  }, [t.h]);
+  const what = !t.cout
+    ? "подключается…" : idle ? "думает…" : "печатает…";
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.6,
+               mt: t.cout ? 0.6 : 0 }}>
+      <CircularProgress size={11} thickness={6} />
+      <Typography variant="caption" color="info.main">
+        {(t.agent || "Devin") + " " + what}
+      </Typography>
+    </Box>);
+}
+
 // Пузырь диалога чат-колонки (v1.8.93): сообщение юзера справа,
-// ответ агента слева; у идущей задачи — живой хвост output
+// ответ агента слева; у идущей задачи — живой очищенный текст
+// (cout) + строка активности; скролла внутри пузыря нет —
+// сообщение растягивается, прокручивается вся колонка
 const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
   const mine = {
     alignSelf: "flex-end", maxWidth: "88%", px: 1.1, py: 0.7,
@@ -434,7 +459,9 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
     alignSelf: "flex-start", maxWidth: "94%", px: 1.1, py: 0.7,
     borderRadius: "12px 12px 12px 4px", fontSize: 13,
     bgcolor: "background.paper", border: "1px solid",
-    borderColor: "divider" };
+    borderColor: "divider",
+    "& .md": { maxHeight: "none", overflowY: "visible",
+               fontSize: 13 } };
   return (<>
     <Paper elevation={0} sx={mine}>
       {(t.prompt || "").trim()}</Paper>
@@ -444,17 +471,8 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
           ⏳ в очереди — отвечу следом</Typography>}
       {t.status === "running" &&
         <Box>
-          <Box sx={{ display: "flex", alignItems: "center",
-                     gap: 0.6, mb: t.output ? 0.4 : 0 }}>
-            <CircularProgress size={11} thickness={6} />
-            <Typography variant="caption" color="info.main">
-              {t.starting ? "Devin запускается…" : "Devin пишет…"}
-            </Typography>
-          </Box>
-          {t.output &&
-            <pre className="out" style={{ margin: 0, fontSize: 11,
-                 maxHeight: 260, overflow: "hidden" }}>
-              {(t.output || "").slice(-1500)}</pre>}
+          {!!t.cout && <Markdown text={t.cout} />}
+          <ChatBusy t={t} />
         </Box>}
       {t.status === "done" &&
         (t.output
@@ -468,12 +486,20 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
   </>);
 });
 
-// якорь автоскролла треда: при смене числа сообщений докручивает
-// родительский скролл-бокс вниз
-function ChatEnd({ n }) {
+// якорь автоскролла треда: докручивает родительский скролл-бокс
+// вниз при новом сообщении (n) и при росте живого пузыря (h);
+// только если юзер и так у низа — иначе каждый поллинг сносил
+// бы чтение выше
+function ChatEnd({ n, h }) {
   const ref = useRef(null);
-  useEffect(() => { ref.current?.scrollIntoView({ block: "end" }); },
-            [n]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const box = el.parentElement;
+    const near = !box || box.scrollHeight - box.scrollTop
+                 - box.clientHeight < 120;
+    if (near) el.scrollIntoView({ block: "end" });
+  }, [n, h]);
   return <Box ref={ref} sx={{ height: 1, flexShrink: 0 }} />;
 }
 
@@ -2610,11 +2636,16 @@ export default function App() {
   };
 
   // тред чат-колонки: задачи старыми вверх (выдача DESC),
-  // каждая — пара «вопрос → ответ» + автоскролл к последнему
-  const chatMsgs = (list, key) =>
-    list.slice().reverse().map(t =>
+  // каждая — пара «вопрос → ответ» + автоскролл к последнему;
+  // h последнего — чтобы досcrollивать и при росте живого пузыря
+  const chatMsgs = (list, key) => {
+    const items = list.slice().reverse();
+    const last = items[items.length - 1];
+    return items.map(t =>
       <ChatMsg key={t.stem} t={t} accent={accent} />)
-      .concat(<ChatEnd key="__end" n={list.length} />);
+      .concat(<ChatEnd key="__end" n={items.length}
+                       h={last ? last.h : ""} />);
+  };
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;

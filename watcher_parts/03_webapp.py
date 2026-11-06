@@ -102,6 +102,29 @@ def _tail(path: Path, limit: int = 12000) -> str:
     return ANSI.sub("", data[-limit:].decode(errors="replace")).strip()
 
 
+def _chat_tail(path: Path, marker: bytes | None,
+               limit: int = 40000) -> str:
+    """Живой вывод для чат-пузыря (колонки «💬 Диалог»): всё, что
+    агент напечатал после строки start_marker — баннер auth/git-pull
+    и [devin-task]-обвязка срезаны, ANSI снят. У движков без маркера
+    чистится просто хвост файла."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    if marker:
+        pos = data.find(marker)
+        if pos != -1:
+            eol = data.find(b"\n", pos)
+            data = data[eol + 1:] if eol != -1 else b""
+    if len(data) > limit:
+        # хвост обрезан — выравниваем по первой строке, чтобы не
+        # показывать оборванное начало
+        eol = data.find(b"\n", len(data) - limit)
+        data = data[eol + 1:] if eol != -1 else data[-limit:]
+    return _clean_task_output(data.decode(errors="replace"))
+
+
 def api_tasks(project: str | None = None, limit: int = 5,
               before: str | None = None, topic: str | None = None) -> dict:
     """Task feed, oldest -> newest, from the tasks table. The UI loads the
@@ -153,14 +176,20 @@ def api_tasks(project: str | None = None, limit: int = 5,
         stem = r["stem"]
         st = "running" if stem in running else r["status"]
         out = ""
+        cout = ""
+        alabel = ""
         starting = False
         if st == "running":
             outp = TASKS_DIR / ".progress" / f"{stem}.out"
             out = _tail(outp)
+            marker = agent_def(r)["start_marker"]
+            alabel = agent_def(r)["label"]
+            # живой текст для чат-пузыря «💬 Диалог»: поток после
+            # строки start_marker без баннера и обвязки
+            cout = _chat_tail(outp, marker)
             try:
                 with open(outp, "rb") as fh:
                     head = fh.read(65536)
-                marker = agent_def(r)["start_marker"]
                 pos = head.find(marker) if marker else -1
                 starting = bool(marker)
                 if pos != -1:
@@ -234,6 +263,10 @@ def api_tasks(project: str | None = None, limit: int = 5,
             # фаза запуска у running: devin ещё не начал работать —
             # фронт красит бейдж светлее («запускается»)
             "starting": starting,
+            # чат-пузырь «💬 Диалог»: чистый живой текст (без
+            # баннера/обвязки) и лейбл движка для «… печатает»
+            "cout": cout,
+            "agent": alabel,
             "task_status": r["task_status"] or "",
             "commit_offered": bool(r["commit_offered"]),
             "tag": kv_get(f"tag:{stem}"),
