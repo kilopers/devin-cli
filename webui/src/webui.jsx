@@ -1853,7 +1853,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onBodyOver, onBodyDrop, loading,
                       onDict, dictOn, dictBusy, onStats, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
-                      collapsed, onCollapse, full, onFull, chat }) {
+                      collapsed, onCollapse, full, onFull, chat,
+                      onReset }) {
   const [menu, setMenu] = useState(null);
   // чат-колонка: следим за прокруткой треда — при уходе от низа
   // показываем плавающую стрелку «к последнему сообщению»
@@ -1950,7 +1951,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
         {(onDelete || onSettings || onMoveL || onMoveR || onStats ||
-           onTplNew) &&
+           onTplNew || onReset) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -1971,6 +1972,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onTplNew(); }}>
                   🔖 Новый шаблон
+                </MenuItem>}
+              {chat && onReset &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onReset(); }}>
+                  ↺ Сбросить сессию
                 </MenuItem>}
               {onSettings &&
                 <MenuItem dense sx={{ fontSize: 13 }}
@@ -2821,6 +2827,16 @@ export default function App() {
                  active: act.map(t => t.name),
                  cards: byTopic(id).length });
   };
+  // «↺ Сбросить сессию» в ⋯ меню чат-колонки: все сообщения
+  // стираются, пин session_id снимается — диалог продолжается
+  // с чистого листа; активные задачи блокируют (бэк 409)
+  const askResetTopic = (id, name) => {
+    const act = byTopic(id)
+      .filter(t => t.status === "running" || t.status === "queued");
+    setConfirm({ kind: "topic_reset", tid: id, name,
+                 active: act.map(t => t.name),
+                 cards: byTopic(id).length });
+  };
   // вкладки проектов: открытые проекты — ряд вкладок слева от «+»;
   // хранятся в localStorage, закрытая активная → соседняя или пусто
   const [tabs, setTabs] = useState(() => {
@@ -3146,7 +3162,8 @@ export default function App() {
   const confirmAct = async () => {
     const c = confirm;
     setConfirm(null);
-    const pk = c.kind === "topic_del" ? "col:" + c.tid
+    const pk = c.kind === "topic_del" || c.kind === "topic_reset"
+             ? "col:" + c.tid
              : c.kind === "tpl_del" ? "col:" + c.col
              : c.stem;
     try {
@@ -3154,8 +3171,10 @@ export default function App() {
         ? await post("/api/stop", { stem: confirm.stem })
         : c.kind === "del"
         ? await post("/api/task/delete", { stem: c.stem })
-        : c.kind === "topic_del"
-        ? await post("/api/topics", { action: "delete",
+        : c.kind === "topic_del" || c.kind === "topic_reset"
+        ? await post("/api/topics",
+                     { action: c.kind === "topic_reset"
+                               ? "reset" : "delete",
                        project: projRef.current, id: c.tid })
         : c.kind === "tpl_del"
         ? await post("/api/topic/tpl", { action: "delete",
@@ -3165,10 +3184,19 @@ export default function App() {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
                  : c.kind === "del" ? "🗑 Задача удалена"
                  : c.kind === "topic_del" ? "🗑 Тема удалена"
+                 : c.kind === "topic_reset"
+                   ? "↺ Сессия сброшена — диалог очищен"
                  : c.kind === "tpl_del" ? "🗑 Шаблон удалён"
                                    : "Удалено из очереди: " + c.name);
         if (c.kind === "cancel" || c.kind === "del")
           setFeed(m => { const n = new Map(m); n.delete(c.stem); return n; });
+        if (c.kind === "topic_reset") {
+          // сообщения стёрты на бэке — убираем их из ленты и
+          // перечитываем темы (чип сессии)
+          setFeed(m => new Map(
+            [...m].filter(([, t]) => t.tid !== c.tid)));
+          loadTasks();
+        }
         if (c.kind === "topic_del") {
           setTopics(ts => ts.filter(t => t.id !== c.tid));
           // её карточки стёрты каскадом — убираем из ленты
@@ -3664,6 +3692,10 @@ export default function App() {
                       onMoveR={tp.chat ? null : mvR}
                       onDelete={() =>
                         askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}
+                      onReset={tp.chat
+                        ? () => askResetTopic(
+                            tp.id, tp.name || `тема #${tp.id}`)
+                        : null}
                       onBodyOver={tp.chat ? null
                         : e => overCol(e, String(tp.id))}
                       onBodyDrop={tp.chat ? null
@@ -3983,6 +4015,7 @@ export default function App() {
           {confirm?.kind === "stop" ? "Остановить задачу?"
            : confirm?.kind === "del" ? "Удалить задачу?"
            : confirm?.kind === "topic_del" ? "Удалить тему?"
+           : confirm?.kind === "topic_reset" ? "Сбросить сессию?"
            : confirm?.kind === "tpl_del" ? "Удалить шаблон?"
                                    : "Удалить задачу из очереди?"}
         </DialogTitle>
@@ -4007,6 +4040,20 @@ export default function App() {
                   (confirm?.cards
                     ? ` и её карточки (${confirm.cards} шт.)` : "") +
                   " будут удалены безвозвратно.")
+              : confirm?.kind === "topic_reset"
+              ? (confirm?.active?.length
+                ? `Сбросить нельзя — в диалоге «${confirm.name}» ` +
+                  `выполняется или ждёт очереди задача: ` +
+                  `${confirm.active.slice(0, 3).join(", ")}` +
+                  (confirm.active.length > 3
+                    ? ` и ещё ${confirm.active.length - 3}` : "") +
+                  `. Повторите после её завершения.`
+                : `Все сообщения диалога «${confirm?.name}»` +
+                  (confirm?.cards
+                    ? ` (${confirm.cards} шт.)` : "") +
+                  " будут удалены и сессия агента сброшена — " +
+                  "следующее сообщение начнёт чистую сессию " +
+                  "в той же колонке.")
               : confirm?.kind === "tpl_del"
               ? `Шаблон «${confirm?.name}…» будет удалён из шапки ` +
                 "темы — сама колонка и её задачи не трогаются."
@@ -4017,9 +4064,12 @@ export default function App() {
         <DialogActions>
           <Button onClick={() => setConfirm(null)}>Отмена</Button>
           <Button color="error" variant="contained" onClick={confirmAct}
-            disabled={confirm?.kind === "topic_del" &&
+            disabled={(confirm?.kind === "topic_del" ||
+                       confirm?.kind === "topic_reset") &&
                       (confirm?.active || []).length > 0}>
-            {confirm?.kind === "stop" ? "Остановить" : "Удалить"}
+            {confirm?.kind === "stop" ? "Остановить"
+             : confirm?.kind === "topic_reset" ? "Сбросить"
+                                           : "Удалить"}
           </Button>
         </DialogActions>
       </Dialog>

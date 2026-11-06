@@ -511,6 +511,36 @@ def _api_topics_set():
                 " WHERE project=%s AND topic_id=%s", (p, tid))
         db_exec("DELETE FROM topics WHERE id=%s", (tid,))
         return jsonify({"ok": True})
+    if act == "reset":
+        # «сбросить сессию» чат-колонки «💬 Диалог»: все сообщения
+        # темы стираются (как при удалении, но сама колонка живёт)
+        # и пин session_id снимается — следующее сообщение стартует
+        # новую сессию в том же диалоге
+        if not db_query("SELECT 1 FROM topics WHERE id=%s AND chat=1",
+                        (tid,)):
+            return jsonify({"ok": False,
+                            "error": "сброс есть только "
+                                     "у чат-колонок"}), 409
+        act_rows = db_query(
+            "SELECT stem FROM tasks WHERE topic_id=%s"
+            " AND status IN ('queued','running') LIMIT 4", (tid,))
+        if act_rows:
+            names = ", ".join(_task_name(r["stem"])
+                              for r in act_rows[:3])
+            more = (f" и ещё {len(act_rows) - 3}"
+                    if len(act_rows) > 3 else "")
+            return jsonify({"ok": False,
+                            "error": "сбросить нельзя — в теме "
+                                     "выполняется или ждёт очереди "
+                                     f"задача: {names}{more}. "
+                                     "Повторите после "
+                                     "её завершения"}), 409
+        for r in db_query("SELECT stem FROM tasks WHERE topic_id=%s",
+                          (tid,)):
+            drop_failed_task(r["stem"])
+        db_exec("UPDATE topics SET session_id=NULL, updated=%s"
+                " WHERE id=%s", (time.time(), tid))
+        return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
 
 
@@ -903,8 +933,9 @@ def drop_failed_task(stem: str) -> None:
     db_exec("DELETE FROM tasks WHERE stem=%s", (stem,))
     for k in (f"tag:{stem}", f"opts:{stem}"):
         db_exec("DELETE FROM kv WHERE k=%s", (k,))
-    for p in (TASKS_DIR / ".progress" / f"{stem}.out",
-              TASKS_DIR / ".progress" / f"{stem}.json"):
+    prog = TASKS_DIR / ".progress"
+    for p in ([prog / f"{stem}.out", prog / f"{stem}.json"]
+              + list(prog.glob(f"{stem}.attach*"))):
         try:
             p.unlink(missing_ok=True)
         except OSError:
