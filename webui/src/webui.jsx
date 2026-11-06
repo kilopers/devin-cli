@@ -2745,7 +2745,17 @@ export default function App() {
             </Typography>
             {multiMode && (
               <Typography variant="body2" noWrap
-                sx={{ opacity: .9, fontSize: 13, flexShrink: 0 }}>
+                sx={{ opacity: .9, fontSize: 13, flexShrink: 1,
+                      minWidth: 0,
+                      // на мобильной имя проекта ужимается градиентным
+                      // затемнением справа — чтобы влезли чипы справа
+                      maxWidth: { xs: 90, sm: "none" },
+                      maskImage: { xs: "linear-gradient(90deg," +
+                                       " #000 60%, transparent 96%)",
+                                   sm: "none" },
+                      WebkitMaskImage: { xs: "linear-gradient(90deg," +
+                                       " #000 60%, transparent 96%)",
+                                       sm: "none" } }}>
                 {project}
               </Typography>)}
             <Box sx={{ mr: "auto" }} />
@@ -2761,7 +2771,10 @@ export default function App() {
                           name: status.current_task })}
                         sx={{ borderColor: "rgba(255,255,255,.55)",
                               color: "#ffcdd2", fontSize: 11, px: 1,
-                              whiteSpace: "nowrap" }}>
+                              whiteSpace: "nowrap",
+                              // мобильная шапка: стоп не показываем —
+                              // очередь/статус и так в меню профиля
+                              display: { xs: "none", sm: "inline-flex" } }}>
                   ⛔ Стоп
                 </Button>
               </Tooltip>
