@@ -193,7 +193,8 @@ def yandex_transcribe_sync(audio: bytes, mime: str = "audio/ogg",
     req = urllib.request.Request(
         YANDEX_STT_HOST + "/speech/v1/stt:recognize" + qs,
         data=audio,
-        headers={"Authorization": f"Api-Key {STT_API_KEY}"},
+        headers={"Authorization": "Api-Key " + uset(
+            "stt.api_key", user, "STT_API_KEY")},
         method="POST")
     log(f"stt -> yandex v1 sync, {len(audio)} bytes")
     try:
@@ -322,6 +323,19 @@ def _wav_rate(wav: bytes) -> int:
     return 16000
 
 
+def _pcm_stats(pcm: bytes) -> tuple[int, int]:
+    """Peak/RMS амплитуды PCM16 mono — диагностика «тишины»: если браузер
+    прислал нули (микрофон молчит), Яндекс честно вернёт пустой result,
+    и снаружи это неотличимо от ошибки распознавания."""
+    a = array.array("h")
+    a.frombytes(pcm[:len(pcm) // 2 * 2])
+    if not a:
+        return 0, 0
+    peak = max(max(a), -min(a))
+    rms = int((sum(x * x for x in a) / len(a)) ** 0.5)
+    return peak, rms
+
+
 def _pcm_resample(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
     """Linear-resample mono PCM16 LE — Yandex accepts only 8/16/48 kHz."""
     if src_rate == dst_rate:
@@ -365,6 +379,12 @@ def web_transcribe(wav: bytes) -> str:
     if rate not in (8000, 16000, 48000):   # safety net for odd clients
         pcm, rate = _pcm_resample(pcm, rate, 16000), 16000
     duration = len(pcm) / 2 / rate
+    peak, rms = _pcm_stats(pcm)
+    log(f"web stt: {len(pcm)} pcm @ {rate}Hz, {duration:.1f}s, "
+        f"peak={peak} rms={rms}")
+    if peak < 300:
+        raise RuntimeError("в записи тишина — проверьте, что микрофон "
+                           "выбран системой и не приглушён")
 
     def _try(p: str) -> str:
         if p != "yandex":
