@@ -82,6 +82,26 @@ RUN mkdir -p /root/.config/devin \
 # Claude Code CLI — движок «claude» реестра AGENTS (launcher claude-task).
 RUN npm i -g @anthropic-ai/claude-code
 
+# Chromium — headless-браузер для задач агента: просмотр страниц,
+# скриншоты, эмуляция входа, CDP (--remote-debugging-port) для
+# puppeteer-core/playwright. В контейнере всё идёт под root — Chromium
+# без --no-sandbox не стартует, поэтому прямые вызовы лучше делать
+# через обёртку chromium-safe (добавляет --no-sandbox,
+# --disable-dev-shm-usage для маленького /dev/shm, --disable-gpu);
+# google-chrome/chromium-browser и $CHROME_BIN/PUPPETEER_EXECUTABLE_PATH
+# тоже указывают на неё — сторонние тулы подхватывают браузер сами.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        chromium fonts-liberation fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/* \
+    && printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-gpu --disable-dev-shm-usage "$@"\n' \
+        > /usr/local/bin/chromium-safe \
+    && chmod +x /usr/local/bin/chromium-safe \
+    && ln -sf chromium-safe /usr/local/bin/google-chrome \
+    && ln -sf chromium-safe /usr/local/bin/chromium-browser \
+    && /usr/local/bin/chromium-safe --version
+ENV CHROME_BIN=/usr/local/bin/chromium-safe \
+    PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chromium-safe
+
 COPY entrypoint.sh /usr/local/bin/devin-task
 COPY claude-task.sh /usr/local/bin/claude-task
 COPY claude-relay.py /usr/local/bin/claude-relay.py

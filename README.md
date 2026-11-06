@@ -494,6 +494,24 @@ docker run --rm \
 - **HTTPS**: `GIT_REPO_URL` вида `https://user:token@host/repo.git`
   или `~/.git-credentials` (добавь маунт в compose).
 
+## Chromium в образе
+
+В образ встроен headless-браузер — агент может смотреть страницы,
+делать скриншоты, эмулировать вход и ходить по CDP прямо из задачи:
+
+- `chromium-safe` — обёртка над системным `chromium`, добавляет
+  обязательные для root-контейнера флаги (`--no-sandbox`,
+  `--disable-dev-shm-usage`, `--disable-gpu`). Алиасы:
+  `google-chrome`, `chromium-browser`; `$CHROME_BIN` и
+  `$PUPPETEER_EXECUTABLE_PATH` тоже указывают на неё.
+- Скриншот: `chromium-safe --headless=new --screenshot=out.png \
+  --window-size=1280,900 https://site`
+- DOM после JS: `chromium-safe --headless=new --dump-dom https://site`
+- Управление (логины, клики): запустить с
+  `--headless=new --remote-debugging-port=<свободный высокий порт>`
+  и гонять CDP — например `npm i puppeteer-core` в задаче,
+  `executablePath` уже в env.
+
 ## Локальная сборка
 
 ```bash

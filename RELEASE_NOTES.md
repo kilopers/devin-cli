@@ -1,3 +1,15 @@
+## 1.8.87 — Chromium в образе воркера
+
+- В контейнер добавлен Debian-пакет `chromium` (+ fonts-liberation,
+  noto-emoji): агент может открывать страницы, делать скриншоты,
+  эмулировать вход и гонять CDP прямо из задачи.
+- Обёртка `/usr/local/bin/chromium-safe` подставляет обязательные
+  для root-контейнера флаги (`--no-sandbox`, `--disable-gpu`,
+  `--disable-dev-shm-usage`); алиасы `google-chrome`,
+  `chromium-browser`, env `CHROME_BIN`/`PUPPETEER_EXECUTABLE_PATH`
+  указывают на неё — puppeteer-core и прочие тулы подхватывают
+  браузер без скачивания своего.
+
 ## 1.8.86 — свёрнутые колонки синхронизируются между устройствами
 
 - Набор свёрнутых колонок переехал из localStorage в серверный
