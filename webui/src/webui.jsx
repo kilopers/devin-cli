@@ -2266,6 +2266,14 @@ export default function App() {
   ].sort((a, b) => (a.sort - b.sort)
            || String(a.key).localeCompare(String(b.key))),
   [topics, mainDef]);
+  // развёрнутая на всю доску колонка (v1.8.88): ключ действителен,
+  // только если такая колонка реально есть на доске (иначе доска
+  // спряталась бы целиком); общий для карты колонок, orphan-строки
+  // и «＋ Новая тема» — вне IIFE рендера
+  const fullKey = colFull &&
+    (boardCols.some(c => c.key === colFull)
+     || orphanTids.some(t => String(t) === colFull))
+    ? colFull : null;
   // быстрый режим: сессионный оверрайд → дефолт колонки → проект
   const effFast = fastOv ?? (selTdef.fast === "1" ? true
                   : selTdef.fast === "0" ? false : fast);
@@ -3396,13 +3404,6 @@ export default function App() {
                   главная — такая же колонка: двигается, но не
                   удаляется */}
               {(() => {
-                // развёрнутая на всю доску колонка (v1.8.88): рендерим
-                // только её — остальные скрыты под ней; ключ от
-                // удалённой темы игнорируем
-                const fullKey = colFull &&
-                  (boardCols.some(c => c.key === colFull)
-                   || orphanTids.some(t => String(t) === colFull))
-                  ? colFull : null;
                 return boardCols.map((c, ci) => {
                   if (fullKey && c.key !== fullKey) return null;
                   const mvL = ci > 0
