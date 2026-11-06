@@ -252,6 +252,18 @@ def _topic_append_sort(project: str) -> int:
     return mx + 10
 
 
+def _topic_tpls(p: str) -> dict:
+    """Шаблоны задач колонок проекта: {None|topic_id: [{id,text}]},
+    None = «главная». Ряд мини-кнопок в шапке колонки: клик ставит
+    задачу текстом шаблона, ✕ удаляет его."""
+    d = {}
+    for r in db_query("SELECT id, topic_id, text FROM topic_templates"
+                      " WHERE project=%s ORDER BY created, id", (p,)):
+        d.setdefault(r["topic_id"], []).append(
+            {"id": r["id"], "text": r["text"]})
+    return d
+
+
 @app.get("/api/topics")
 @login_required
 def _api_topics_get():
@@ -260,6 +272,7 @@ def _api_topics_get():
         return jsonify({"ok": False, "error": "нет доступа"}), 403
     rows = _topic_rows(p)
     by_id = {r["id"]: r for r in rows}
+    tpls = _topic_tpls(p)
     out = []
     for r in rows:
         at = r.get("session_topic_id") or None
@@ -272,6 +285,7 @@ def _api_topics_get():
                         # имя темы, к чьей сессии прицеплены (для чипа)
                         attach_name=((by_id.get(at) or {}).get("name")
                                      if at else None),
+                        tpls=tpls.get(r["id"]) or [],
                         eff=_eff_topic_defaults(p, r["id"])))
     return jsonify({"ok": True,
                     # настройки «главной» колонки — pj:<p>.tmain;
@@ -281,8 +295,46 @@ def _api_topics_get():
                                  name=_main_col_name(p),
                                  sort=(_main_col_json(p).get("sort")
                                        or 0),
+                                 tpls=tpls.get(None) or [],
                                  eff=_eff_topic_defaults(p, None)),
                     "topics": out})
+
+
+@app.post("/api/topic/tpl")
+@login_required
+def _api_topic_tpl():
+    """Шаблоны задач темы: create — сохранить текст в колонку
+    (topic="main" или id темы проекта), delete — по id. Запуск
+    шаблона — обычный POST /api/tasks с темой колонки, дефолты
+    задачи берутся из её настроек."""
+    b = _req_json()
+    p = (b.get("project") or "").strip()
+    act = (b.get("action") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    if act == "create":
+        text = (b.get("text") or "").strip()
+        if not text:
+            return jsonify({"ok": False, "error": "пустой текст"}), 400
+        if len(text) > 20000:
+            return jsonify({"ok": False, "error": "text too long"}), 400
+        tv = str(b.get("topic") or "main").strip()
+        tid = None if tv in ("", "main") else (
+            int(tv) if tv.isdigit() else -1)
+        if tid == -1 or (tid is not None and not db_query(
+                "SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                (tid, p))):
+            return jsonify({"ok": False, "error": "нет такой темы"}), 404
+        db_exec("INSERT INTO topic_templates(project,topic_id,text,"
+                "created) VALUES(%s,%s,%s,%s)",
+                (p, tid, text, time.time()))
+        return jsonify({"ok": True})
+    if act == "delete":
+        tid = int(b.get("id") or 0)
+        db_exec("DELETE FROM topic_templates"
+                " WHERE id=%s AND project=%s", (tid, p))
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "bad action"}), 400
 
 
 @app.post("/api/topics")
@@ -450,6 +502,8 @@ def _api_topics_set():
             drop_failed_task(r["stem"])
         db_exec("UPDATE topics SET session_topic_id=NULL"
                 " WHERE session_topic_id=%s", (tid,))
+        db_exec("DELETE FROM topic_templates"
+                " WHERE project=%s AND topic_id=%s", (p, tid))
         db_exec("DELETE FROM topics WHERE id=%s", (tid,))
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
@@ -1126,6 +1180,68 @@ def _api_task_move():
                             else None})
 
 
+FMT_INSTR = ("Переоформи текст ниже в аккуратный markdown: заголовки, "
+             "списки, таблицы, код-блоки — где уместно. Заодно исправь "
+             "орфографические, синтаксические и лексические ошибки, "
+             "непонятные слова приведи к нормальному виду. Смысл и язык "
+             "не меняй, ничего не додумывай и не дополняй. Верни "
+             "ТОЛЬКО markdown — без пояснений и без ограждения ```.\n\n")
+
+
+def _fmt_run(text: str, workdir: Path, task_user: str, tag: str,
+             task_ref: dict | None = None,
+             timeout: int | None = None) -> dict:
+    """Один синхронный прогон «✨ оформить» агентом — общий
+    env-контракт launcher'а задачи (свежая сессия — пин темы и
+    --continue не нужны). Прогресс — .progress/<tag>.out, метрики —
+    <tag>.json. Возвращает {body, rc, started, finished, export} —
+    body уже очищен _clean_task_output."""
+    progress_dir = TASKS_DIR / ".progress"
+    progress_dir.mkdir(exist_ok=True)
+    task_file = progress_dir / f"{tag}.task.txt"
+    out_path = progress_dir / f"{tag}.out"
+    export = progress_dir / f"{tag}.json"
+    task_file.write_text(FMT_INSTR + text, encoding="utf-8")
+    env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
+               TASK_STEM=tag,
+               DEVIN_MODEL=current_model(),
+               DEVIN_WORKDIR=str(workdir),
+               DEVIN_CONTINUE="false",
+               REPLY_MODE="ask",
+               DEVIN_PERMISSION_MODE=(
+                   os.environ.get("DEVIN_PERMISSION_MODE")
+                   or "dangerous"),
+               DEVIN_EXPORT_FILE=str(export),
+               GIT_AUTO_COMMIT="false",
+               WINDSURF_API_KEY=uset("devin.api_key", task_user,
+                                     "WINDSURF_API_KEY"),
+               ANTHROPIC_API_KEY=uset("claude.api_key", task_user,
+                                      "ANTHROPIC_API_KEY"))
+    out_f = open(out_path, "w", errors="replace")
+    started_ts = time.time()
+    proc = subprocess.Popen(
+        [agent_def(task_ref or {"user": task_user})["bin"]], env=env,
+        stdout=out_f, stderr=subprocess.STDOUT,
+        text=True, start_new_session=True)
+    with _procs_lock:
+        _task_procs[tag] = proc
+    try:
+        proc.wait(timeout=timeout or TASK_TIMEOUT)
+        body = (out_path.read_text(errors="replace")
+                if out_path.exists() else "")
+    except subprocess.TimeoutExpired:
+        kill_task(tag)
+        proc.wait()
+        body = "Ошибка оформления: таймаут"
+    finally:
+        with _procs_lock:
+            _task_procs.pop(tag, None)
+        out_f.close()
+    return {"body": _clean_task_output(body).strip(),
+            "rc": proc.returncode, "started": started_ts,
+            "finished": time.time(), "export": export}
+
+
 def _fmt_worker(stem: str) -> None:
     """Фоновый прогон «✨ оформить»: отдельный devin-task (свежая
     сессия — пин темы и --continue не нужны) переоформляет текст
@@ -1139,63 +1255,18 @@ def _fmt_worker(stem: str) -> None:
         tproj = row.get("project")
         task_user = (row.get("user") or _project_owner(tproj)
                      or WEB_ADMIN_USER)
-        progress_dir = TASKS_DIR / ".progress"
-        progress_dir.mkdir(exist_ok=True)
-        task_file = progress_dir / f"{fstem}.task.txt"
-        out_path = progress_dir / f"{fstem}.out"
         if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
             workdir = PROJECTS_ROOT / tproj
         else:
             _, workdir = current_project()
-        task_file.write_text(
-            "Переоформи текст ниже в аккуратный markdown: заголовки, "
-            "списки, таблицы, код-блоки — где уместно. Заодно исправь "
-            "орфографические, синтаксические и лексические ошибки, "
-            "непонятные слова приведи к нормальному виду. Смысл и язык "
-            "не меняй, ничего не додумывай и не дополняй. Верни "
-            "ТОЛЬКО markdown — без пояснений и без ограждения ```.\n\n"
-            + (row.get("prompt") or ""), encoding="utf-8")
-        env = dict(os.environ, DEVIN_TASK_FILE=str(task_file),
-                   TASK_STEM=fstem,
-                   DEVIN_MODEL=current_model(),
-                   DEVIN_WORKDIR=str(workdir),
-                   DEVIN_CONTINUE="false",
-                   REPLY_MODE="ask",
-                   DEVIN_PERMISSION_MODE=(
-                       os.environ.get("DEVIN_PERMISSION_MODE")
-                       or "dangerous"),
-                   DEVIN_EXPORT_FILE=str(progress_dir
-                                          / f"{fstem}.json"),
-                   GIT_AUTO_COMMIT="false",
-                   WINDSURF_API_KEY=uset("devin.api_key", task_user,
-                                         "WINDSURF_API_KEY"),
-                   ANTHROPIC_API_KEY=uset("claude.api_key", task_user,
-                                          "ANTHROPIC_API_KEY"))
-        out_f = open(out_path, "w", errors="replace")
-        started_ts = time.time()
-        proc = subprocess.Popen(
-            [agent_def(row)["bin"]], env=env,
-            stdout=out_f, stderr=subprocess.STDOUT,
-            text=True, start_new_session=True)
-        with _procs_lock:
-            _task_procs[fstem] = proc
-        try:
-            proc.wait(timeout=TASK_TIMEOUT)
-            body = (out_path.read_text(errors="replace")
-                    if out_path.exists() else "")
-        except subprocess.TimeoutExpired:
-            kill_task(fstem)
-            proc.wait()
-            body = "Ошибка оформления: таймаут"
-        finally:
-            with _procs_lock:
-                _task_procs.pop(fstem, None)
-            out_f.close()
+        res = _fmt_run(row.get("prompt") or "", workdir, task_user,
+                       fstem, task_ref=row)
+        body = res["body"]
         # «✨ Оформить» — тоже прогон Devin: его токены и стоимость
         # считаем в статистику темы заметки (row['topic_id'])
         try:
             fst = agent_def(row)["stats"](
-                progress_dir / f"{fstem}.json", started_ts, time.time())
+                res["export"], res["started"], res["finished"])
             if fst:
                 db_exec("INSERT INTO topic_stats"
                         " (project, topic_id, stem, created, model,"
@@ -1210,12 +1281,11 @@ def _fmt_worker(stem: str) -> None:
                          _task_cost(fst), fst.get("duration")))
         except Exception as e:
             log(f"topic_stats fmt: {e}")
-        body = _clean_task_output(body).strip()
         if not body:
             body = ("Ошибка оформления: пустой ответ"
-                    if proc.returncode == 0
-                    else f"Ошибка оформления: exit {proc.returncode}")
-        elif proc.returncode != 0:
+                    if res["rc"] == 0
+                    else f"Ошибка оформления: exit {res['rc']}")
+        elif res["rc"] != 0:
             body = "Ошибка оформления: " + body[:500]
         db_exec("UPDATE tasks SET output=%s WHERE stem=%s"
                 " AND status='note'", (body, stem))
@@ -1277,6 +1347,43 @@ def _api_task_format():
     threading.Thread(target=_fmt_worker, args=(stem,),
                      daemon=True).start()
     return jsonify({"ok": True})
+
+
+@app.post("/api/text/format")
+@login_required
+def _api_text_format():
+    """«✨ оформить» произвольный текст (модалка шаблона): синхронный
+    прогон агента в режиме ask — ответ сразу возвращается оформленным
+    markdown'ом. В статистику темы не пишется — задачи-строки нет."""
+    b = _req_json()
+    p = (b.get("project") or "").strip()
+    text = (b.get("text") or "").strip()
+    if p and not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    if not text:
+        return jsonify({"ok": False, "error": "пустой текст"}), 400
+    if len(text) > 20000:
+        return jsonify({"ok": False, "error": "text too long"}), 400
+    u = _current_user()
+    if p and PROJECTS_ROOT and (PROJECTS_ROOT / p).is_dir():
+        workdir = PROJECTS_ROOT / p
+    else:
+        _, workdir = current_project()
+    tag = f"tplfmt-{int(time.time())}-{secrets.token_hex(3)}"
+    try:
+        res = _fmt_run(text, workdir, u, tag,
+                       task_ref={"project": p or None, "user": u},
+                       timeout=300)
+    except Exception as e:
+        log(f"text format failed: {e}")
+        return jsonify({"ok": False, "error": str(e)[:300]}), 502
+    body = res["body"]
+    if (not body or res["rc"] != 0
+            or body.startswith("Ошибка оформления")):
+        return jsonify({"ok": False,
+                        "error": ("Ошибка оформления: "
+                                  + (body or f"exit {res['rc']}"))[:400]}), 502
+    return jsonify({"ok": True, "text": body})
 
 
 @app.post("/api/task/apply")

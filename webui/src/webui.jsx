@@ -51,6 +51,7 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
+import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -388,7 +389,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                mergeSel, onMergeOver,
                                                onMergeDrop,
                                                onMergeLeave }) {
-  // свёрнута: ~3 строки задачи; «подробнее» появляется только когда
+  // свёрнута: ~5 строк задачи; «подробнее» появляется только когда
   // текст реально обрезан или у неуспешной задачи есть вывод
   const [open, setOpen] = useState(false);
   // prompt с бэкенда — превью (2000): полный текст догружаем по кнопке
@@ -498,7 +499,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     } catch (e) { toast?.("Сеть: " + e); }
     setRetryBusy(false);
   };
-  // раскрывать есть что, только если текст задачи обрезан тремя
+  // раскрывать есть что, только если текст задачи обрезан пятью
   // строками — вывод живёт в модалке 📄, «подробнее» его не дублирует
   const txtRef = useRef(null);
   const openRef = useRef(false);
@@ -675,6 +676,42 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const [moveBusy, setMoveBusy] = useState(false);
   const cardLvl = isNote ? 0 : (t.mode === "ask" ? 1 : 2);
   const curColKey = t.tid ? String(t.tid) : "main";
+  // «шаблон»: текст задачи мини-кнопкой в шапке колонки — диалог с
+  // правкой текста, ✨-оформлением через агента и выбором темы
+  const [tplOpen, setTplOpen] = useState(false);
+  const [tplText, setTplText] = useState("");
+  const [tplTopic, setTplTopic] = useState("main");
+  const [tplBusy, setTplBusy] = useState(false);   // сохранение
+  const [tplFmt, setTplFmt] = useState(false);     // ✨ идёт
+  const openTpl = () => {
+    if (!t.project) { toast?.("Шаблоны — только у проектов"); return; }
+    setTplText(promptShown); setTplTopic(curColKey); setTplOpen(true);
+  };
+  const fmtTpl = async () => {
+    if (tplFmt || !tplText.trim()) return;
+    setTplFmt(true);
+    try {
+      const d = await post("/api/text/format",
+        { project: t.project, text: tplText });
+      if (d.ok) setTplText(d.text);
+      else toast?.("Ошибка: " + (d.error || "?"));
+    } catch (e) { toast?.("Сеть: " + e); }
+    setTplFmt(false);
+  };
+  const saveTpl = async () => {
+    if (tplBusy || !tplText.trim()) return;
+    setTplBusy(true);
+    try {
+      const d = await post("/api/topic/tpl",
+        { action: "create", project: t.project,
+          topic: tplTopic, text: tplText.trim() });
+      if (d.ok) {
+        setTplOpen(false);
+        toast?.("Шаблон сохранён — кнопка появилась в шапке темы");
+      } else toast?.("Ошибка: " + (d.error || "?"));
+    } catch (e) { toast?.("Сеть: " + e); }
+    setTplBusy(false);
+  };
   const moveTo = async (key, name) => {
     if (moveBusy) return;
     setMoveBusy(true);
@@ -839,6 +876,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </IconButton>
               </Tooltip>
             )}
+            {t.status === "done" && t.project && (
+              <Tooltip title="сохранить текст задачи как шаблон — мини-кнопка в шапке темы">
+                <IconButton size="small" onClick={openTpl}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  <BookmarkAddOutlinedIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             {t.status === "done" && onCont && (
               <Tooltip title="продолжить задачу — дописать доделку, карточка уйдёт в работу той же сессией">
                 <IconButton size="small" onClick={() => onCont(t)}
@@ -978,7 +1023,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           <Box ref={txtRef}
             sx={{ fontSize: 13.5, lineHeight: 1.62,
                   overflowWrap: "anywhere", overflowX: "hidden",
-                  ...(open ? {} : { maxHeight: 76,
+                  ...(open ? {} : { maxHeight: 110,
                                     overflow: "hidden" }) }}>
             <Markdown text={promptShown} />
           </Box>
@@ -992,7 +1037,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 cursor: (canExpand || open) ? "pointer" : "inherit",
                 ...(!open && {
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
-                  WebkitLineClamp: 3, overflow: "hidden" }) }}>
+                  WebkitLineClamp: 5, overflow: "hidden" }) }}>
           {promptShown}</Typography>)}
         {maybeCut && (
           <Typography variant="caption"
@@ -1219,6 +1264,66 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 </ListItemButton>);
             })}
           </DialogContent>
+        </Dialog>
+        {/* «шаблон» — текст задачи мини-кнопкой в шапку выбранной
+            колонки; ✨ оформляет его тем же прогоном, что у заметок */}
+        <Dialog open={tplOpen} onClose={() => setTplOpen(false)}
+                maxWidth="sm" fullWidth slotProps={dlgSlotProps}>
+          <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
+            Шаблон задачи
+            <Tooltip title="закрыть">
+              <IconButton size="small" onClick={() => setTplOpen(false)}
+                sx={{ position: "absolute", right: 12, top: 10,
+                      color: "text.secondary" }}>
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          </DialogTitle>
+          <DialogContent sx={{ pt: 1 }}>
+            <Typography variant="caption" color="text.secondary"
+                        sx={{ fontSize: 11 }}>
+              Тема — кнопка шаблона появится в её шапке
+            </Typography>
+            <Select size="small" fullWidth value={tplTopic}
+                    onChange={e => setTplTopic(e.target.value)}
+                    sx={{ mt: 0.4, mb: 1.4, fontSize: 13 }}>
+              {(cols || []).map(c => (
+                <MenuItem key={c.key} value={c.key} dense
+                          sx={{ fontSize: 13 }}>
+                  {c.name}
+                  <Typography component="span" variant="caption"
+                    color="text.secondary" sx={{ ml: 1, fontSize: 10.5 }}>
+                    {c.mode === "say" ? "📝 заметка"
+                     : c.mode === "ask" ? "💬 спросить" : "🛠 код"}
+                  </Typography>
+                </MenuItem>))}
+            </Select>
+            <TextField multiline fullWidth minRows={8} maxRows={18}
+              value={tplText} disabled={tplFmt}
+              onChange={e => setTplText(e.target.value)}
+              placeholder="Текст шаблона задачи"
+              sx={{ "& .MuiInputBase-root":
+                    { fontSize: 13, lineHeight: 1.55 } }} />
+          </DialogContent>
+          <DialogActions sx={{ px: 2, pb: 1.5 }}>
+            <Button onClick={fmtTpl} disabled={tplFmt || tplBusy}
+              startIcon={tplFmt
+                ? <CircularProgress size={13} thickness={6} />
+                : <AutoAwesomeIcon sx={{ fontSize: 15 }} />}
+              sx={{ textTransform: "none", fontSize: 12.5 }}>
+              {tplFmt ? "оформляю…" : "✨ Оформить"}
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button onClick={() => setTplOpen(false)}
+                    sx={{ textTransform: "none" }}>
+              Отмена
+            </Button>
+            <Button variant="contained" onClick={saveTpl}
+              disabled={tplBusy || tplFmt || !tplText.trim()}
+              sx={{ textTransform: "none" }}>
+              {tplBusy ? "сохраняю…" : "Сохранить"}
+            </Button>
+          </DialogActions>
         </Dialog>
       </CardContent>
     </Card>
@@ -1600,7 +1705,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
                       onDict, dictOn, dictBusy, onStats, pending,
-                      skel }) {
+                      skel, tpls, onTplRun, onTplDel }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
@@ -1720,6 +1825,51 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                           borderRadius: "6px",
                           "& .MuiChip-label": { px: "6px" } }} />
             </Tooltip>))}
+        </Box>}
+      {(tpls || []).length > 0 &&
+        // шаблоны темы — отдельная горизонтальная строка мини-кнопок:
+        // клик по телу ставит задачу текстом шаблона в эту колонку
+        // её настройками, правая секция ✕ удаляет (с подтверждением);
+        // подпись — первые ~7 букв, длинный текст затемняется справа
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.4,
+                   px: 0.9, py: 0.5, flexShrink: 0,
+                   borderBottom: "1px solid", borderColor: "divider" }}>
+          {tpls.map(tp => (
+            <Box key={tp.id} sx={{ display: "inline-flex",
+                alignItems: "stretch", maxWidth: "55%",
+                border: "1px solid", borderColor: "divider",
+                borderRadius: "7px", overflow: "hidden",
+                bgcolor: "background.paper" }}>
+              <Tooltip title={tp.text}>
+                <Box component="span"
+                  onClick={e => { e.stopPropagation(); onTplRun?.(tp); }}
+                  sx={{ px: 0.6, py: 0.25, fontSize: 10.5, cursor: "pointer",
+                        display: "flex", alignItems: "center",
+                        maxWidth: 78, minWidth: 0, fontWeight: 500,
+                        color: "text.secondary",
+                        transition: "color .15s, background .15s",
+                        "&:hover": { color: "#5e6ad2",
+                                     bgcolor: "rgba(94,106,210,.07)" } }}>
+                  <Box component="span" sx={{
+                    whiteSpace: "nowrap", overflow: "hidden",
+                    maskImage:
+                      "linear-gradient(90deg,#000 65%,transparent 100%)" }}>
+                    {(tp.text || "").slice(0, 7)}
+                  </Box>
+                </Box>
+              </Tooltip>
+              <Box component="span"
+                onClick={e => { e.stopPropagation(); onTplDel?.(tp); }}
+                sx={{ px: 0.35, display: "flex", alignItems: "center",
+                      cursor: "pointer", fontSize: 10, lineHeight: 1,
+                      color: "text.disabled", flexShrink: 0,
+                      borderLeft: "1px solid", borderColor: "divider",
+                      transition: "color .15s, background .15s",
+                      "&:hover": { color: "error.main",
+                                   bgcolor: "rgba(211,47,47,.06)" } }}>
+                ✕
+              </Box>
+            </Box>))}
         </Box>}
       <Box sx={{ px: 0.8, pt: 0.8, flexShrink: 0 }}>
         {(() => { const btnC = boostColor(color) || accent
@@ -2274,6 +2424,23 @@ export default function App() {
   // удаление темы: карточки уходят каскадом вместе с ней, но если
   // хоть одна в очереди/в работе — показываем блок в диалоге
   // (бэк тоже вернёт 409 с именем задачи)
+  // шаблоны темы: клик по мини-кнопке ставит задачу её текстом в
+  // эту колонку (дефолты — самой колонки, как у «＋ … сюда»);
+  // ✕ — удаление шаблона через общий confirm-диалог
+  const tplRun = async (key, tp) => {
+    try {
+      const d = await post("/api/tasks", {
+        project: project === "workspace" ? null : project,
+        text: tp.text, topic: key });
+      setToast(d.ok ? "Задача поставлена"
+                    : "Ошибка: " + (d.error || "?"));
+      if (d.ok) loadTasks();
+    } catch (e) { setToast("Сеть: " + e); }
+  };
+  const tplDel = (key, tp) =>
+    setConfirm({ kind: "tpl_del", col: key, id: tp.id,
+                 name: (tp.text || "").slice(0, 40) });
+
   const askDelTopic = (id, name) => {
     const act = byTopic(id)
       .filter(t => t.status === "running" || t.status === "queued");
@@ -2592,7 +2759,9 @@ export default function App() {
   const confirmAct = async () => {
     const c = confirm;
     setConfirm(null);
-    const pk = c.kind === "topic_del" ? "col:" + c.tid : c.stem;
+    const pk = c.kind === "topic_del" ? "col:" + c.tid
+             : c.kind === "tpl_del" ? "col:" + c.col
+             : c.stem;
     try {
       const d = await pendRun(pk, async () => c.kind === "stop"
         ? await post("/api/stop", { stem: confirm.stem })
@@ -2601,11 +2770,15 @@ export default function App() {
         : c.kind === "topic_del"
         ? await post("/api/topics", { action: "delete",
                        project: projRef.current, id: c.tid })
+        : c.kind === "tpl_del"
+        ? await post("/api/topic/tpl", { action: "delete",
+                      project: projRef.current, id: c.id })
         : await post("/api/task/cancel", { stem: c.stem }));
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
                  : c.kind === "del" ? "🗑 Задача удалена"
                  : c.kind === "topic_del" ? "🗑 Тема удалена"
+                 : c.kind === "tpl_del" ? "🗑 Шаблон удалён"
                                    : "Удалено из очереди: " + c.name);
         if (c.kind === "cancel" || c.kind === "del")
           setFeed(m => { const n = new Map(m); n.delete(c.stem); return n; });
@@ -2616,6 +2789,7 @@ export default function App() {
             [...m].filter(([, t]) => t.tid !== c.tid)));
           if (topicSel === String(c.tid)) selectTopic("main");
         }
+        if (c.kind === "tpl_del") loadTasks();
       } else setToast("Ошибка: " + (d.error || "?"));
       loadStatus();
     } catch (e) { setToast("Сеть: " + e); }
@@ -2998,6 +3172,9 @@ export default function App() {
                         sel={topicSel === "main"}
                         accent={accent} color={mainDef.color}
                         tset={mainDef} eff={mainDef.eff}
+                        tpls={mainDef.tpls}
+                        onTplRun={tp => tplRun("main", tp)}
+                        onTplDel={tp => tplDel("main", tp)}
                         onSelect={() => selectTopic("main")}
                         onNewTask={() => newTaskIn("main")}
                         onDict={() => toggleDictCol("main",
@@ -3035,6 +3212,9 @@ export default function App() {
                       count={byTopic(tp.id).length}
                       sel={topicSel === String(tp.id)} accent={accent}
                       color={tp.color} tset={tp} eff={tp.eff}
+                      tpls={tp.tpls}
+                      onTplRun={t2 => tplRun(String(tp.id), t2)}
+                      onTplDel={t2 => tplDel(String(tp.id), t2)}
                       onSelect={() => selectTopic(String(tp.id))}
                       onNewTask={() => newTaskIn(String(tp.id))}
                       onDict={() => toggleDictCol(String(tp.id),
@@ -3307,6 +3487,7 @@ export default function App() {
           {confirm?.kind === "stop" ? "Остановить задачу?"
            : confirm?.kind === "del" ? "Удалить задачу?"
            : confirm?.kind === "topic_del" ? "Удалить тему?"
+           : confirm?.kind === "tpl_del" ? "Удалить шаблон?"
                                    : "Удалить задачу из очереди?"}
         </DialogTitle>
         <DialogContent>
@@ -3330,6 +3511,9 @@ export default function App() {
                   (confirm?.cards
                     ? ` и её карточки (${confirm.cards} шт.)` : "") +
                   " будут удалены безвозвратно.")
+              : confirm?.kind === "tpl_del"
+              ? `Шаблон «${confirm?.name}…» будет удалён из шапки ` +
+                "темы — сама колонка и её задачи не трогаются."
               : `«${confirm?.name}» будет удалена из очереди и не ` +
                 "выполнится. Действие необратимо."}
           </Typography>

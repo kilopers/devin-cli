@@ -170,6 +170,16 @@ def init_db() -> None:
                     (MYSQL["database"],)):
         db_exec("ALTER TABLE topic_stats"
                 " ADD COLUMN duration INT NULL")
+    # шаблоны задач колонок: текст, который мини-кнопкой ставится
+    # задачей в эту тему её настройками (topic_id NULL = «главная»)
+    db_exec("""CREATE TABLE IF NOT EXISTS topic_templates (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project VARCHAR(190) NOT NULL,
+        topic_id INT NULL,
+        text TEXT NOT NULL,
+        created DOUBLE NOT NULL,
+        KEY idx_proj_topic (project, topic_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     # чистка после бага «первая задача темы continue'ила последнюю
     # сессию каталога»: пин темы, равный пину «главной» её проекта или
     # продублированный у другой темы — это чужая сессия → NULL, тема
