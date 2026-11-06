@@ -1986,6 +1986,20 @@ export default function App() {
                                         instr: true, deploy: true });
   const [toast, setToast] = useState(null);
   const [toastNode, setToastNode] = useState(null);
+  // автоскрытие тоста ~3с НЕЗАВИСИМО от фокуса: у MUI-Snackbar
+  // autoHideDuration ставится на паузу при blur окна — тосты висели,
+  // пока юзер не кликнет. Свой таймер: последнее сообщение
+  // гасится через 3.2с, новое — перевзводит.
+  const toastSeq = useRef(0);
+  useEffect(() => {
+    if (toast == null && toastNode == null) return;
+    const n = ++toastSeq.current;
+    const t = setTimeout(() => {
+      if (toastSeq.current === n) {
+        setToast(null); setToastNode(null); }
+    }, 3200);
+    return () => clearTimeout(t);
+  }, [toast, toastNode]);
   const [projIcon, setProjIcon] = useState(""); // иконка активного проекта
   const [projColor, setProjColor] = useState(""); // цвет активного проекта
   const [colorPreview, setColorPreview] = useState(null); // превью из диалога настроек
@@ -3691,7 +3705,8 @@ export default function App() {
         </DialogActions>
       </Dialog>
 
-      <Snackbar open={!!toast || !!toastNode} autoHideDuration={6000}
+      <Snackbar open={!!toast || !!toastNode} autoHideDuration={3000}
+                disableWindowBlurListener
                 onClose={() => { setToast(null); setToastNode(null); }}
                 message={toastNode || toast} />
       </ErrBoundary>
