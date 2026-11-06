@@ -21,6 +21,7 @@ import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
+import CloseIcon from "@mui/icons-material/Close";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -29,6 +30,10 @@ import { STT_RATE, resample, encodeWav, getMicStream } from "./audio.js";
 
 const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
                     String(Math.floor(s % 60)).padStart(2, "0");
+// распознанный текст длиннее этого порога не вливается в поле,
+// а показывается оверлей-карточкой поверх композера — иначе
+// многострочный инпут раздувает бар (compH) и сжимает всю доску
+const DICT_DRAFT_MIN = 300;
 
 export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
@@ -47,15 +52,20 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
   const [lastAudio, setLastAudio] = useState(null);  // failed WAV → retry
+  const [dictDraft, setDictDraft] = useState(null);  // длинный диктант → оверлей
   const textRef = useRef("");
   textRef.current = text;
 
   // диктовка из колонки канбана (🎙 у «＋ … сюда»): распознанный
-  // текст приходит пропом inject {text,n} — дописываем в поле
+  // текст приходит пропом inject {text,n} — короткий дописываем
+  // в поле, длинный — в оверлей-превью поверх бара (dictDraftEl)
   useEffect(() => {
     if (!inject?.n) return;
-    setText(p => (p ? p.replace(/\s+$/, "") + " " : "")
-                 + inject.text);
+    const m = (textRef.current
+               ? textRef.current.replace(/\s+$/, "") + " " : "")
+              + inject.text;
+    if (m.length > DICT_DRAFT_MIN) setDictDraft(m);
+    else setText(m);
   }, [inject?.n]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // чипы параметров следующей задачи: проектные дефолты + разовые
@@ -323,6 +333,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                         ? textRef.current.replace(/\s+$/, "") + " "
                         : "") + d.text.trim();
         if (fast) sendText(merged);          // быстрый: сразу в работу
+        else if (merged.length > DICT_DRAFT_MIN)
+          setDictDraft(merged);              // длинное — оверлей-превью
         else setText(merged);
         setLastAudio(null);
       } else {
@@ -368,6 +380,57 @@ export default function Composer({ project, sttStatus, toast, onSent,
   };
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
+
+  // превью длинного надиктованного текста: карточка поверх бара
+  // (absolute внутри fixed #composer-bar — в потоке не участвует,
+  // compH и доска не прыгают). «✎ в поле» — осознанно влить в
+  // инпут для правки; «Отправить» — тот же sendText, что и у
+  // обычной отправки (note/cont/режим/вложение учитываются)
+  const dictDraftEl = dictDraft && (
+    <Paper elevation={0} sx={{
+      position: "absolute", left: { xs: 8, md: 16 },
+      right: { xs: 8, md: 16 }, bottom: 0, zIndex: 5,
+      borderRadius: "12px", border: "1px solid",
+      borderColor: "divider", bgcolor: "background.paper",
+      boxShadow: "0 -8px 24px rgba(28,33,40,.14)",
+      p: 1.2, display: "flex", flexDirection: "column", gap: 1 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
+        <MicIcon sx={{ fontSize: 15, color: "info.main" }} />
+        <Typography variant="caption" color="text.secondary"
+                    sx={{ fontSize: 11.5, flex: 1 }}>
+          распознанный текст · {dictDraft.length} зн.
+        </Typography>
+        <Tooltip title="отбросить — текст в поле не трогаем">
+          <IconButton size="small" onClick={() => setDictDraft(null)}>
+            <CloseIcon sx={{ fontSize: 15 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+      <Typography variant="body2" sx={{
+        fontSize: 13, whiteSpace: "pre-wrap", wordBreak: "break-word",
+        maxHeight: "45vh", overflowY: "auto" }}>
+        {dictDraft}
+      </Typography>
+      <Box sx={{ display: "flex", gap: 0.8,
+                 justifyContent: "flex-end" }}>
+        <Button size="small" variant="outlined"
+                onClick={() => { setText(dictDraft);
+                                 setDictDraft(null); }}
+                sx={{ textTransform: "none", fontSize: 12,
+                      borderRadius: "9px" }}>
+          ✎ в поле
+        </Button>
+        <Button size="small" variant="contained" disableElevation
+                disabled={busy}
+                onClick={() => { const t = dictDraft;
+                                 setDictDraft(null); sendText(t); }}
+                sx={{ textTransform: "none", fontSize: 12,
+                      borderRadius: "9px" }}>
+          {say ? "Сохранить"
+              : curMode === "ask" ? "Спросить" : "Отправить"}
+        </Button>
+      </Box>
+    </Paper>);
 
   if (mobile) return (<>
     <Paper elevation={0} id="composer-bar" sx={{
@@ -449,6 +512,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
           onClick={() => fileRef.current?.click()}
           sx={{ minWidth: 0, color: "#fff" }} />
       </BottomNavigation>
+      {dictDraftEl}
     </Paper>
   </>);
 
@@ -544,6 +608,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
           </Box>
         </Grid>
       </Grid>
+      {dictDraftEl}
     </Paper>
   </>);
 }
