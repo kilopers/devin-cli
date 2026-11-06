@@ -53,6 +53,7 @@ import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import MenuIcon from "@mui/icons-material/Menu";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson, post } from "./api.js";
@@ -1997,6 +1998,14 @@ export default function App() {
   const [view, setView] = useState("feed");      // feed | models
   const [pSetOpen, setPSetOpen] = useState(null); // настройки проекта
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // сворачивание правого сайдбара на десктопе — hamburger в шапке;
+  // выбор переживает перезагрузку (localStorage)
+  const [sideHide, setSideHide] = useState(
+    () => localStorage.getItem("devin.sidehide") === "1");
+  const toggleSide = () => setSideHide(v => {
+    localStorage.setItem("devin.sidehide", v ? "0" : "1");
+    return !v;
+  });
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
   const [editPath, setEditPath] = useState(null);   // file open in editor
@@ -3016,6 +3025,17 @@ export default function App() {
                 Выход
               </MenuItem>
             </Menu>
+            {/* hamburger — свернуть/развернуть правый сайдбар;
+                только десктоп (на мобильной своя кнопка слева) */}
+            <Tooltip title={sideHide ? "показать панель"
+                                     : "свернуть панель"}>
+              <IconButton color="inherit" onClick={toggleSide}
+                sx={{ display: { xs: "none", md: "inline-flex" } }}>
+                <MenuIcon sx={{ transition: "transform .25s",
+                               transform: sideHide ? "rotate(90deg)"
+                                                   : "none" }} />
+              </IconButton>
+            </Tooltip>
           </Toolbar>
         </AppBar>
         {/* spacer — AppBar is position:fixed, header stays pinned on top */}
@@ -3293,7 +3313,12 @@ export default function App() {
               внутри один общий список; block-layout — секции не сжимаются
               и не наезжают друг на друга при длинных списках */}
           <Paper elevation={0} sx={{
-            width: 290, flexShrink: 0, m: "-2px 12px 0 4px",
+            // hamburger в шапке сворачивает сайдбар в ноль —
+            // плавное схлопывание width+margin, контент внутри
+            // держит свои 290px и обрезается overflowX:hidden
+            width: sideHide ? 0 : 290, flexShrink: 0,
+            m: sideHide ? "-2px 0 0 0" : "-2px 12px 0 4px",
+            transition: "width .28s ease, margin .28s ease",
             display: { xs: "none", md: "block" },
             // высота — по ряду (низ экрана), своего calc нет:
             // скроллится список внутри, страница — никогда;
@@ -3310,6 +3335,7 @@ export default function App() {
             // pb как у ленты: нижние пункты докручиваются выше
             // фиксированного композера (иначе уходят под него)
             pb: "150px" }}>
+            <Box sx={{ width: 290 }}>
             <Instr project={project} open={panels.instr}
                    onToggle={() => togglePanel("instr")}
                    toast={setToast} />
@@ -3385,6 +3411,7 @@ export default function App() {
                 🤖 Модели
               </Typography>
             </ListItemButton>
+            </Box>
           </Paper>
           </>}
         </Box>
