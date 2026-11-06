@@ -1752,10 +1752,13 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
   return (
     <Paper variant="outlined" sx={{ position: "relative",
       width: collapsed ? { xs: 36, md: 38 }
-             : full ? "auto"
+             : full ? "100%"
              : { xs: "82vw", sm: 300, md: 320 },
-      // развёрнутая колонка занимает всю ширину доски — правый
-      // сайдбар при этом остаётся на месте
+      // развёрнутая колонка — резиновые 100% ширины ряда: на
+      // десктопе упирается в правый сайдбар, на мобильной
+      // (сайдбар скрыт) — во всю ширину экрана; 100% вместо
+      // auto гарантирует ровно ширину ряда независимо от
+      // контента и анимируется transition-ом
       flexGrow: full ? 1 : 0, minWidth: 0,
       flexShrink: 0, transition: "width .25s ease",
       // minHeight:0 — иначе длинный список растягивает колонку
