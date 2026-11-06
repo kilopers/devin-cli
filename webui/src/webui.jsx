@@ -57,6 +57,8 @@ import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import MenuIcon from "@mui/icons-material/Menu";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import Grid from "@mui/material/Grid";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson, post } from "./api.js";
@@ -367,6 +369,22 @@ const saveTopicSel = (p, v) => {
   const m = loadTopicMap();
   if (v === "main") delete m[p]; else m[p] = String(v);
   try { localStorage.setItem(TOPIC_LS, JSON.stringify(m)); } catch {}
+};
+
+// свёрнутые колонки канбана per-проект (v1.8.85): колонка сжимается
+// в узкую полоску с вертикальным названием; набор — в localStorage,
+// переживает перезагрузку и переавторизацию
+const COLHIDE_LS = "devin.colhide";
+const loadColHideMap = () => {
+  try { return JSON.parse(localStorage.getItem(COLHIDE_LS)) || {}; }
+  catch { return {}; }
+};
+const colHideGet = p => new Set(loadColHideMap()[p] || []);
+const saveColHide = (p, s) => {
+  if (!p) return;
+  const m = loadColHideMap();
+  if (s.size) m[p] = [...s]; else delete m[p];
+  try { localStorage.setItem(COLHIDE_LS, JSON.stringify(m)); } catch {}
 };
 
 // скелетон поверх карточки/колонки, пока действие идёт на сервере:
@@ -1709,11 +1727,14 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
                       onDict, dictOn, dictBusy, onStats, pending,
-                      skel, tpls, onTplRun, onTplDel, onTplNew }) {
+                      skel, tpls, onTplRun, onTplDel, onTplNew,
+                      collapsed, onCollapse }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
-      width: { xs: "82vw", sm: 300, md: 320 }, flexShrink: 0,
+      width: collapsed ? { xs: 36, md: 38 }
+                       : { xs: "82vw", sm: 300, md: 320 },
+      flexShrink: 0, transition: "width .25s ease",
       // minHeight:0 — иначе длинный список растягивает колонку
       // (min-height:auto у flex-item'а) и всю страницу за собой;
       // высота колонки фиксирована — крутится только список внутри
@@ -1725,6 +1746,31 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
       borderWidth: sel ? 2 : 1,
       bgcolor: color || "background.paper" }}>
       {pending && <PendOverlay />}
+      {collapsed ?
+        // свёрнутая колонка — узкая полоска: стрелка «развернуть»
+        // сверху, название вертикально, счётчик задач снизу;
+        // клик по полоске разворачивает, дроп карточек работает
+        <Box onClick={onCollapse}
+             onDragOver={onBodyOver} onDrop={onBodyDrop}
+             sx={{ flex: 1, minHeight: 0, display: "flex",
+                   flexDirection: "column", alignItems: "center",
+                   py: 0.7, gap: 0.6, cursor: "pointer" }}>
+          <Tooltip title="развернуть колонку">
+            <ChevronRightIcon sx={{ fontSize: 16, flexShrink: 0,
+                                    color: "text.secondary" }} />
+          </Tooltip>
+          <Typography noWrap
+            sx={{ writingMode: "vertical-rl",
+                  transform: "rotate(180deg)",
+                  flex: 1, minHeight: 0, fontSize: 12,
+                  fontWeight: 600, overflow: "hidden",
+                  textOverflow: "ellipsis" }}>
+            {name}
+          </Typography>
+          <Chip size="small" label={count}
+                sx={{ height: 16, fontSize: 10, flexShrink: 0 }} />
+        </Box>
+      : (<>
       <Box onClick={onSelect}
            sx={{ display: "flex", alignItems: "center", gap: 0.6,
                  px: 1.1, py: 0.7, cursor: "pointer", flexShrink: 0,
@@ -1738,6 +1784,13 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             {name}
           </Typography>
         </Tooltip>
+        {onCollapse &&
+          <Tooltip title="свернуть колонку в узкую полоску">
+            <IconButton size="small" sx={{ p: 0.15, flexShrink: 0 }}
+              onClick={e => { e.stopPropagation(); onCollapse(); }}>
+              <ChevronLeftIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Tooltip>}
         {sess &&
           <Tooltip title="закреплённая devin-сессия — следующая задача темы продолжит её">
             <Typography component="span" sx={{ fontSize: 12,
@@ -1945,6 +1998,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             {busy ? "загружаю…" : "загрузить ещё"}
           </Button>}
       </Box>
+      </>)}
     </Paper>
   );
 }
@@ -2039,6 +2093,19 @@ export default function App() {
   const toggleSide = () => setSideHide(v => {
     localStorage.setItem("devin.sidehide", v ? "0" : "1");
     return !v;
+  });
+  // свёрнутые колонки канбана per-проект (v1.8.85): узкая полоска
+  // с вертикальным названием; набор — в localStorage, переживает
+  // перезагрузку/переавторизацию
+  const [colHide, setColHide] = useState(() => colHideGet(null));
+  useEffect(() => {
+    setColHide(colHideGet(project));
+  }, [project]);
+  const toggleColHide = key => setColHide(prev => {
+    const s = new Set(prev);
+    if (s.has(key)) s.delete(key); else s.add(key);
+    saveColHide(projRef.current, s);
+    return s;
   });
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
   const [treeVer, setTreeVer] = useState(0);
@@ -3294,6 +3361,8 @@ export default function App() {
                           ? "Задач пока нет — напиши первую внизу."
                           : "нет задач"}
                         loading={!booted}
+                        collapsed={colHide.has("main")}
+                        onCollapse={() => toggleColHide("main")}
                         pending={pendSet.has("col:main")}>
                         {colCards(mainItems, "main")}
                       </TopicColumn>);
@@ -3335,6 +3404,8 @@ export default function App() {
                       onBodyOver={e => overCol(e, String(tp.id))}
                       onBodyDrop={e => dropCol(e, String(tp.id))}
                       loading={!booted}
+                      collapsed={colHide.has(String(tp.id))}
+                      onCollapse={() => toggleColHide(String(tp.id))}
                       pending={pendSet.has("col:" + tp.id)}>
                       {colCards(byTopic(tp.id), String(tp.id))}
                     </TopicColumn>);
@@ -3362,6 +3433,8 @@ export default function App() {
                   onMore={() => loadColMore(String(tid))}
                   onBodyOver={e => overCol(e, String(tid))}
                   onBodyDrop={e => dropCol(e, String(tid))}
+                  collapsed={colHide.has(String(tid))}
+                  onCollapse={() => toggleColHide(String(tid))}
                   loading={!booted}>
                   {colCards(byTopic(tid), String(tid))}
                 </TopicColumn>)}
