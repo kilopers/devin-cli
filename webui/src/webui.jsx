@@ -508,31 +508,54 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
   </>);
 });
 
+// программный скролл чат-бокса к низу: помечает бокс, чтобы
+// логика «прилипания» не приняла его события за жест юзера
+const chatToEnd = (box, smooth) => {
+  if (!box) return;
+  box.__chatProg = Date.now();
+  box.scrollTo({ top: box.scrollHeight,
+                 behavior: smooth ? "smooth" : "auto" });
+};
+
 // якорь автоскролла треда: новое сообщение (смена last-стема
 // нижнего пузыря) докручивает всегда — как в мессенджере, своё
 // отправленное/пришедшее не должно прятаться за экраном; рост
-// живого пузыря (h) — только если юзер и так у низа, иначе
-// каждый поллинг сносил бы чтение выше
+// ЛЮБОГО пузыря (h — склейка хэшей всех задач: running-пузырь
+// может быть уже не последним, когда под ним висит «в
+// очереди») держит низ, только если юзер «прилип» к нему
+// (stick) — иначе каждый поллинг сносил бы чтение выше.
+// stick обновляется по скроллам бокса; свои же scrollTo из
+// событий выкидываем меткой __chatProg — иначе кадры smooth-
+// анимации с дистанцией >120 сбивали бы флаг посреди езды
 function ChatEnd({ n, h, last }) {
   const ref = useRef(null);
   const prev = useRef(null);
   const first = useRef(true);
+  const stick = useRef(true);
+  useEffect(() => {
+    const box = ref.current && ref.current.parentElement;
+    if (!box) return;
+    const on = () => {
+      if (Date.now() - (box.__chatProg || 0) < 800) return;
+      stick.current = box.scrollHeight - box.scrollTop
+                      - box.clientHeight < 120;
+    };
+    box.addEventListener("scroll", on);
+    return () => box.removeEventListener("scroll", on);
+  }, []);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const box = el.parentElement;
     const isNew = !!last && last !== prev.current;
     prev.current = last;
-    const near = !box || box.scrollHeight - box.scrollTop
-                 - box.clientHeight < 120;
-    // scrollTo бокса напрямую, не scrollIntoView: тот скроллит ВСЕ
-    // прокручиваемые предки — мог дёргать и окно, и саму доску.
-    // Новое сообщение — плавно (мессенджер-поведение); открытие
-    // колонки и рост живого пузыря — мгновенно, иначе длинный
+    // новое сообщение — плавно (мессенджер-поведение); открытие
+    // колонки и прижатие при росте — мгновенно, иначе длинный
     // тред «пролетал» бы анимацией при каждом чихе
-    if (isNew || near)
-      box.scrollTo({ top: box.scrollHeight,
-        behavior: isNew && !first.current ? "smooth" : "auto" });
+    if (isNew || stick.current) {
+      stick.current = true;
+      chatToEnd(box, isNew && !first.current);
+    }
     first.current = false;
   }, [n, h, last]);
   // height: "1px" строкой — sx height:1 превратил бы якорь в 100%
@@ -1892,11 +1915,9 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
   // крутим плавно сразу, не дожидаясь поллинга с новым пузырём
   useEffect(() => {
     if (!chat || !kick) return;
-    const b = bodyRef.current;
-    if (b) b.scrollTo({ top: b.scrollHeight, behavior: "smooth" });
+    chatToEnd(bodyRef.current, true);
   }, [kick]);
-  const toEnd = () => bodyRef.current?.scrollTo(
-    { top: bodyRef.current.scrollHeight, behavior: "smooth" });
+  const toEnd = () => chatToEnd(bodyRef.current, true);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
       width: collapsed ? { xs: 36, md: 38 }
@@ -2726,7 +2747,9 @@ export default function App() {
 
   // тред чат-колонки: задачи старыми вверх (выдача DESC),
   // каждая — пара «вопрос → ответ» + автоскролл к последнему;
-  // h последнего — чтобы досcrollивать и при росте живого пузыря;
+  // h — склейка хэшей ВСЕХ пузырей: running-задача растёт и
+  // когда уже не последняя (под ней висит «в очереди») —
+  // прилипший к низу юзер не должен терять хвост;
   // спейсер mt:auto прибивает тред к низу, когда сообщений мало —
   // пустота остаётся сверху, лишнего скролла нет
   const chatMsgs = (list, key) => {
@@ -2736,7 +2759,7 @@ export default function App() {
       .concat(items.map(t =>
         <ChatMsg key={t.stem} t={t} accent={accent} />),
         [<ChatEnd key="__end" n={items.length}
-                  h={last ? last.h : ""}
+                  h={items.map(t => t.h || "").join("|")}
                   last={last ? last.stem : ""} />]);
   };
 
