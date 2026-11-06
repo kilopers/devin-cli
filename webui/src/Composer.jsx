@@ -98,7 +98,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
     const fl = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!fl) return;
-    if (fl.size > 20 * 1024 * 1024) { toast("Файл > 20 МБ"); return; }
+    if (fl.size > 50 * 1024 * 1024) { toast("Файл > 50 МБ"); return; }
     try {
       const d = await (await api("/api/attach?name=" +
         encodeURIComponent(fl.name), { method: "POST", body: fl })).json();

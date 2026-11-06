@@ -176,8 +176,8 @@ def _api_attach():
     data = request.get_data()
     if not data:
         return jsonify({"ok": False, "error": "пустой файл"}), 400
-    if len(data) > 20 * 1024 * 1024:
-        return jsonify({"ok": False, "error": "файл > 20 МБ"}), 400
+    if len(data) > 50 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "файл > 50 МБ"}), 400
     ATTACH_DIR.mkdir(parents=True, exist_ok=True)
     att_id = f"{_current_user()}-{secrets.token_hex(4)}-{name}"
     (ATTACH_DIR / att_id).write_bytes(data)
