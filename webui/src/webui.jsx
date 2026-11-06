@@ -524,7 +524,9 @@ function ChatEnd({ n, h, last }) {
     prev.current = last;
     const near = !box || box.scrollHeight - box.scrollTop
                  - box.clientHeight < 120;
-    if (isNew || near) el.scrollIntoView({ block: "end" });
+    // scrollTop напрямую, не scrollIntoView: тот скроллит ВСЕ
+    // прокручиваемые предки — мог дёргать и окно, и саму доску
+    if (isNew || near) box.scrollTop = box.scrollHeight;
   }, [n, h, last]);
   // height: "1px" строкой — sx height:1 превратил бы якорь в 100%
   // высоты скролл-бокса (пустой экран под тредом)
@@ -3345,7 +3347,17 @@ export default function App() {
       <CssBaseline />
       <GlobalStyles styles={mdStyles} />
       <ErrBoundary>
-      <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {/* 100dvh, не 100vh: на мобильных 100vh — «большой» вьюпорт
+          (высота БЕЗ строки URL/навигации браузера). Пока хром
+          браузера показан, корень с min-height:100vh оказывается
+          выше реального экрана — низ колонок доски уходит под
+          фиксированный композер: пузыри чата, прибитые к низу
+          спейсером mt:auto, и ↓-кнопка прячутся за баром.
+          dvh следит за текущей видимой высотой; vh — фолбэк */}
+      <Box sx={{ display: "flex", flexDirection: "column",
+                 minHeight: "100vh",
+                 "@supports (height: 100dvh)": {
+                   minHeight: "100dvh" } }}>
         <AppBar position="fixed" color="primary"
                 sx={{ bgcolor: accent }}>
           <Toolbar variant="dense" sx={{ gap: 1 }}>
