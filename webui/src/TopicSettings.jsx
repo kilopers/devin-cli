@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button,
   Stack, Typography, TextField, MenuItem, Box, Tooltip,
+  Checkbox, FormControlLabel,
 } from "@mui/material";
 import { apiJson as get, post } from "./api.js";
 
@@ -35,6 +36,8 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   // "main" — общая сессия проекта (как у «Главной», дефолт),
   // "own" — своя новая, "<id>" — прицепиться к сессии темы
   const [sess, setSess] = useState("main");
+  // чат-колонка (диалог-пузыри, своя сессия) — только при создании
+  const [chat, setChat] = useState(false);
   const [models, setModels] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -53,6 +56,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setAc(src.auto_commit || "");
     setFast(src.fast || "");
     setSess("main");
+    setChat(false);
     get("/api/agents").then(j =>
       setAgents((j.agents || []).filter(a => a.configured)))
       .catch(() => {});
@@ -72,7 +76,8 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                      auto_commit: ac, fast };
       const d = await post("/api/topics",
         isCreate ? { ...body, action: "create", name: name.trim(),
-                     own_session: sess === "own" ? "1" : "0",
+                     chat: chat ? 1 : 0,
+                     own_session: chat || sess === "own" ? "1" : "0",
                      session_topic_id:
                        sess !== "own" && sess !== "main"
                          ? Number(sess) : null }
@@ -122,6 +127,13 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                        ? "пусто — агент назовёт по первой задаче"
                        : isMain ? "пусто — «Главная»" : ""} />
           {isCreate &&
+            <FormControlLabel
+              control={<Checkbox checked={chat}
+                       onChange={e => setChat(e.target.checked)} />}
+              label={"💬 Диалог — чат-колонка: сообщения пузырями " +
+                     "из общего поля ввода, своя сессия; тип " +
+                     "потом не поменять"} />}
+          {isCreate && !chat &&
             <TextField select label="Сессия" size="small" fullWidth
                        value={sess}
                        onChange={e => setSess(e.target.value)}
@@ -137,6 +149,10 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                   🧵 как у темы «{t.name || "тема #" + t.id}»
                 </MenuItem>))}
             </TextField>}
+          {dlg?.kind === "edit" && dlg.topic?.chat &&
+            <Typography variant="caption" color="primary">
+              💬 диалог — чат-колонка (тип задаётся при создании)
+            </Typography>}
           {dlg?.kind === "edit" &&
             <Typography variant="caption" color="text.secondary">
               Сессия: {dlg.topic?.own_session

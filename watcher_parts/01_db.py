@@ -253,7 +253,10 @@ def init_db() -> None:
                      ("sort", "sort INT NOT NULL DEFAULT 0"),
                      # движок задач колонки по умолчанию; NULL —
                      # наследовать из настроек проекта
-                     ("agent", "agent VARCHAR(32) NULL")):
+                     ("agent", "agent VARCHAR(32) NULL"),
+                     # чат-колонка (диалог): задаётся при создании,
+                     # пузыри вместо карточек, своя сессия
+                     ("chat", "chat TINYINT(1) NOT NULL DEFAULT 0")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='topics'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):

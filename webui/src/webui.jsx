@@ -422,6 +422,61 @@ const PendOverlay = () => (
             bgcolor: "rgba(94,106,210,.08)" }} />
   </Box>);
 
+// Пузырь диалога чат-колонки (v1.8.93): сообщение юзера справа,
+// ответ агента слева; у идущей задачи — живой хвост output
+const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
+  const mine = {
+    alignSelf: "flex-end", maxWidth: "88%", px: 1.1, py: 0.7,
+    borderRadius: "12px 12px 4px 12px", fontSize: 13,
+    whiteSpace: "pre-wrap", wordBreak: "break-word",
+    bgcolor: accent || "primary.main", color: "#fff" };
+  const theirs = {
+    alignSelf: "flex-start", maxWidth: "94%", px: 1.1, py: 0.7,
+    borderRadius: "12px 12px 12px 4px", fontSize: 13,
+    bgcolor: "background.paper", border: "1px solid",
+    borderColor: "divider" };
+  return (<>
+    <Paper elevation={0} sx={mine}>
+      {(t.prompt || "").trim()}</Paper>
+    <Paper elevation={0} sx={theirs}>
+      {t.status === "queued" &&
+        <Typography variant="caption" color="text.secondary">
+          ⏳ в очереди — отвечу следом</Typography>}
+      {t.status === "running" &&
+        <Box>
+          <Box sx={{ display: "flex", alignItems: "center",
+                     gap: 0.6, mb: t.output ? 0.4 : 0 }}>
+            <CircularProgress size={11} thickness={6} />
+            <Typography variant="caption" color="info.main">
+              {t.starting ? "Devin запускается…" : "Devin пишет…"}
+            </Typography>
+          </Box>
+          {t.output &&
+            <pre className="out" style={{ margin: 0, fontSize: 11,
+                 maxHeight: 260, overflow: "hidden" }}>
+              {(t.output || "").slice(-1500)}</pre>}
+        </Box>}
+      {t.status === "done" &&
+        (t.output
+          ? <Markdown text={t.output} />
+          : <Typography variant="caption" color="text.secondary">
+              пустой ответ</Typography>)}
+      {t.status === "note" &&
+        <Typography variant="body2" sx={{ fontSize: 13 }}>
+          {t.prompt}</Typography>}
+    </Paper>
+  </>);
+});
+
+// якорь автоскролла треда: при смене числа сообщений докручивает
+// родительский скролл-бокс вниз
+function ChatEnd({ n }) {
+  const ref = useRef(null);
+  useEffect(() => { ref.current?.scrollIntoView({ block: "end" }); },
+            [n]);
+  return <Box ref={ref} sx={{ height: 1, flexShrink: 0 }} />;
+}
+
 const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDel, toast, hideTopic,
                                                sel, onNote, onCont, cols,
@@ -1278,7 +1333,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             </Tooltip>
           </DialogTitle>
           <DialogContent dividers sx={{ p: 0 }}>
-            {(cols || []).filter(c => c.key !== curColKey).map(c => {
+            {(cols || []).filter(c => c.key !== curColKey
+                                    && !c.chat).map(c => {
               const lvl = c.mode === "say" ? 0
                                    : c.mode === "ask" ? 1 : 2;
               const up = lvl > cardLvl;
@@ -1747,7 +1803,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onBodyOver, onBodyDrop, loading,
                       onDict, dictOn, dictBusy, onStats, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
-                      collapsed, onCollapse, full, onFull }) {
+                      collapsed, onCollapse, full, onFull, chat }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
@@ -1924,7 +1980,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                           "& .MuiChip-label": { px: "6px" } }} />
             </Tooltip>))}
         </Box>}
-      {(tpls || []).length > 0 &&
+      {!chat && (tpls || []).length > 0 &&
         // шаблоны темы — отдельная горизонтальная строка мини-кнопок:
         // клик по телу ставит задачу текстом шаблона в эту колонку
         // её настройками, правая секция ✕ удаляет (с подтверждением);
@@ -1969,6 +2025,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
               </Box>
             </Box>))}
         </Box>}
+      {!chat &&
       <Box sx={{ px: 0.8, pt: 0.8, flexShrink: 0 }}>
         {(() => { const btnC = boostColor(color) || accent
                                 || "#5e6ad2";
@@ -2006,12 +2063,13 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 </IconButton></span>
               </Tooltip>}
             </Box>); })()}
-      </Box>
+      </Box>}
       <Box sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8, flex: 1, minHeight: 0, overflowY: "auto",
                  "& > *": { flexShrink: 0 },
                  "&::-webkit-scrollbar": { width: 8 } }}
-           onDragOver={onBodyOver} onDrop={onBodyDrop}>
+           onDragOver={chat ? undefined : onBodyOver}
+           onDrop={chat ? undefined : onBodyDrop}>
         {skel &&
           <Skeleton variant="rounded" height={76}
                     sx={{ borderRadius: "10px", flexShrink: 0 }} />}
@@ -2266,6 +2324,7 @@ export default function App() {
     ...topics.map(t => ({
       key: String(t.id), sort: t.sort || t.id,
       name: t.name || ("тема #" + t.id),
+      chat: !!t.chat,
       mode: ((t.eff || {}).reply_mode) || "code" })),
   ].sort((a, b) => (a.sort - b.sort)
            || String(a.key).localeCompare(String(b.key))),
@@ -2549,6 +2608,13 @@ export default function App() {
       out.push(mark);
     return out;
   };
+
+  // тред чат-колонки: задачи старыми вверх (выдача DESC),
+  // каждая — пара «вопрос → ответ» + автоскролл к последнему
+  const chatMsgs = (list, key) =>
+    list.slice().reverse().map(t =>
+      <ChatMsg key={t.stem} t={t} accent={accent} />)
+      .concat(<ChatEnd key="__end" n={list.length} />);
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
@@ -3484,7 +3550,8 @@ export default function App() {
                       count={byTopic(tp.id).length}
                       sel={topicSel === String(tp.id)} accent={accent}
                       color={tp.color} tset={tp} eff={tp.eff}
-                      tpls={tp.tpls}
+                      tpls={tp.chat ? [] : tp.tpls}
+                      chat={!!tp.chat}
                       onTplRun={t2 => tplRun(String(tp.id), t2)}
                       onTplDel={t2 => tplDel(String(tp.id), t2)}
                       onSelect={() => selectTopic(String(tp.id))}
@@ -3499,18 +3566,22 @@ export default function App() {
                       onStats={() => setStatDlg(
                         { key: String(tp.id),
                           name: tp.name || `тема #${tp.id}` })}
-                      onTplNew={() => openTplNew(String(tp.id),
-                        tp.name || `тема #${tp.id}`)}
+                      onTplNew={tp.chat ? null
+                        : () => openTplNew(String(tp.id),
+                          tp.name || `тема #${tp.id}`)}
                       more={colMore[String(tp.id)]}
                       busy={!!colBusy[String(tp.id)]}
                       onMore={() => loadColMore(String(tp.id))}
                       onSettings={() => setTSetDlg(
                         { kind: "edit", topic: tp })}
-                      onMoveL={mvL} onMoveR={mvR}
+                      onMoveL={tp.chat ? null : mvL}
+                      onMoveR={tp.chat ? null : mvR}
                       onDelete={() =>
                         askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}
-                      onBodyOver={e => overCol(e, String(tp.id))}
-                      onBodyDrop={e => dropCol(e, String(tp.id))}
+                      onBodyOver={tp.chat ? null
+                        : e => overCol(e, String(tp.id))}
+                      onBodyDrop={tp.chat ? null
+                        : e => dropCol(e, String(tp.id))}
                       loading={!booted}
                       collapsed={fullKey !== String(tp.id)
                                  && colHide.has(String(tp.id))}
@@ -3518,7 +3589,8 @@ export default function App() {
                       full={fullKey === String(tp.id)}
                       onFull={() => toggleColFull(String(tp.id))}
                       pending={pendSet.has("col:" + tp.id)}>
-                      {colCards(byTopic(tp.id), String(tp.id))}
+                      {tp.chat ? chatMsgs(byTopic(tp.id), String(tp.id))
+                               : colCards(byTopic(tp.id), String(tp.id))}
                     </TopicColumn>);
                 });
               })()}
@@ -3690,6 +3762,8 @@ export default function App() {
                   cont={contSel ? feed.get(contSel) : null}
                   onContDone={() => setContSel(null)}
                   topic={topicSel} topicName={topicName} topics={topics}
+                  chat={!!(topics.find(
+                    t => String(t.id) === String(topicSel)) || {}).chat}
                   mainDef={mainDef}
                   onTopic={selectTopic} onNewTopic={createTopic}
                   conn={conn} onOpenDrawer={() => setDrawerOpen(true)}

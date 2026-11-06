@@ -32,6 +32,7 @@ const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
 
 export default function Composer({ project, sttStatus, toast, onSent,
                                    conn, onOpenDrawer, accent, mode, onMode,
+                                   chat,
                                    fast, fastOv, onFast, topic,
                                    topicName, topics, mainDef,
                                    note, onNoteDone,
@@ -382,6 +383,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
           sx={{ "& .MuiInputBase-root": { maxHeight: "80vh",
                                           overflowY: "auto" } }}
           placeholder={cont ? "Доделать в этой карточке…"
+                            : chat ? "Спросить…"
                             : say
                             ? (note ? "Дописать в карточку…"
                                     : "Заметка в колонку…")

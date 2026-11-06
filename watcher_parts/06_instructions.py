@@ -198,7 +198,7 @@ def _api_instr_set():
 def _topic_rows(project: str) -> list:
     return db_query("SELECT id, name, session_id, own_session,"
                     " session_topic_id, sort, user, created, updated,"
-                    " color, model, reply_mode, auto_commit, fast"
+                    " color, model, reply_mode, auto_commit, fast, chat"
                     " FROM topics WHERE project=%s"
                     " ORDER BY sort, id", (project,))
 
@@ -355,8 +355,13 @@ def _api_topics_set():
                             "error": "тема с таким именем уже есть"}), 409
         st = _topic_settings_from(b)
         # own_session/session_topic_id — только при создании, полей
-        # в настройках темы нет и через settings их не поменять
+        # в настройках темы нет и через settings их не поменять;
+        # чат-колонка (chat=1, диалог-пузыри) — тоже только при
+        # создании, у неё всегда СВОЯ сессия
+        chat = 1 if b.get("chat") else 0
         own = 0 if str(b.get("own_session") or "1") == "0" else 1
+        if chat:
+            own = 1
         attach = None
         if not own:
             # прицепка к сессии существующей темы — только к теме того
@@ -375,12 +380,12 @@ def _api_topics_set():
                 attach = atid
         db_exec("INSERT INTO topics(project,user,name,color,model,"
                 "reply_mode,auto_commit,fast,own_session,"
-                "session_topic_id,created,updated)"
-                " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "session_topic_id,chat,created,updated)"
+                " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (p, u, name, st.get("color") or None,
                  st.get("model") or None, st.get("reply_mode") or None,
                  st.get("auto_commit") or None, st.get("fast") or None,
-                 own, attach, time.time(), time.time()))
+                 own, attach, chat, time.time(), time.time()))
         new_id = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
         # новая тема — последняя (справа); бессортовые старые добиваем
         db_exec("UPDATE topics SET sort=id WHERE sort=0 AND id<>%s",
@@ -1110,6 +1115,15 @@ def _api_task_move():
     else:
         return jsonify({"ok": False, "error": "bad topic"}), 400
     proj = row["project"]
+    # чат-колонки (topics.chat) — закрытые диалоги: карточки ни в,
+    # ни из них не переносятся (v1.8.93)
+    chat_ids = {r["id"] for r in db_query(
+        "SELECT id FROM topics WHERE project<=>%s AND chat=1",
+        (proj,))}
+    if new_tid in chat_ids or row["topic_id"] in chat_ids:
+        return jsonify({"ok": False,
+                        "error": "диалог-колонка закрытая — карточки "
+                                 "туда не переносятся"}), 409
     w = "project<=>%s AND topic_id<=>%s AND stem<>%s"
     wp = (proj, new_tid, stem)
     new_sort = None
