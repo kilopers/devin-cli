@@ -1706,7 +1706,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
                       onDict, dictOn, dictBusy, onStats, pending,
-                      skel, tpls, onTplRun, onTplDel }) {
+                      skel, tpls, onTplRun, onTplDel, onTplNew }) {
   const [menu, setMenu] = useState(null);
   return (
     <Paper variant="outlined" sx={{ position: "relative",
@@ -1742,7 +1742,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
           </Tooltip>}
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
-        {(onDelete || onSettings || onMoveL || onMoveR || onStats) &&
+        {(onDelete || onSettings || onMoveL || onMoveR || onStats ||
+           onTplNew) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -1758,6 +1759,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onStats(); }}>
                   📊 Статистика
+                </MenuItem>}
+              {onTplNew &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onTplNew(); }}>
+                  🔖 Новый шаблон
                 </MenuItem>}
               {onSettings &&
                 <MenuItem dense sx={{ fontSize: 13 }}
@@ -2449,6 +2455,28 @@ export default function App() {
   const tplDel = (key, tp) =>
     setConfirm({ kind: "tpl_del", col: key, id: tp.id,
                  name: (tp.text || "").slice(0, 40) });
+  // создание шаблона из меню ⋯ колонки: пустое поле → create,
+  // без селекта темы (колонка уже известна)
+  const [tplNew, setTplNew] = useState(null); // {col, name}
+  const [tplNewText, setTplNewText] = useState("");
+  const [tplNewBusy, setTplNewBusy] = useState(false);
+  const openTplNew = (col, name) => {
+    setTplNew({ col, name }); setTplNewText(""); };
+  const saveTplNew = async () => {
+    if (tplNewBusy || !tplNewText.trim()) return;
+    setTplNewBusy(true);
+    try {
+      const d = await post("/api/topic/tpl", {
+        action: "create",
+        project: project === "workspace" ? null : project,
+        topic: tplNew.col, text: tplNewText.trim() });
+      if (d.ok) {
+        setToast("Шаблон сохранён в «" + tplNew.name + "»");
+        setTplNew(null); loadTasks();
+      } else setToast("Ошибка: " + (d.error || "?"));
+    } catch (e) { setToast("Сеть: " + e); }
+    setTplNewBusy(false);
+  };
 
   const askDelTopic = (id, name) => {
     const act = byTopic(id)
@@ -3208,6 +3236,8 @@ export default function App() {
                           { key: "main",
                             name: "⭐ " + (mainDef.name
                                           || "Главная") })}
+                        onTplNew={() => openTplNew("main",
+                          "⭐ " + (mainDef.name || "Главная"))}
                         onSettings={() => setTSetDlg(
                           { kind: "main", current: mainDef })}
                         onMoveL={mvL} onMoveR={mvR}
@@ -3247,6 +3277,8 @@ export default function App() {
                       onStats={() => setStatDlg(
                         { key: String(tp.id),
                           name: tp.name || `тема #${tp.id}` })}
+                      onTplNew={() => openTplNew(String(tp.id),
+                        tp.name || `тема #${tp.id}`)}
                       more={colMore[String(tp.id)]}
                       busy={!!colBusy[String(tp.id)]}
                       onMore={() => loadColMore(String(tp.id))}
@@ -3506,6 +3538,39 @@ export default function App() {
                   wsList={wsInfo.ws} wsActive={wsInfo.active}
                   onAdded={f => { refreshProjects()
                     .then(() => selectProject(f)); }} />
+
+      {/* новый шаблон из меню ⋯ колонки */}
+      <Dialog open={!!tplNew} onClose={() => setTplNew(null)}
+              maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontSize: 15, fontWeight: 600,
+                           pt: 2, pb: 0.5, pr: 5 }}>
+          Новый шаблон — {tplNew?.name}
+          <Tooltip title="закрыть (Esc)"><span>
+            <IconButton onClick={() => setTplNew(null)} size="small"
+              sx={{ position: "absolute", right: 8, top: 8 }}>
+              <CloseIcon sx={{ fontSize: 17 }} />
+            </IconButton>
+          </span></Tooltip>
+        </DialogTitle>
+        <DialogContent sx={{ pt: "12px !important" }}>
+          <TextField multiline fullWidth minRows={6} maxRows={16}
+            autoFocus value={tplNewText} disabled={tplNewBusy}
+            onChange={e => setTplNewText(e.target.value)}
+            placeholder="Текст шаблона задачи"
+            sx={{ "& .MuiInputBase-root":
+                   { fontSize: 13, lineHeight: 1.55 } }} />
+        </DialogContent>
+        <DialogActions sx={{ px: 2, pb: 1.5 }}>
+          <Button onClick={() => setTplNew(null)}
+                  sx={{ textTransform: "none" }}>Отмена</Button>
+          <Button variant="contained" disableElevation
+            onClick={saveTplNew}
+            disabled={tplNewBusy || !tplNewText.trim()}
+            sx={{ textTransform: "none", borderRadius: "9px" }}>
+            {tplNewBusy ? "сохраняю…" : "Создать шаблон"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
 
       <Dialog open={!!confirm} onClose={() => setConfirm(null)}
