@@ -10,13 +10,16 @@ import {
   CircularProgress, CssBaseline, Dialog, DialogActions, DialogContent,
   DialogTitle,
   Divider, GlobalStyles, IconButton, ListItemButton,
-  ListSubheader, Menu, MenuItem, Paper, Select, Skeleton, Snackbar,
+  ListSubheader, Menu, MenuItem, Paper, Radio, RadioGroup,
+  FormControlLabel, Select, Skeleton, Snackbar,
   SwipeableDrawer, TextField, Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import MicIcon from "@mui/icons-material/Mic";
 import StopIcon from "@mui/icons-material/Stop";
 import AddIcon from "@mui/icons-material/Add";
-import { STT_RATE, resample, encodeWav } from "./audio.js";
+import { STT_RATE, resample, encodeWav,
+         micDeviceId, setMicDeviceId, getMicStream, listMics }
+       from "./audio.js";
 import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
 import KeyIcon from "@mui/icons-material/VpnKey";
@@ -2005,6 +2008,17 @@ export default function App() {
   const [colorPreview, setColorPreview] = useState(null); // превью из диалога настроек
   const [profileOpen, setProfileOpen] = useState(false);
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
+  // выбор микрофона для диктовки (v1.8.84): список аудиовходов +
+  // «по умолчанию», id — в localStorage (devin.mic)
+  const [micOpen, setMicOpen] = useState(false);
+  const [micList, setMicList] = useState([]);
+  const [micId, setMicId] = useState(micDeviceId);
+  const openMic = async () => {
+    setMicOpen(true); setMicList(await listMics()); };
+  const pickMic = id => {
+    setMicId(id); setMicDeviceId(id);
+    setToast(id ? "Микрофон выбран" : "Микрофон: по умолчанию");
+  };
   const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
   const [setOpen, setSetOpen] = useState(false);   // «Настройки»
   const [usersOpen, setUsersOpen] = useState(false); // «Пользователи» (админ)
@@ -2631,8 +2645,7 @@ export default function App() {
   };
   const startDict = async target => {
     try {
-      const stream = await navigator.mediaDevices
-        .getUserMedia({ audio: true });
+      const stream = await getMicStream();
       const ctx = new (window.AudioContext
         || window.webkitAudioContext)({ sampleRate: STT_RATE });
       const src = ctx.createMediaStreamSource(stream);
@@ -3064,6 +3077,11 @@ export default function App() {
                                          setKeysOpen(true); }}>
                 <KeyIcon fontSize="small" sx={{ mr: 1 }} />
                 Ключи репозиториев
+              </MenuItem>
+              <MenuItem onClick={() => { setProfMenu(null);
+                                         openMic(); }}>
+                <MicIcon fontSize="small" sx={{ mr: 1 }} />
+                Микрофон
               </MenuItem>
               <MenuItem onClick={() => { setProfMenu(null);
                                          setSetOpen(true); }}>
@@ -3703,6 +3721,43 @@ export default function App() {
         <DialogActions>
           <Button variant="contained" onClick={savePw}>Сохранить</Button>
         </DialogActions>
+      </Dialog>
+
+      {/* выбор микрофона для диктовки */}
+      <Dialog open={micOpen} onClose={() => setMicOpen(false)}
+              maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 15, fontWeight: 600,
+                           pt: 2, pb: 0.5, pr: 5 }}>
+          Микрофон для диктовки
+          <Tooltip title="закрыть (Esc)"><span>
+            <IconButton onClick={() => setMicOpen(false)} size="small"
+              sx={{ position: "absolute", right: 8, top: 8 }}>
+              <CloseIcon sx={{ fontSize: 17 }} />
+            </IconButton>
+          </span></Tooltip>
+        </DialogTitle>
+        <DialogContent sx={{ pt: "8px !important" }}>
+          {!micList.length &&
+            <Typography variant="body2" color="text.secondary"
+                        sx={{ fontSize: 12.5, py: 1 }}>
+              Микрофоны не найдены — проверь, что браузеру разрешён
+              доступ к микрофону.
+            </Typography>}
+          <RadioGroup value={micId}
+                      onChange={e => pickMic(e.target.value)}>
+            <FormControlLabel value="" control={<Radio size="small" />}
+              label={<Typography sx={{ fontSize: 13 }}>
+                       По умолчанию (системный)
+                     </Typography>} />
+            {micList.map((d, i) =>
+              <FormControlLabel key={d.deviceId || i}
+                value={d.deviceId}
+                control={<Radio size="small" />}
+                label={<Typography sx={{ fontSize: 13 }}>
+                         {d.label || "устройство " + (i + 1)}
+                       </Typography>} />)}
+          </RadioGroup>
+        </DialogContent>
       </Dialog>
 
       <Snackbar open={!!toast || !!toastNode} autoHideDuration={3000}

@@ -25,7 +25,7 @@ import FlashOnIcon from "@mui/icons-material/FlashOn";
 import FlashOffIcon from "@mui/icons-material/FlashOff";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { api, apiJson as get, post } from "./api.js";
-import { STT_RATE, resample, encodeWav } from "./audio.js";
+import { STT_RATE, resample, encodeWav, getMicStream } from "./audio.js";
 
 const fmtDur = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" +
                     String(Math.floor(s % 60)).padStart(2, "0");
@@ -339,7 +339,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
 
   const startRec = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await getMicStream();
       const ctx = new (window.AudioContext || window.webkitAudioContext)(
         { sampleRate: STT_RATE });   // Safari may ignore — resampled anyway
       const src = ctx.createMediaStreamSource(stream);

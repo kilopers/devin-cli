@@ -37,3 +37,49 @@ export function encodeWav(chunks, rate) {
     }
   return buf;
 }
+
+// ── выбор микрофона (v1.8.84) ──
+// id устройства хранится в localStorage (devin.mic); пусто —
+// системный default, как раньше.
+
+export function micDeviceId() {
+  try { return localStorage.getItem("devin.mic") || ""; }
+  catch { return ""; }
+}
+
+export function setMicDeviceId(id) {
+  try {
+    if (id) localStorage.setItem("devin.mic", id);
+    else localStorage.removeItem("devin.mic");
+  } catch { /* приватный режим */ }
+}
+
+// стрим с выбранного микрофона; устройство отключили/нет —
+// фолбэк на default, чтобы запись не отваливалась совсем
+export async function getMicStream() {
+  const md = navigator.mediaDevices;
+  const id = micDeviceId();
+  if (id) {
+    try {
+      return await md.getUserMedia(
+        { audio: { deviceId: { exact: id } } });
+    } catch { /* устройство пропало — идём на default */ }
+  }
+  return md.getUserMedia({ audio: true });
+}
+
+// список аудиовходов; без пермишена label пустые — прогреваем
+// микрофон разово (трек сразу глушим) и перечитываем
+export async function listMics() {
+  const md = navigator.mediaDevices;
+  if (!md?.enumerateDevices) return [];
+  let devs = await md.enumerateDevices();
+  if (!devs.some(d => d.kind === "audioinput" && d.label)) {
+    try {
+      const s = await md.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      devs = await md.enumerateDevices();
+    } catch { /* нет пермишена — вернём что есть */ }
+  }
+  return devs.filter(d => d.kind === "audioinput");
+}
