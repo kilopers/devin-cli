@@ -50,7 +50,13 @@ def _api_project_settings_get():
         panel = json.loads(us_get(_current_user(), f"panel:{p}") or "{}")
     except Exception:
         panel = {}
+    try:
+        colhide = json.loads(
+            us_get(_current_user(), f"colhide:{p}") or "[]")
+    except Exception:
+        colhide = []
     return jsonify({"ok": True,
+                    "colhide": colhide,
                     "model": pj_get(p, "model"),
                     "agent": pj_get(p, "agent"),
                     "reply_mode": pj_get(p, "reply_mode"),
@@ -100,6 +106,12 @@ def _api_project_settings_set():
         us_set(_current_user(), f"panel:{p}", json.dumps(
             {k: bool(v) for k, v in body["panel"].items()
              if k in ("files", "changes", "builds", "hooks", "ws", "branches", "instr", "deploy")}))
+    # свёрнутые колонки канбана — настройка юзера+проекта (v1.8.86),
+    # синхронизируется между устройствами
+    if isinstance(body.get("colhide"), list):
+        us_set(_current_user(), f"colhide:{p}", json.dumps(
+            [str(k)[:20] for k in body["colhide"]
+             if isinstance(k, (str, int))][:50]))
     return jsonify({"ok": True})
 
 

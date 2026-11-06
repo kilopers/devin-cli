@@ -371,9 +371,10 @@ const saveTopicSel = (p, v) => {
   try { localStorage.setItem(TOPIC_LS, JSON.stringify(m)); } catch {}
 };
 
-// свёрнутые колонки канбана per-проект (v1.8.85): колонка сжимается
-// в узкую полоску с вертикальным названием; набор — в localStorage,
-// переживает перезагрузку и переавторизацию
+// свёрнутые колонки канбана per-проект (v1.8.85/86): колонка
+// сжимается в узкую полоску с вертикальным названием; источник
+// истины — us:<u>.colhide:<проект> на сервере (синк между
+// устройствами), localStorage — мгновенный кэш до ответа API
 const COLHIDE_LS = "devin.colhide";
 const loadColHideMap = () => {
   try { return JSON.parse(localStorage.getItem(COLHIDE_LS)) || {}; }
@@ -2094,9 +2095,10 @@ export default function App() {
     localStorage.setItem("devin.sidehide", v ? "0" : "1");
     return !v;
   });
-  // свёрнутые колонки канбана per-проект (v1.8.85): узкая полоска
-  // с вертикальным названием; набор — в localStorage, переживает
-  // перезагрузку/переавторизацию
+  // свёрнутые колонки канбана per-проект (v1.8.85/86): узкая
+  // полоска с вертикальным названием; серверный ключ
+  // us:<u>.colhide:<проект> — одно состояние на всех устройствах,
+  // localStorage — кэш для мгновенного применения до ответа API
   const [colHide, setColHide] = useState(() => colHideGet(null));
   useEffect(() => {
     setColHide(colHideGet(project));
@@ -2105,6 +2107,9 @@ export default function App() {
     const s = new Set(prev);
     if (s.has(key)) s.delete(key); else s.add(key);
     saveColHide(projRef.current, s);
+    post("/api/project/settings",
+         { project: projRef.current, colhide: [...s] })
+      .catch(() => {});
     return s;
   });
   const [pw, setPw] = useState({ cur: "", n1: "", n2: "" });
@@ -2764,8 +2769,16 @@ export default function App() {
     setPanels({ files: true, changes: true, builds: true,
                 hooks: true, ws: true, branches: true, instr: true, deploy: true });
     apiJson("/api/project/settings?project=" + encodeURIComponent(project))
-      .then(d => { if (d.ok && d.panel)
-        setPanels(s => ({ ...s, ...d.panel })); })
+      .then(d => {
+        if (d.ok && d.panel)
+          setPanels(s => ({ ...s, ...d.panel }));
+        // серверный набор свёрнутых колонок важнее локального кэша —
+        // одно состояние на всех устройствах
+        if (d.ok && Array.isArray(d.colhide)) {
+          const s = new Set(d.colhide.map(String));
+          setColHide(s); saveColHide(project, s);
+        }
+      })
       .catch(() => {});
   }, [project]);
 
