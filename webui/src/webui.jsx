@@ -449,7 +449,7 @@ function ChatBusy({ t }) {
 // ответ агента слева; у идущей задачи — живой очищенный текст
 // (cout) + строка активности; скролла внутри пузыря нет —
 // сообщение растягивается, прокручивается вся колонка
-const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
+const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel }) {
   const mine = {
     alignSelf: "flex-end", maxWidth: "88%", px: 1.1, py: 0.7,
     borderRadius: "12px 12px 4px 12px", fontSize: 13,
@@ -484,28 +484,47 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent }) {
         📎 {a}
       </Box>);
   });
-  return (<>
-    <Paper elevation={0} sx={mine}>
-      {txt}{attEls}</Paper>
-    <Paper elevation={0} sx={theirs}>
-      {t.status === "queued" &&
-        <Typography variant="caption" color="text.secondary">
-          ⏳ в очереди — отвечу следом</Typography>}
-      {t.status === "running" &&
-        <Box>
-          {!!t.cout && <Markdown text={t.cout} />}
-          <ChatBusy t={t} />
-        </Box>}
-      {t.status === "done" &&
-        (t.output
-          ? <Markdown text={t.output} />
-          : <Typography variant="caption" color="text.secondary">
-              пустой ответ</Typography>)}
-      {t.status === "note" &&
-        <Typography variant="body2" sx={{ fontSize: 13 }}>
-          {t.prompt}</Typography>}
-    </Paper>
-  </>);
+  // пара «вопрос → ответ» — одна задача; крестик «✕» плавает
+  // в правом верхнем углу и удаляет её целиком (у активной —
+  // сначала останавливает, подтверждение в диалоге)
+  return (
+    <Box sx={{ position: "relative", display: "flex",
+               flexDirection: "column", gap: 0.8 }}>
+      {onDel &&
+        <Tooltip title="удалить сообщение">
+          <IconButton size="small" onClick={() => onDel(t)}
+            sx={{ position: "absolute", top: -5, right: -2, zIndex: 2,
+                  width: 20, height: 20, p: 0,
+                  bgcolor: "background.paper",
+                  border: "1px solid", borderColor: "divider",
+                  color: "text.secondary",
+                  "&:hover": { bgcolor: "background.paper",
+                               color: "error.main",
+                               borderColor: "error.main" } }}>
+            <CloseIcon sx={{ fontSize: 12 }} />
+          </IconButton>
+        </Tooltip>}
+      <Paper elevation={0} sx={mine}>
+        {txt}{attEls}</Paper>
+      <Paper elevation={0} sx={theirs}>
+        {t.status === "queued" &&
+          <Typography variant="caption" color="text.secondary">
+            ⏳ в очереди — отвечу следом</Typography>}
+        {t.status === "running" &&
+          <Box>
+            {!!t.cout && <Markdown text={t.cout} />}
+            <ChatBusy t={t} />
+          </Box>}
+        {t.status === "done" &&
+          (t.output
+            ? <Markdown text={t.output} />
+            : <Typography variant="caption" color="text.secondary">
+                пустой ответ</Typography>)}
+        {t.status === "note" &&
+          <Typography variant="body2" sx={{ fontSize: 13 }}>
+            {t.prompt}</Typography>}
+      </Paper>
+    </Box>);
 });
 
 // программный скролл чат-бокса к низу: помечает бокс, чтобы
@@ -2759,7 +2778,8 @@ export default function App() {
     const last = items[items.length - 1];
     return [<Box key="__top" sx={{ mt: "auto", height: 0 }} />]
       .concat(items.map(t =>
-        <ChatMsg key={t.stem} t={t} accent={accent} />),
+        <ChatMsg key={t.stem} t={t} accent={accent}
+                 onDel={askDelChat} />),
         [<ChatEnd key="__end" n={items.length}
                   h={items.map(t => t.h || "").join("|")}
                   last={last ? last.stem : ""} />]);
@@ -3138,6 +3158,13 @@ export default function App() {
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
   const askDel = useCallback(
     t2 => setConfirm({ kind: "del", name: t2.name, stem: t2.stem }), []);
+  // ✕ на пузыре чат-колонки: удаляет пару «вопрос+ответ» целиком;
+  // активная задача (queued/running) при этом останавливается —
+  // текст подтверждения зависит от её статуса
+  const askDelChat = useCallback(
+    t2 => setConfirm({ kind: "chat_del", stem: t2.stem,
+                       st: t2.status,
+                       name: (t2.prompt || "").trim().slice(0, 60) }), []);
   // клик по карточке-заметке — «нажать»/«отжать» её
   const toggleNote = useCallback(t2 => {
     setContSel(null);
@@ -3237,6 +3264,9 @@ export default function App() {
         ? await post("/api/stop", { stem: confirm.stem })
         : c.kind === "del"
         ? await post("/api/task/delete", { stem: c.stem })
+        : c.kind === "chat_del"
+        ? await post("/api/task/delete",
+                     { stem: c.stem, stop: true })
         : c.kind === "topic_del" || c.kind === "topic_reset"
         ? await post("/api/topics",
                      { action: c.kind === "topic_reset"
@@ -3249,12 +3279,17 @@ export default function App() {
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
                  : c.kind === "del" ? "🗑 Задача удалена"
+                 : c.kind === "chat_del"
+                   ? (c.st === "running" ? "⛔ Остановлено и удалено"
+                      : c.st === "queued" ? "🗑 Снято с очереди"
+                                        : "🗑 Сообщение удалено")
                  : c.kind === "topic_del" ? "🗑 Тема удалена"
                  : c.kind === "topic_reset"
                    ? "↺ Сессия сброшена — диалог очищен"
                  : c.kind === "tpl_del" ? "🗑 Шаблон удалён"
                                    : "Удалено из очереди: " + c.name);
-        if (c.kind === "cancel" || c.kind === "del")
+        if (c.kind === "cancel" || c.kind === "del" ||
+            c.kind === "chat_del")
           setFeed(m => { const n = new Map(m); n.delete(c.stem); return n; });
         if (c.kind === "topic_reset") {
           // сообщения стёрты на бэке — убираем их из ленты и
@@ -4092,6 +4127,7 @@ export default function App() {
         <DialogTitle sx={{ fontSize: 16 }}>
           {confirm?.kind === "stop" ? "Остановить задачу?"
            : confirm?.kind === "del" ? "Удалить задачу?"
+           : confirm?.kind === "chat_del" ? "Удалить сообщение?"
            : confirm?.kind === "topic_del" ? "Удалить тему?"
            : confirm?.kind === "topic_reset" ? "Сбросить сессию?"
            : confirm?.kind === "tpl_del" ? "Удалить шаблон?"
@@ -4106,6 +4142,16 @@ export default function App() {
               : confirm?.kind === "del"
               ? `«${confirm?.name}» будет удалена безвозвратно вместе ` +
                 "с выводом и статистикой."
+              : confirm?.kind === "chat_del"
+              ? (confirm?.st === "running"
+                ? `«${confirm?.name}…» сейчас выполняется — работа ` +
+                  "будет принудительно остановлена, а сообщение " +
+                  "удалено безвозвратно."
+                : confirm?.st === "queued"
+                ? `«${confirm?.name}…» ждёт очереди — сообщение ` +
+                  "будет снято и удалено, агент его не получит."
+                : `«${confirm?.name}…» будет удалено безвозвратно ` +
+                  "вместе с ответом агента.")
               : confirm?.kind === "topic_del"
               ? (confirm?.active?.length
                 ? `Удалить нельзя — в теме «${confirm.name}» ` +

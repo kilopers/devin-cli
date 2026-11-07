@@ -1461,18 +1461,40 @@ def _api_task_apply():
 def _api_task_delete():
     """Web «удалить» на карточке заметки или завершённой задачи
     (успешной или упавшей): стирает запись вместе с прогресс-
-    файлами и kv-метками. Активные (queued/running) удалять нельзя —
-    их убирают «✖ удалить» (cancel) и «стоп»."""
-    stem = (_req_json().get("stem") or "").strip()
+    файлами и kv-метками. Активные (queued/running) — только с
+    флагом stop (крестик «✕» на пузыре чат-колонки): queued
+    стирается как cancel, running — SIGKILL + стирание записи
+    сразу (финализатор run_task потом пишет UPDATE в пустоту)."""
+    body = _req_json()
+    stem = (body.get("stem") or "").strip()
+    stop = bool(body.get("stop"))
     row = task_row(stem)
     if not row:
         return jsonify({"ok": False, "error": "нет такой задачи"}), 404
-    if row["status"] not in ("note", "done"):
+    st = row["status"]
+    if st == "queued":
+        if not stop:
+            return jsonify({"ok": False,
+                            "error": "задача в очереди — снимите её "
+                                     "или передайте stop"}), 409
+        drop_failed_task(stem)
+        log(f"web delete removed queued {stem}")
+        return jsonify({"ok": True, "stem": stem})
+    if st == "running":
+        if not stop:
+            return jsonify({"ok": False,
+                            "error": "задача выполняется — остановите "
+                                     "или передайте stop"}), 409
+        kill_task(stem)
+        drop_failed_task(stem)
+        log(f"web delete killed+removed running {stem}")
+        return jsonify({"ok": True, "stem": stem})
+    if st not in ("note", "done"):
         return jsonify({"ok": False,
                         "error": "удалять можно только заметку или "
                                  "завершённую"}), 409
     drop_failed_task(stem)
-    log(f"web delete removed {row['status']} {stem}")
+    log(f"web delete removed {st} {stem}")
     return jsonify({"ok": True, "stem": stem})
 
 
