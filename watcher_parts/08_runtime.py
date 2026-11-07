@@ -110,6 +110,10 @@ def main() -> int:
     # и дальше — крон: полная выгрузка `devin models list` раз в час
     threading.Thread(target=models_refresh_cron, daemon=True,
                      name="models-cron").start()
+    # планировщик периодических задач колонок (task_schedules, cron):
+    # просроченные расписания ставят новую карточку в свою колонку
+    threading.Thread(target=sched_cron, daemon=True,
+                     name="sched-cron").start()
     log(f"watching {INBOX} every {POLL_INTERVAL}s "
         f"(timeout {TASK_TIMEOUT}s, workers {WORKER_THREADS})")
     # воркеры: задачи РАЗНЫХ проектов идут параллельно, одного —

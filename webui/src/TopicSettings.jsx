@@ -39,6 +39,11 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   // чат-колонка (диалог-пузыри, своя сессия) — только при создании
   const [chat, setChat] = useState(false);
   const [models, setModels] = useState([]);
+  // инструкции колонки: свои custom-инструкции, привязанные к этой
+  // теме — работают только в её задачах (к проекту не обязаны
+  // быть подключёнными). Все доступные — из /api/instr
+  const [instrList, setInstrList] = useState([]);
+  const [instrSel, setInstrSel] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
 
   const isCreate = dlg?.kind === "create";
@@ -57,9 +62,14 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setFast(src.fast || "");
     setSess("main");
     setChat(false);
+    setInstrSel(new Set(src.instrs || []));
     get("/api/agents").then(j =>
       setAgents((j.agents || []).filter(a => a.configured)))
       .catch(() => {});
+    get("/api/instr?project=" + encodeURIComponent(project || ""))
+      .then(j => setInstrList((j.instructions || [])
+        .filter(r => r.kind === "custom" && r.mine)))
+      .catch(() => setInstrList([]));
   }, [dlg]);
 
   // каталог моделей — выбранного движка (пусто = движок по умолчанию)
@@ -73,7 +83,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setBusy(true);
     try {
       const body = { project, color, model, agent, reply_mode: mode,
-                     auto_commit: ac, fast };
+                     auto_commit: ac, fast, instrs: [...instrSel] };
       const d = await post("/api/topics",
         isCreate ? { ...body, action: "create", name: name.trim(),
                      chat: chat ? 1 : 0,
@@ -235,6 +245,27 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
             <MenuItem value="1">⚡ быстрый</MenuItem>
             <MenuItem value="0">обычный</MenuItem>
           </TextField>
+          {instrList.length > 0 &&
+            <Box>
+              <Typography variant="caption" color="text.secondary">
+                Инструкции колонки — действуют только в задачах
+                этой темы (к проекту подключены быть не обязаны)
+              </Typography>
+              <Box sx={{ mt: 0.3 }}>
+                {instrList.map(r => (
+                  <FormControlLabel key={r.id} sx={{ display: "flex",
+                    m: 0 }}
+                    control={<Checkbox size="small" sx={{ p: 0.4 }}
+                      checked={instrSel.has(r.id)}
+                      onChange={e => {
+                        const s = new Set(instrSel);
+                        if (e.target.checked) s.add(r.id);
+                        else s.delete(r.id);
+                        setInstrSel(s); }} />}
+                    label={<Typography sx={{ fontSize: 12.5 }}>
+                             {r.name}</Typography>} />))}
+              </Box>
+            </Box>}
         </Stack>
       </DialogContent>
       <DialogActions>

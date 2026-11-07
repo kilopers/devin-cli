@@ -413,13 +413,19 @@ def _load_json(path: Path) -> dict:
 def enqueue_task(text: str, chat_id: int | None = None,
                  project: str | None = None, prefix: str = "tg",
                  override_mode: str | None = None,
-                 topic_id: int | None = None) -> str:
+                 topic_id: int | None = None,
+                 user: str | None = None,
+                 sched_id: int | None = None) -> str:
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
     scope = source if source in ("web", "telegram") else ""
     proj = project or (current_project(scope)[0] if multi_mode() else None)
     pname = re.sub(r"[^a-z0-9_-]+", "-",
                    (proj or "job").lower()).strip("-") or "job"
-    if scope == "web":
+    if user:
+        # явный автор (планировщик: задача идёт от имени создателя
+        # расписания — его модель/режим/инструкции)
+        author = user
+    elif scope == "web":
         author = _current_user()
     elif chat_id:
         author = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
@@ -453,8 +459,9 @@ def enqueue_task(text: str, chat_id: int | None = None,
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
-                 rmode, author, bot, instr=_instr_block(author, proj),
-                 topic_id=topic_id)
+                 rmode, author, bot,
+                 instr=_instr_block(author, proj, topic_id),
+                 topic_id=topic_id, sched_id=sched_id)
     if rmode == "say":
         # дефолт колонки «заметка»: карточка в колонке, но не в
         # очереди — Devin её не получает (как mode=say из веба)

@@ -73,6 +73,7 @@ import AddProject from "./AddProject.jsx";
 import RepoBrowse from "./RepoBrowse.jsx";
 import Composer from "./Composer.jsx";
 import TopicSettings from "./TopicSettings.jsx";
+import SchedDlg from "./SchedDlg.jsx";
 import { ConnBadge, useConnStatus } from "./ConnDot.jsx";
 
 // Render crashes used to blank the whole page (white screen) — a
@@ -151,7 +152,8 @@ const APPBAR_MENU = { borderRadius: "0 0 12px 12px",
                       borderTop: "none", mt: "-2px" };
 const STATUS_RU = { queued: "в очереди", running: "выполняется",
                     done: "готово", note: "заметка" };
-const SRC_RU = { telegram: "telegram", web: "web", file: "файл" };
+const SRC_RU = { telegram: "telegram", web: "web", file: "файл",
+                 cron: "⏱ cron" };
 const fmtNum = n => (n ?? 0).toLocaleString("ru-RU");
 const fmtDur = s => s == null ? null
   : s >= 3600 ? `${Math.floor(s / 3600)}ч ${Math.round(s % 3600 / 60)}м`
@@ -1939,7 +1941,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onDict, dictOn, dictBusy, onStats, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
                       collapsed, onCollapse, full, onFull, chat,
-                      onReset, kick, colKey }) {
+                      onReset, kick, colKey, onSched }) {
   const [menu, setMenu] = useState(null);
   // чат-колонка: следим за прокруткой треда — при уходе от низа
   // показываем плавающую стрелку «к последнему сообщению»
@@ -2053,7 +2055,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
         {(onDelete || onSettings || onMoveL || onMoveR || onStats ||
-           onTplNew || onReset) &&
+           onTplNew || onReset || onSched) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -2074,6 +2076,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onTplNew(); }}>
                   🔖 Новый шаблон
+                </MenuItem>}
+              {onSched &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onSched(); }}>
+                  ⏱ Расписание
                 </MenuItem>}
               {chat && onReset &&
                 <MenuItem dense sx={{ fontSize: 13 }}
@@ -2147,6 +2154,15 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                           borderRadius: "6px",
                           "& .MuiChip-label": { px: "6px" } }} />
             </Tooltip>))}
+          {tset?.scheds > 0 &&
+            <Tooltip title={"задач по расписанию (cron): " + tset.scheds +
+                            " — каждый прогон ставит новую карточку"}>
+              <Chip size="small" variant="outlined"
+                    label={"⏱ " + tset.scheds}
+                    sx={{ height: 17, fontSize: 9.5, fontWeight: 500,
+                          borderRadius: "6px",
+                          "& .MuiChip-label": { px: "6px" } }} />
+            </Tooltip>}
         </Box>}
       {!chat && (tpls || []).length > 0 &&
         // шаблоны темы — отдельная горизонтальная строка мини-кнопок:
@@ -2436,6 +2452,8 @@ export default function App() {
   const [confirm, setConfirm] = useState(null);
   // диалог «📊 Статистика» темы: {key: 'main'|topic_id, name}
   const [statDlg, setStatDlg] = useState(null);
+  // диалог «⏱ Расписание» колонки: {key: 'main'|topic_id, name}
+  const [schedDlg, setSchedDlg] = useState(null);
   // drawer keeps its scroll position across re-renders (selecting
   // mode/model inside it used to yank the list back to the top)
   const drawerBoxRef = useRef(null);
@@ -3825,6 +3843,10 @@ export default function App() {
                                           || "Главная") })}
                         onTplNew={() => openTplNew("main",
                           "⭐ " + (mainDef.name || "Главная"))}
+                        onSched={() => setSchedDlg(
+                          { key: "main",
+                            name: "⭐ " + (mainDef.name
+                                           || "Главная") })}
                         onSettings={() => setTSetDlg(
                           { kind: "main", current: mainDef })}
                         onMoveL={mvL} onMoveR={mvR}
@@ -3873,6 +3895,9 @@ export default function App() {
                       onTplNew={tp.chat ? null
                         : () => openTplNew(String(tp.id),
                           tp.name || `тема #${tp.id}`)}
+                      onSched={() => setSchedDlg(
+                        { key: String(tp.id),
+                          name: tp.name || `тема #${tp.id}` })}
                       more={colMore[String(tp.id)]}
                       busy={!!colBusy[String(tp.id)]}
                       onMore={() => loadColMore(String(tp.id))}
@@ -4124,6 +4149,9 @@ export default function App() {
       <TopicStatsDlg dlg={statDlg} project={project}
                      onClose={() => setStatDlg(null)}
                      toast={setToast} />
+      <SchedDlg dlg={schedDlg} project={project}
+                onClose={() => setSchedDlg(null)}
+                toast={setToast} />
       <TopicSettings project={project} dlg={tSetDlg} topics={topics}
                      onClose={() => setTSetDlg(null)}
                      onSaved={id => { loadTasks();

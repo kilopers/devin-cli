@@ -112,6 +112,25 @@ def _api_instr_int():
         return jsonify({"ok": False,
                         "error": "эту инструкцию удалять и "
                                  "отцеплять нельзя"}), 403
+    if act in ("attach", "detach") and "topic" in b:
+        # привязка к КОЛОНКЕ (instr_topic_attach): инструкция работает
+        # только в задачах этой темы; 0/«main» — «главная» колонка
+        tv = str(b.get("topic") or "main").strip()
+        tid = 0 if tv in ("", "main") else (
+            int(tv) if tv.isdigit() else -1)
+        if tid == -1 or (tid and not db_query(
+                "SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                (tid, p))):
+            return jsonify({"ok": False, "error": "нет такой темы"}), 404
+        if act == "attach":
+            db_exec("INSERT IGNORE INTO instr_topic_attach"
+                    "(user,project,topic_id,instr_id)"
+                    " VALUES(%s,%s,%s,%s)", (u, p, tid, iid))
+        else:
+            db_exec("DELETE FROM instr_topic_attach WHERE user=%s"
+                    " AND project=%s AND topic_id=%s AND instr_id=%s",
+                    (u, p, tid, iid))
+        return jsonify({"ok": True})
     if act == "attach":
         if not p:
             return jsonify({"ok": False, "error": "нет project"}), 400
@@ -124,6 +143,8 @@ def _api_instr_int():
         return jsonify({"ok": True})
     if act == "delete":
         db_exec("DELETE FROM instr_attach WHERE instr_id=%s", (iid,))
+        db_exec("DELETE FROM instr_topic_attach WHERE instr_id=%s",
+                (iid,))
         db_exec("DELETE FROM instructions WHERE id=%s", (iid,))
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
@@ -176,6 +197,28 @@ def _api_instr_set():
                                      "инструкции"}), 403
         if not p:
             return jsonify({"ok": False, "error": "нет project"}), 400
+        tv = b.get("topic")
+        if tv is not None:
+            # привязка к колонке (0/«main» — «главная»): инструкция
+            # действует только в задачах этой темы — к проекту
+            # подключена быть не обязана
+            tv = str(tv).strip()
+            tid = 0 if tv in ("", "main") else (
+                int(tv) if tv.isdigit() else -1)
+            if tid == -1 or (tid and not db_query(
+                    "SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                    (tid, p))):
+                return jsonify({"ok": False,
+                                "error": "нет такой темы"}), 404
+            if act == "attach":
+                db_exec("INSERT IGNORE INTO instr_topic_attach"
+                        "(user,project,topic_id,instr_id)"
+                        " VALUES(%s,%s,%s,%s)", (u, p, tid, iid))
+            else:
+                db_exec("DELETE FROM instr_topic_attach WHERE user=%s"
+                        " AND project=%s AND topic_id=%s"
+                        " AND instr_id=%s", (u, p, tid, iid))
+            return jsonify({"ok": True})
         if act == "attach":
             db_exec("INSERT IGNORE INTO instr_attach(user,project,"
                     "instr_id) VALUES(%s,%s,%s)", (u, p, iid))
@@ -188,6 +231,8 @@ def _api_instr_set():
             return jsonify({"ok": False,
                             "error": "общую инструкцию удалить нельзя"}), 403
         db_exec("DELETE FROM instr_attach WHERE instr_id=%s", (iid,))
+        db_exec("DELETE FROM instr_topic_attach WHERE instr_id=%s",
+                (iid,))
         db_exec("DELETE FROM instructions WHERE id=%s", (iid,))
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
@@ -252,6 +297,43 @@ def _topic_append_sort(project: str) -> int:
     return mx + 10
 
 
+def _topic_instr_ids(b: dict, u: str) -> list | None:
+    """instrs:[id…] из запроса → проверенные id СВОИХ custom-
+    инструкций (чужие/неcustom отбрасываются). Ключа нет — None:
+    привязки колонки не трогаем."""
+    if "instrs" not in b:
+        return None
+    ids = b.get("instrs")
+    if not isinstance(ids, list):
+        return []
+    out = []
+    for i in ids[:30]:
+        try:
+            out.append(int(i))
+        except (TypeError, ValueError):
+            pass
+    if not out:
+        return []
+    rows = db_query(
+        "SELECT id FROM instructions WHERE kind='custom' AND user=%s"
+        " AND id IN (" + ",".join(["%s"] * len(out)) + ")",
+        (u, *out))
+    return [r["id"] for r in rows]
+
+
+def _topic_instr_set(project: str, tid: int, u: str,
+                     ids: list) -> None:
+    """Полная замена набора инструкций колонки у юзера
+    (tid 0 = «главная»); чужие привязки не трогаем."""
+    db_exec("DELETE FROM instr_topic_attach"
+            " WHERE project=%s AND topic_id=%s AND user=%s",
+            (project, tid, u))
+    for iid in ids:
+        db_exec("INSERT IGNORE INTO instr_topic_attach"
+                "(user,project,topic_id,instr_id) VALUES(%s,%s,%s,%s)",
+                (u, project, tid, iid))
+
+
 def _topic_tpls(p: str) -> dict:
     """Шаблоны задач колонок проекта: {None|topic_id: [{id,text}]},
     None = «главная». Ряд мини-кнопок в шапке колонки: клик ставит
@@ -273,6 +355,15 @@ def _api_topics_get():
     rows = _topic_rows(p)
     by_id = {r["id"]: r for r in rows}
     tpls = _topic_tpls(p)
+    # инструкции, привязанные к колонкам (0 = «главная»), и число
+    # cron-расписаний на колонку — чип ⏱N в шапке
+    tattach: dict = {}
+    for r in db_query("SELECT topic_id, instr_id"
+                      " FROM instr_topic_attach WHERE project=%s", (p,)):
+        tattach.setdefault(r["topic_id"], []).append(r["instr_id"])
+    scheds = {r["topic_id"]: r["n"] for r in db_query(
+        "SELECT topic_id, COUNT(*) n FROM task_schedules"
+        " WHERE project=%s GROUP BY topic_id", (p,))}
     out = []
     for r in rows:
         at = r.get("session_topic_id") or None
@@ -286,6 +377,8 @@ def _api_topics_get():
                         attach_name=((by_id.get(at) or {}).get("name")
                                      if at else None),
                         tpls=tpls.get(r["id"]) or [],
+                        instrs=tattach.get(r["id"]) or [],
+                        scheds=scheds.get(r["id"]) or 0,
                         eff=_eff_topic_defaults(p, r["id"])))
     return jsonify({"ok": True,
                     # настройки «главной» колонки — pj:<p>.tmain;
@@ -296,6 +389,8 @@ def _api_topics_get():
                                  sort=(_main_col_json(p).get("sort")
                                        or 0),
                                  tpls=tpls.get(None) or [],
+                                 instrs=tattach.get(0) or [],
+                                 scheds=scheds.get(None) or 0,
                                  eff=_eff_topic_defaults(p, None)),
                     "topics": out})
 
@@ -392,6 +487,10 @@ def _api_topics_set():
                 (new_id,))
         db_exec("UPDATE topics SET sort=%s WHERE id=%s",
                 (_topic_append_sort(p), new_id))
+        # инструкции колонки — instrs:[id…] из диалога создания
+        ids = _topic_instr_ids(b, u)
+        if ids:
+            _topic_instr_set(p, new_id, u, ids)
         return jsonify({"ok": True, "id": new_id})
     if act == "settings" and b.get("main"):
         # «главная» колонка — не строка topics: настройки лежат
@@ -412,6 +511,9 @@ def _api_topics_set():
             else:
                 cur.pop("name", None)
         pj_set(p, "tmain", json.dumps(cur, ensure_ascii=False))
+        ids = _topic_instr_ids(b, u)
+        if ids is not None:
+            _topic_instr_set(p, 0, u, ids)   # 0 = «главная» колонка
         return jsonify({"ok": True})
     if act == "move":
         # сдвиг колонки на доске влево/вправо — обмен местом с соседом;
@@ -482,6 +584,9 @@ def _api_topics_set():
             vals += [time.time(), tid]
             db_exec(f"UPDATE topics SET {', '.join(sets)} WHERE id=%s",
                     vals)
+        ids = _topic_instr_ids(b, u)
+        if ids is not None:
+            _topic_instr_set(p, tid, u, ids)
         return jsonify({"ok": True})
     if act == "delete":
         # активные задачи блокируют удаление темы целиком — сообщение
@@ -508,6 +613,12 @@ def _api_topics_set():
         db_exec("UPDATE topics SET session_topic_id=NULL"
                 " WHERE session_topic_id=%s", (tid,))
         db_exec("DELETE FROM topic_templates"
+                " WHERE project=%s AND topic_id=%s", (p, tid))
+        # каскад: привязки инструкций колонки и её cron-расписания
+        # (карточки прошлых прогонов уже стёрты выше вместе с темой)
+        db_exec("DELETE FROM instr_topic_attach"
+                " WHERE project=%s AND topic_id=%s", (p, tid))
+        db_exec("DELETE FROM task_schedules"
                 " WHERE project=%s AND topic_id=%s", (p, tid))
         db_exec("DELETE FROM topics WHERE id=%s", (tid,))
         return jsonify({"ok": True})

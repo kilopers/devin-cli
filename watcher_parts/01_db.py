@@ -180,6 +180,36 @@ def init_db() -> None:
         created DOUBLE NOT NULL,
         KEY idx_proj_topic (project, topic_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # периодические задачи колонки (cron, 5 полей): каждый прогон
+    # ставит НОВУЮ карточку в свою колонку, связь карточка→расписание
+    # — tasks.sched_id; autoclean стирает карточку прошлого прогона
+    # после завершения нового (в колонке виден только последний запуск)
+    db_exec("""CREATE TABLE IF NOT EXISTS task_schedules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project VARCHAR(190) NOT NULL,
+        topic_id INT NULL,
+        user VARCHAR(64) NOT NULL DEFAULT '',
+        prompt MEDIUMTEXT NOT NULL,
+        cron VARCHAR(60) NOT NULL,
+        enabled TINYINT NOT NULL DEFAULT 1,
+        autoclean TINYINT NOT NULL DEFAULT 0,
+        next_run DOUBLE NULL,
+        last_run DOUBLE NULL,
+        last_stem VARCHAR(80) NULL,
+        created DOUBLE NOT NULL,
+        KEY idx_due (enabled, next_run),
+        KEY idx_proj (project)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # инструкции, привязанные к КОЛОНКЕ (теме): работают только в
+    # задачах этой темы — к проекту при этом подключены быть не обязаны;
+    # topic_id 0 = «главная» (NULL в PK нельзя, поэтому не NULL)
+    db_exec("""CREATE TABLE IF NOT EXISTS instr_topic_attach (
+        user VARCHAR(64) NOT NULL,
+        project VARCHAR(190) NOT NULL,
+        topic_id INT NOT NULL DEFAULT 0,
+        instr_id INT NOT NULL,
+        PRIMARY KEY (user, project, topic_id, instr_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     # чистка после бага «первая задача темы continue'ила последнюю
     # сессию каталога»: пин темы, равный пину «главной» её проекта или
     # продублированный у другой темы — это чужая сессия → NULL, тема
@@ -214,7 +244,10 @@ def init_db() -> None:
                      ("sort", "sort DOUBLE NOT NULL DEFAULT 0"),
                      # движок выполнения задачи (devin | …) — NULL =
                      # цепочка дефолтов тема→проект→devin
-                     ("agent", "agent VARCHAR(32) NULL")):
+                     ("agent", "agent VARCHAR(32) NULL"),
+                     # расписание (task_schedules.id), породившее эту
+                     # карточку — связь для «удалять предыдущую»
+                     ("sched_id", "sched_id INT NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -386,9 +419,11 @@ def _public_url() -> str:
             or "https://ai.kilop.ru").rstrip("/")
 
 
-def _instr_block(author: str, proj: str | None) -> str:
+def _instr_block(author: str, proj: str | None,
+                 topic_id: int | None = None) -> str:
     """Снапшот инструкций для задачи: системная + общая юзера +
-    подключённые к проекту. {user}/{project} подставляются — агент знает
+    подключённые к проекту + привязанные к её колонке.
+    {user}/{project} подставляются — агент знает
     свой контекст для вызовов /api/internal/instr."""
     try:
         rows = db_query("SELECT kind, name, body FROM instructions"
@@ -427,6 +462,20 @@ def _instr_block(author: str, proj: str | None) -> str:
                     b = re.sub(r"^\s*##[^\n]*\n*", "", b)
                     out.append(f"## Инструкция «{r['name']}»"
                                f"\n\n{b}")
+            # инструкции колонки (instr_topic_attach): применяются
+            # только в задачах этой темы; 0 в таблице = «главная».
+            # Подключёнными к проекту они быть не обязаны
+            tops = db_query(
+                "SELECT i.name, i.body FROM instructions i"
+                " JOIN instr_topic_attach a ON a.instr_id=i.id"
+                " WHERE a.project=%s AND a.topic_id=%s ORDER BY i.id",
+                (proj, topic_id or 0))
+            for r in tops:
+                b = (r["body"] or "").strip()
+                if b:
+                    b = re.sub(r"^\s*##[^\n]*\n*", "", b)
+                    out.append(f"## Инструкция колонки «{r['name']}»"
+                               f"\n\n{b}")
         except Exception:
             pass
     return "\n\n---\n\n".join(out)
@@ -443,14 +492,18 @@ def _insert_task(stem: str, prompt: str, source: str,
                  user: str | None = None,
                  bot: str | None = None,
                  instr: str | None = None,
-                 topic_id: int | None = None) -> None:
+                 topic_id: int | None = None,
+                 sched_id: int | None = None) -> None:
+    # sched_id — прямо в INSERT (не пост-апдейтом): при коллизии
+    # стема ON DUPLICATE меняет только prompt, и по sched_id видно,
+    # чья запись победила (планировщик тогда ждёт след. секунду)
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
-            " model, reply_mode, user, bot, instr, topic_id, created,"
-            " sort) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            " model, reply_mode, user, bot, instr, topic_id, sched_id,"
+            " created, sort) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
             (stem, source, project, chat_id, prompt, model, reply_mode,
-             user, bot, instr, topic_id, created, created))
+             user, bot, instr, topic_id, sched_id, created, created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -1262,6 +1315,13 @@ def run_task(task: dict) -> None:
                      tstats.get("cost"), tstats.get("duration")))
     except Exception as e:
         log(f"topic_stats: {e}")
+    # «удалять предыдущую» у cron-расписания: новый прогон завершён —
+    # карточки прошлых прогонов этой серии стираются из колонки
+    try:
+        if task.get("sched_id"):
+            _sched_autoclean(task["sched_id"], stem)
+    except Exception as e:
+        log(f"sched autoclean: {e}")
     # пин сессии темы: следующая задача темы резюмит её через --resume
     sid = (tstats.get("session") or "")[:80]
     if sid and re.fullmatch(r"[A-Za-z0-9_-]+", sid):
