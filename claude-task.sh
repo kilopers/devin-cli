@@ -112,6 +112,31 @@ $EXTRA
 Answer concisely. Do NOT modify any files, do NOT run git add/commit/push,
 do NOT run tests or builds — only read and answer.
 EOF
+elif [ "$REPLY_MODE" = "plan" ]; then
+cat > "$PROMPT_FILE" <<EOF
+You are running autonomously inside a Docker container. No human can answer questions — make reasonable decisions on your own.
+
+The repository at $WORKDIR has already been pulled to the latest upstream commit.
+
+Explore the repository — its own instructions and conventions (AGENTS.md, CLAUDE.md, README.md, whatever exists), the relevant code and its dependencies — then produce a detailed implementation plan for this task:
+
+<task>
+$TASK
+</task>
+${EXTRA:+
+Additional instructions:
+<instructions>
+$EXTRA
+</instructions>
+}
+Output a concrete, step-by-step plan in markdown:
+- which files/modules to change and what to change in them (with references to existing functions/patterns);
+- schema/dependency/config changes if needed;
+- edge cases and risks;
+- how to verify the result (tests/linters/build).
+Do NOT modify any files, do NOT run git add/commit/push,
+do NOT run tests or builds — only read and plan.
+EOF
 else
 cat > "$PROMPT_FILE" <<EOF
 You are running autonomously inside a Docker container. No human can answer questions — make reasonable decisions on your own.

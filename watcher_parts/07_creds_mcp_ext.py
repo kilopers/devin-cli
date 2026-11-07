@@ -267,8 +267,8 @@ def _api_task_new():
         return jsonify({"ok": False, "error": "text too long"}), 400
     if multi_mode() and project not in _user_projects(_current_user()):
         return jsonify({"ok": False, "error": "unknown project"}), 400
-    mode = body.get("mode") if body.get("mode") in ("ask", "code", "say") \
-        else None
+    mode = body.get("mode") if body.get("mode") in ("ask", "code", "say",
+                                                  "plan") else None
     att = body.get("attach")
     atts = ([a.strip() for a in att] if isinstance(att, list)
             else ([att.strip()] if isinstance(att, str) and att.strip()
@@ -425,7 +425,8 @@ def _api_ext_task():
         return jsonify({"ok": False, "error": "task слишком длинный"}), 400
     label = re.sub(r"[^a-z0-9_-]+", "-",
                    (b.get("project") or "").lower()).strip("-") or "default"
-    mode = b.get("mode") if b.get("mode") in ("ask", "code") else "ask"
+    mode = b.get("mode") if b.get("mode") in ("ask", "code", "plan") \
+        else "ask"
     hook = (b.get("hook") or "").strip()
     if hook and not hook.startswith(("http://", "https://")):
         return jsonify({"ok": False, "error": "hook: только http(s)"}), 400

@@ -183,7 +183,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                   (ov.mode ? " — переопределено разово" : "")}>
         <Chip size="small" clickable sx={chipSx}
           label={say ? "📝 Заметка"
-                 : effMode === "ask" ? "💬 Спросить" : "🛠 Код"}
+                 : effMode === "ask" ? "💬 Спросить"
+                 : effMode === "plan" ? "📋 План" : "🛠 Код"}
           color={ov.mode || note ? "primary" : "default"}
           variant={ov.mode || note ? "filled" : "outlined"}
           onClick={() => {
@@ -191,7 +192,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                         setOv({ ...ov, mode: "code" }); return; }
             setOv({ ...ov,
               mode: curMode === "code" ? "ask"
-                    : curMode === "ask" ? "say" : "code" }); }} />
+                    : curMode === "ask" ? "plan"
+                    : curMode === "plan" ? "say" : "code" }); }} />
       </Tooltip>
       <Tooltip title={say ? "у заметки не применяется"
                 : "коммит после задачи" +
@@ -427,7 +429,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                 sx={{ textTransform: "none", fontSize: 12,
                       borderRadius: "9px" }}>
           {say ? "Сохранить"
-              : curMode === "ask" ? "Спросить" : "Отправить"}
+              : curMode === "ask" ? "Спросить"
+              : curMode === "plan" ? "План" : "Отправить"}
         </Button>
       </Box>
     </Paper>);
@@ -452,6 +455,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                                     : "Заметка в колонку…")
                             : curMode === "ask"
                             ? `Вопрос по «${project || "…"}»`
+                            : curMode === "plan"
+                            ? `Что спланировать по «${project || "…"}»`
                             : `Задача для «${project || "…"}»`}
           value={text}
           onChange={e => setText(e.target.value)}
@@ -496,7 +501,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
         )}
         <BottomNavigationAction
           label={say ? "Сохранить"
-                 : curMode === "ask" ? "Спросить" : "Делай"}
+                 : curMode === "ask" ? "Спросить"
+                 : curMode === "plan" ? "План" : "Делай"}
           icon={<SendIcon />}
           onClick={send} disabled={busy || !text.trim()}
           sx={{ minWidth: 0,
@@ -537,6 +543,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                      : "Заметка в колонку — агент её не получит")
              : curMode === "ask"
              ? `Вопрос по «${project || "…"}»`
+             : curMode === "plan"
+             ? `Что спланировать по «${project || "…"}»`
              : `Задача для агента по проекту «${project || "…"}»`) +
                          " — Ctrl+Enter чтобы отправить"}
             value={text}
@@ -601,7 +609,8 @@ export default function Composer({ project, sttStatus, toast, onSent,
                           boxShadow: "none",
                           "&:hover": { boxShadow: "none" } }}>
                   {say ? "Сохранить"
-                       : curMode === "ask" ? "Спросить" : "В работу"}
+                       : curMode === "ask" ? "Спросить"
+                       : curMode === "plan" ? "Спланировать" : "В работу"}
                 </Button>
               </span>
             </Tooltip>

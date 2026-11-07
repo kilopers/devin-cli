@@ -257,7 +257,7 @@ def _topic_settings_from(b: dict) -> dict:
         st["color"] = c if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else ""
     if "model" in b:
         st["model"] = (b.get("model") or "").strip()[:80]
-    if "reply_mode" in b and (b.get("reply_mode") or "") in ("", "code", "ask", "say"):
+    if "reply_mode" in b and (b.get("reply_mode") or "") in ("", "code", "ask", "say", "plan"):
         st["reply_mode"] = (b.get("reply_mode") or "")
     for k in ("auto_commit", "fast"):
         if k in b and (b.get(k) or "") in ("", "0", "1"):
@@ -965,7 +965,7 @@ def _api_model():
 @login_required
 def _api_mode():
     m = (_req_json().get("mode") or "").strip()
-    if m not in ("ask", "code"):
+    if m not in ("ask", "code", "plan"):
         return jsonify({"ok": False, "error": "bad mode"}), 400
     set_reply_mode(m, "web")
     return jsonify({"ok": True, "mode": m})
@@ -1125,8 +1125,8 @@ def _api_task_run():
         return jsonify({"ok": False,
                         "error": "запускать можно только заметку"}), 409
     eff = _eff_topic_defaults(row["project"], row["topic_id"])
-    rmode = eff.get("reply_mode") if eff.get("reply_mode") in ("ask", "code") \
-        else "code"
+    rmode = eff.get("reply_mode") \
+        if eff.get("reply_mode") in ("ask", "code", "plan") else "code"
     db_exec("UPDATE tasks SET status='queued', reply_mode=%s, model=%s"
             " WHERE stem=%s", (rmode, eff.get("model") or None, stem))
     _opts_for_column(stem, eff)
@@ -1216,11 +1216,11 @@ def _api_task_towork():
     if row["status"] != "done":
         return jsonify({"ok": False,
                         "error": "в работу — только завершённую"}), 409
-    if (row.get("reply_mode") or "") != "ask":
+    if (row.get("reply_mode") or "") not in ("ask", "plan"):
         return jsonify({"ok": False,
-                        "error": "в работу — только из «вопроса»"}), 409
+                        "error": "в работу — только из «вопроса»/«плана»"}), 409
     _ask_to_work(row)
-    log(f"task {stem} sent to work (ask -> code)")
+    log(f"task {stem} sent to work ({row.get('reply_mode')} -> code)")
     return jsonify({"ok": True, "stem": stem})
 
 
@@ -1296,22 +1296,22 @@ def _api_task_move():
         new_sort = (float(top[0]["s"] or 0) + 1) \
             if top and top[0]["s"] is not None else 1.0
     cl = 0 if row["status"] == "note" else \
-        (1 if (row.get("reply_mode") or "") == "ask" else 2)
+        (1 if (row.get("reply_mode") or "") in ("ask", "plan") else 2)
     eff = _eff_topic_defaults(proj, new_tid)
     erm = eff.get("reply_mode") or "code"
-    tl = 0 if erm == "say" else (1 if erm == "ask" else 2)
+    tl = 0 if erm == "say" else (1 if erm in ("ask", "plan") else 2)
     started = False
     if tl > cl and cl == 0:
         # заметка поднялась уровнем — сразу в работу с режимом и
         # свежими дефолтами целевой колонки (как «▶ начать выполнение»)
         db_exec("UPDATE tasks SET status='queued', reply_mode=%s,"
                 " model=%s WHERE stem=%s",
-                ("ask" if tl == 1 else "code",
+                (erm if tl == 1 else "code",
                  eff.get("model") or None, stem))
         _opts_for_column(stem, eff)
         started = True
     elif tl > cl and cl == 1 and row["status"] == "done":
-        # done-вопрос в code-колонку — переход «▶ в работу»
+        # done-вопрос/план в code-колонку — переход «▶ в работу»
         _ask_to_work(row)
         started = True
     if not started and is_failed_task(row) \
@@ -1325,7 +1325,7 @@ def _api_task_move():
         # там reply_mode оставляем как был
         db_exec("UPDATE tasks SET model=%s, reply_mode=%s WHERE stem=%s",
                 (eff.get("model") or None,
-                 erm if erm in ("ask", "code")
+                 erm if erm in ("ask", "code", "plan")
                  else (row.get("reply_mode") or "code"),
                  stem))
         _opts_for_column(stem, eff)
@@ -1334,7 +1334,7 @@ def _api_task_move():
     log(f"task {stem} moved -> topic={new_tid} sort={new_sort} "
         f"(lvl {cl}->{tl}, started={started})")
     return jsonify({"ok": True, "stem": stem, "started": started,
-                    "mode": ("ask" if tl == 1 else "code") if started
+                    "mode": (erm if tl == 1 else "code") if started
                             else None})
 
 

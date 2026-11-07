@@ -461,7 +461,7 @@ def enqueue_task(text: str, chat_id: int | None = None,
                  or tdef.get("reply_mode")
                  or (pj_get(proj, "reply_mode") if proj else "")
                  or reply_mode(scope))
-    if override_mode in ("ask", "code", "say"):
+    if override_mode in ("ask", "code", "say", "plan"):
         rmode = override_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
     # у веб/cron-задач чата нет — дефолтный адресат из настроек
     # юзера: telegram.chat_id + telegram.thread_id (env-фолбэк)
@@ -577,6 +577,7 @@ def _confirm_keyboard(pid: str, chat_id=None) -> dict:
     return {"inline_keyboard": [[
         _b("⚙️ Кодировать", "code", "cd"),
         _b("❓ Спросить", "ask", "ask"),
+        _b("📋 План", "plan", "pl"),
         _b("📝 Заметка", "say", "note"),
         _b("❌ Отмена", "", "no"),
     ]]}
@@ -696,18 +697,18 @@ def send_session_menu(chat_id, msg_id=None) -> None:
 
 
 def reply_mode(scope: str = "telegram") -> str:
-    """'ask' = answer questions about the repo, no edits; 'code' = do tasks.
+    """'ask'/'plan' = read-only по репо (вопрос/план); 'code' = работа.
     Web-скоуп — настройка юзера (us:<uid>.reply_mode); telegram — админ."""
     if scope == "web":
         m = us_get(_current_user(), "reply_mode")
-        if m in ("ask", "code", "say"):
+        if m in ("ask", "code", "say", "plan"):
             return m
     if scope:
         m = kv_get(f"reply_mode_{scope}")
-        if m in ("ask", "code", "say"):
+        if m in ("ask", "code", "say", "plan"):
             return m
     m = kv_get("reply_mode")
-    if m in ("ask", "code", "say"):
+    if m in ("ask", "code", "say", "plan"):
         return m
     return os.environ.get("REPLY_MODE", "code")
 
@@ -727,10 +728,15 @@ def send_mode_menu(chat_id, msg_id=None) -> None:
             "callback_data": "mode:code"}],
           [{"text": ("✅ " if cur == "ask" else "") + "💬 Ответ на вопрос",
             "callback_data": "mode:ask"}],
+          [{"text": ("✅ " if cur == "plan" else "") + "📋 План",
+            "callback_data": "mode:plan"}],
           [{"text": ("✅ " if cur == "say" else "") + "📝 Заметка",
             "callback_data": "mode:say"}]]
     text = ("Режим ответа: «код» — выполняет задачу и меняет репо; "
             "«вопрос» — читает код и отвечает, ничего не трогая; "
+            "«план» — изучает репо и выдаёт план реализации, "
+            "тоже ничего не меняя (кнопкой «▶ в работу» план "
+            "уходит на исполнение); "
             "«заметка» — карточка в колонку темы, агент не запускается.")
     if msg_id:
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
@@ -1215,7 +1221,7 @@ def handle_command(chat_id, text: str) -> None:
             tg_send(chat_id, "Сейчас ничего не выполняется.")
     elif cmd == "mode":
         actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
-        if arg.strip() in ("ask", "code", "say"):
+        if arg.strip() in ("ask", "code", "say", "plan"):
             us_set(actor, "reply_mode", arg.strip())
             log(f"reply mode -> {arg.strip()} (user {actor})")
             tg_send(chat_id, f"Режим ответа: {arg.strip()}.")
@@ -1314,14 +1320,14 @@ def handle_callback(cb: dict) -> None:
                text=f"Тема: {name}")
         return
     if action == "mode":
-        if pid not in ("ask", "code", "say"):
+        if pid not in ("ask", "code", "say", "plan"):
             tg_api("answerCallbackQuery", callback_query_id=cb_id,
                    text="Неизвестный режим")
             return
         actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
         us_set(actor, "reply_mode", pid)
         log(f"reply mode -> {pid} (user {actor})")
-        label = {"code": "код", "ask": "вопрос",
+        label = {"code": "код", "ask": "вопрос", "plan": "план",
                  "say": "заметка"}.get(pid, pid)
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                text=f"Режим ответа: {label}.",
@@ -1389,11 +1395,13 @@ def handle_callback(cb: dict) -> None:
                text="Уже обработано или устарело")
         return
 
-    if action in ("ok", "cd", "ask", "note"):
-        rmode = {"cd": "code", "ask": "ask", "note": "say"}.get(action)
+    if action in ("ok", "cd", "ask", "pl", "note"):
+        rmode = {"cd": "code", "ask": "ask", "pl": "plan",
+                 "note": "say"}.get(action)
         name = enqueue_task(entry["text"], chat_id, override_mode=rmode,
                             thread_id=entry.get("thread_id"))
         tag = {"cd": " — режим кода", "ask": " — вопрос",
+               "pl": " — план",
                "note": " — заметка, агент не запускается"}.get(action, "")
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                text=f"{entry['text']}\n\n✅ Задача {name} в очереди{tag}.",

@@ -90,7 +90,7 @@ def _api_project_settings_set():
     if not p or not _owns_project(p):
         return jsonify({"ok": False, "error": "нет доступа"}), 403
     for k, ok in (("model", None),
-                  ("reply_mode", ("", "ask", "code")),
+                  ("reply_mode", ("", "ask", "code", "plan")),
                   ("auto_commit", ("", "0", "1")),
                   ("fast", ("", "0", "1")),
                   ("agent", ("",) + tuple(AGENTS)),

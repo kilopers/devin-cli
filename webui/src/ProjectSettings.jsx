@@ -107,6 +107,7 @@ export default function ProjectSettings({ project, onClose, toast,
             <MenuItem value="">— по умолчанию —</MenuItem>
             <MenuItem value="code">🛠 код</MenuItem>
             <MenuItem value="ask">💬 вопрос</MenuItem>
+            <MenuItem value="plan">📋 план</MenuItem>
           </TextField>
           <FormControlLabel
             control={<Checkbox checked={autoCommit}

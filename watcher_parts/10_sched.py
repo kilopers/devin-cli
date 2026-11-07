@@ -95,7 +95,7 @@ def _sched_fire(sc: dict) -> str:
             prompt, project=sc["project"], prefix="cron",
             topic_id=tid, user=sc.get("user") or None,
             sched_id=sc["id"],
-            override_mode=mode if mode in ("ask", "code", "say")
+            override_mode=mode if mode in ("ask", "code", "say", "plan")
                           else None).removesuffix(".txt")
         r = db_query("SELECT sched_id FROM tasks WHERE stem=%s", (stem,))
         if r and r[0].get("sched_id") == sc["id"]:

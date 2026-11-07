@@ -666,7 +666,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // («если хочешь — сделаем» и т.п.)
   const [workBusy, setWorkBusy] = useState(false);
   const [workMenu, setWorkMenu] = useState(null);
-  const offersWork = t.mode === "ask" && succeeded &&
+  const offersWork = (t.mode === "ask" || t.mode === "plan") && succeeded &&
     /если хочешь|могу (сделать|реализовать|добавить|исправить|помочь)|скажи[^\n.]{0,30}сделаю|давай сделаем|готов (сделать|реализовать)|предлагаю|shall i|could implement|can implement/i
       .test(t.output || "");
   const codeCols = (cols || []).filter(c => c.mode === "code");
@@ -703,7 +703,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
     try {
       // пересылаем только опции, которые отличались от дефолта колонки
       // (ov из /api/tasks); у старых записей без ov — как раньше, всё
-      const rov = t.ov || { mode: t.mode === "ask", model: !!t.model,
+      const rov = t.ov || { mode: t.mode === "ask" || t.mode === "plan",
+                            model: !!t.model,
                             ac: t.ac === "0" || t.ac === "1" };
       const body = { text, retry_of: t.stem,
         ...(t.project ? { project: t.project } : {}),
@@ -909,7 +910,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // бэк сразу запускает её (заметка→спросить/код, вопрос→код)
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveBusy, setMoveBusy] = useState(false);
-  const cardLvl = isNote ? 0 : (t.mode === "ask" ? 1 : 2);
+  const cardLvl = isNote ? 0
+                        : (t.mode === "ask" || t.mode === "plan" ? 1 : 2);
   const curColKey = t.tid ? String(t.tid) : "main";
   // «шаблон»: текст задачи мини-кнопкой в шапке колонки — диалог с
   // правкой текста, ✨-оформлением через агента и выбором темы
@@ -1035,12 +1037,15 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             {ov.mode &&
             <Tooltip title={(t.mode === "ask"
               ? "режим «вопрос» — только чтение"
+              : t.mode === "plan"
+              ? "режим «план» — изучает репо и выдаёт план, ничего не меняя"
               : t.mode === "say"
               ? "карточка-заметка — не уходит агенту"
               : "режим «код» — полный доступ") +
               " — отличается от дефолта колонки"}>
               <Chip size="small" variant="outlined" sx={metaSx}
                     label={t.mode === "ask" ? "💬 вопрос"
+                           : t.mode === "plan" ? "📋 план"
                            : t.mode === "say" ? "📝 заметка"
                            : "🛠 код"} />
             </Tooltip>}
@@ -1419,7 +1424,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                       sx={{ ml: 1, height: 17, fontSize: 9.5,
                             borderRadius: "6px" }} />
               </Tooltip>}
-            {t.mode === "ask" && t.status === "done" && (<>
+            {(t.mode === "ask" || t.mode === "plan")
+                && t.status === "done" && (<>
               <Tooltip title="в работу той же карточкой — выбрать code-тему">
                 <span>
                   <Button size="small"
@@ -1495,7 +1501,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             {(cols || []).filter(c => c.key !== curColKey
                                     && !c.chat).map(c => {
               const lvl = c.mode === "say" ? 0
-                                   : c.mode === "ask" ? 1 : 2;
+                : (c.mode === "ask" || c.mode === "plan") ? 1 : 2;
               const up = lvl > cardLvl;
               return (
                 <ListItemButton key={c.key} dense disabled={moveBusy}
@@ -1508,6 +1514,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   <Chip size="small" variant="outlined"
                         label={c.mode === "say" ? "📝 заметка"
                                : c.mode === "ask" ? "💬 спросить"
+                               : c.mode === "plan" ? "📋 план"
                                                   : "🛠 код"}
                         sx={{ height: 17, fontSize: 9.5, flexShrink: 0,
                               borderRadius: "6px" }} />
@@ -1550,7 +1557,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   <Typography component="span" variant="caption"
                     color="text.secondary" sx={{ ml: 1, fontSize: 10.5 }}>
                     {c.mode === "say" ? "📝 заметка"
-                     : c.mode === "ask" ? "💬 спросить" : "🛠 код"}
+                     : c.mode === "ask" ? "💬 спросить"
+                     : c.mode === "plan" ? "📋 план" : "🛠 код"}
                   </Typography>
                 </MenuItem>))}
             </Select>
@@ -1894,6 +1902,7 @@ function ModeSelect({ mode, onChange, sx }) {
                 { borderColor: "rgba(255,255,255,.28)" }, ...sx }}>
       <MenuItem value="code">🛠 код</MenuItem>
       <MenuItem value="ask">💬 вопрос</MenuItem>
+      <MenuItem value="plan">📋 план</MenuItem>
     </Select>
   );
 }
@@ -2152,7 +2161,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             </Tooltip>}
           {[
             [eff.reply_mode === "say" ? "📝 заметка"
-              : eff.reply_mode === "ask" ? "💬 спросить" : "🛠 код",
+              : eff.reply_mode === "ask" ? "💬 спросить"
+              : eff.reply_mode === "plan" ? "📋 план" : "🛠 код",
              tset?.reply_mode, "режим ответа"],
             [eff.auto_commit === "1" ? "⚡ автокоммит" : "✋ коммит вручную",
              tset?.auto_commit, "автокоммит после задачи"],
@@ -2242,6 +2252,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                                                  : "action.hover" } }}>
               {eff?.reply_mode === "say" ? "＋ заметка"
                 : eff?.reply_mode === "ask" ? "＋ спросить"
+                : eff?.reply_mode === "plan" ? "＋ план"
                 : "＋ задача"}
             </Button>
             {onDict &&
@@ -3137,7 +3148,8 @@ export default function App() {
           project: project === "workspace" ? null : project,
           text: txt, topic: r.target.key,
           ...(r.target.mode === "say" ? { mode: "say" } : {}),
-          ...(r.target.mode === "ask" ? { mode: "ask" } : {}) });
+          ...(r.target.mode === "ask" || r.target.mode === "plan"
+                ? { mode: r.target.mode } : {}) });
         if (a.ok) { setToast("Задача поставлена");
                     kickEnd(r.target.key); }
         else flashDictErr("Ошибка: " + (a.error || "?"));
@@ -3434,7 +3446,8 @@ export default function App() {
   };
 
   const setModeApi = m => post("/api/mode", { mode: m }).then(d => {
-    setToast(d.ok ? (m === "ask" ? "Режим: ответ на вопрос" : "Режим: код")
+    setToast(d.ok ? (m === "ask" ? "Режим: ответ на вопрос"
+                     : m === "plan" ? "Режим: план" : "Режим: код")
                   : "Ошибка: " + (d.error || "?"));
     if (d.ok) setMode(m);
   }).catch(() => {});
@@ -4130,7 +4143,7 @@ export default function App() {
                       { project, reply_mode: m }).then(d => {
                     setToast(d.ok
                       ? (m === "ask" ? "Режим: ответ на вопрос"
-                                     : "Режим: код")
+                         : m === "plan" ? "Режим: план" : "Режим: код")
                       : "Ошибка: " + (d.error || "?"));
                     if (d.ok) setMode(m);
                   }).catch(() => setToast("Сеть: не сохранил режим"))} />}

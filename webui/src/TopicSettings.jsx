@@ -226,6 +226,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
             <MenuItem value="say">📝 заметка</MenuItem>
             <MenuItem value="code">🛠 код</MenuItem>
             <MenuItem value="ask">💬 вопрос</MenuItem>
+            <MenuItem value="plan">📋 план</MenuItem>
           </TextField>
           <TextField select label="Автокоммит" size="small" fullWidth
                      disabled={mode === "say"}
