@@ -67,10 +67,26 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
       setAgents((j.agents || []).filter(a => a.configured)))
       .catch(() => {});
     get("/api/instr?project=" + encodeURIComponent(project || ""))
-      .then(j => setInstrList((j.instructions || [])
-        .filter(r => r.kind === "custom" && r.mine)))
+      .then(j => {
+        const list = (j.instructions || [])
+          .filter(r => r.kind === "custom" && r.mine);
+        setInstrList(list);
+        // подключённые к проекту действуют во всех его задачах —
+        // из набора колонки их убираем (на чекбоксе висят
+        // checked+disabled)
+        const proj = new Set(list.filter(r => r.attached)
+                                 .map(r => r.id));
+        if (proj.size)
+          setInstrSel(s => new Set([...s].filter(id => !proj.has(id))));
+      })
       .catch(() => setInstrList([]));
   }, [dlg]);
+
+  // id инструкций, подключённых к проекту — в диалоге отмечены
+  // и задизейблены (отцепить их от колонки нельзя, они и так
+  // подмешиваются во все задачи проекта)
+  const instrProj = new Set(instrList.filter(r => r.attached)
+                                     .map(r => r.id));
 
   // каталог моделей — выбранного движка (пусто = движок по умолчанию)
   useEffect(() => {
@@ -83,7 +99,9 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setBusy(true);
     try {
       const body = { project, color, model, agent, reply_mode: mode,
-                     auto_commit: ac, fast, instrs: [...instrSel] };
+                     auto_commit: ac, fast,
+                     instrs: [...instrSel]
+                       .filter(id => !instrProj.has(id)) };
       const d = await post("/api/topics",
         isCreate ? { ...body, action: "create", name: name.trim(),
                      chat: chat ? 1 : 0,
@@ -250,21 +268,30 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
             <Box>
               <Typography variant="caption" color="text.secondary">
                 Инструкции колонки — действуют только в задачах
-                этой темы (к проекту подключены быть не обязаны)
+                этой темы; подключённые к проекту отмечены и работают
+                везде — снять их здесь нельзя
               </Typography>
               <Box sx={{ mt: 0.3 }}>
                 {instrList.map(r => (
                   <FormControlLabel key={r.id} sx={{ display: "flex",
                     m: 0 }}
                     control={<Checkbox size="small" sx={{ p: 0.4 }}
-                      checked={instrSel.has(r.id)}
+                      checked={r.attached || instrSel.has(r.id)}
+                      disabled={r.attached}
                       onChange={e => {
                         const s = new Set(instrSel);
                         if (e.target.checked) s.add(r.id);
                         else s.delete(r.id);
                         setInstrSel(s); }} />}
                     label={<Typography sx={{ fontSize: 12.5 }}>
-                             {r.name}</Typography>} />))}
+                             {r.name}
+                             {r.attached &&
+                               <Typography component="span"
+                                           color="text.secondary"
+                                           sx={{ fontSize: 11 }}>
+                                 {" — подключена к проекту"}
+                               </Typography>}
+                           </Typography>} />))}
               </Box>
             </Box>}
         </Stack>
