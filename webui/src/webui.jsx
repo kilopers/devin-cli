@@ -3900,7 +3900,7 @@ export default function App() {
                 </TopicColumn>)}
               {project && project !== "workspace" && !fullKey &&
                 <Paper variant="outlined" onClick={createTopic}
-                       sx={{ width: { xs: "55vw", sm: 190 },
+                       sx={{ width: 40,
                              flexShrink: 0, scrollSnapAlign: "start",
                              alignSelf: "flex-start",
                              borderRadius: "12px", cursor: "pointer",
@@ -3908,11 +3908,13 @@ export default function App() {
                              "&:hover": { borderColor:
                                accent || "primary.main" } }}>
                   <Tooltip title="создать новую тему">
-                    <Box sx={{ px: 1.1, py: 0.8, display: "flex",
-                               alignItems: "center", gap: 0.6 }}>
-                      <Typography sx={{ fontSize: 13, fontWeight: 600,
+                    <Box sx={{ py: 0.8, display: "flex",
+                               alignItems: "center",
+                               justifyContent: "center" }}>
+                      <Typography sx={{ fontSize: 16, fontWeight: 600,
+                                        lineHeight: 1.2,
                                         color: accent || "primary.main" }}>
-                        ＋ Новая тема
+                        ＋
                       </Typography>
                     </Box>
                   </Tooltip>
