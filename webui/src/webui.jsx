@@ -3764,8 +3764,7 @@ export default function App() {
                       onMore={() => loadColMore(String(tp.id))}
                       onSettings={() => setTSetDlg(
                         { kind: "edit", topic: tp })}
-                      onMoveL={tp.chat ? null : mvL}
-                      onMoveR={tp.chat ? null : mvR}
+                      onMoveL={mvL} onMoveR={mvR}
                       onDelete={() =>
                         askDelTopic(tp.id, tp.name || `тема #${tp.id}`)}
                       onReset={tp.chat
