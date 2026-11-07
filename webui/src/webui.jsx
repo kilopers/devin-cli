@@ -2205,6 +2205,13 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
       <Box ref={bodyRef} onScroll={onBodyScroll}
            sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8, flex: 1, minHeight: 0, overflowY: "auto",
+                 // X-скролла у ленты нет: крестик ✕ пузыря (right:-7)
+                 // вылезал на ~0.6px за край и включал горизонтальный
+                 // скролл — в углу, где сходятся скроллбары, Chrome
+                 // рисовал белый ::-webkit-scrollbar-corner
+                 overflowX: "hidden",
+                 "&::-webkit-scrollbar-corner":
+                   { bgcolor: "transparent" },
                  // скролл не «протекает» наружу: у края ленты крутится
                  // только она, а не вся страница; Y-контейн —
                  // X-оверсcroll остаётся доске, иначе горизонтальный
