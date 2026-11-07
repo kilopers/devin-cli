@@ -303,7 +303,10 @@ def api_tasks(project: str | None = None, limit: int = 5,
             # this changes (no flicker on identical polls)
             "h": hashlib.md5(
                 f"{st}|{r['task_status']}|{r['commit_offered']}|{out}"
-                f"|{len(r['prompt'] or '')}|{r['prompt'][-64:]}"
+                # md5 всего prompt: правка «в середине» с той же
+                # длиной и хвостом иначе не меняла хэш — карточка
+                # не перерисовывалась до перезагрузки страницы
+                f"|{hashlib.md5((r['prompt'] or '').encode()).hexdigest()[:16]}"
                 f"|{bool(kv_get(f'fmt:{stem}'))}|{r.get('sort') or 0}"
                 f"|{starting}"
                 .encode()).hexdigest()[:12],

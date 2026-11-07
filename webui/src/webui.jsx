@@ -606,6 +606,12 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // prompt с бэкенда — превью (2000): полный текст догружаем по кнопке
   const [full, setFull] = useState(null);
   const [copied, setCopied] = useState(false);
+  // кэш полного текста инвалидируется по хэшу карточки: правка или
+  // дописка меняет h → полный текст молча перечитывается (иначе
+  // promptShown навсегда оставался бы старым снапшотом до
+  // перезагрузки страницы). full не обнуляется → обрезанное превью
+  // не мелькает; ответ совпал → React пропускает перерендер
+  useEffect(() => { if (full !== null) loadFull(); }, [t.h]);
   const loadFull = () =>
     apiJson("/api/task/" + t.stem + "/prompt")
       .then(d => { if (d.ok) setFull(d.prompt); })
@@ -729,10 +735,11 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   }, [promptShown]);
   const canExpand = clamped;
   // превью задачи может быть обрезано на 2000 символах — полный текст
-  // догружаем при раскрытии
+  // догружаем при раскрытии (и повторно после инвалидации full —
+  // maybeCut снова true, когда кэш сброшен по новому h)
   useEffect(() => {
     if (open && maybeCut) loadFull();
-  }, [open]);
+  }, [open, maybeCut]);
   // на мобильной модалки карточки растягиваем почти на всю ширину
   // экрана (узкие отступы), на десктопе — как было
   const dlgMobile = useMediaQuery(t2 => t2.breakpoints.down("md"));
@@ -867,14 +874,27 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [editBusy, setEditBusy] = useState(false);
-  const startEdit = () => { setEditText(promptShown); setEditing(true); };
+  const startEdit = async () => {
+    // длинная заметка: в поле идёт ПОЛНЫЙ текст, не превью-2000 —
+    // иначе сохранение обрезало бы хвост заметки
+    let text = promptShown;
+    if (full === null && maybeCut) {
+      try {
+        const d = await apiJson("/api/task/" + t.stem + "/prompt");
+        if (d.ok) { setFull(d.prompt); text = d.prompt; }
+      } catch { /* редактируем то, что видно */ }
+    }
+    setEditText(text); setEditing(true);
+  };
   const saveEdit = async () => {
     if (editBusy || !editText.trim()) return;
     setEditBusy(true);
     try {
       const d = await post("/api/task/edit",
                            { stem: t.stem, text: editText });
-      if (d.ok) setEditing(false);
+      // full=свежий текст: карточка показывает правку сразу, не
+      // дожидаясь поллинга ленты
+      if (d.ok) { setEditing(false); setFull(editText); }
       else toast?.("Ошибка: " + (d.error || "?"));
     } catch (e) { toast?.("Сеть: " + e); }
     setEditBusy(false);
