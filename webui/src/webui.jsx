@@ -493,7 +493,7 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel }) {
       {onDel &&
         <Tooltip title="удалить сообщение">
           <IconButton size="small" onClick={() => onDel(t)}
-            sx={{ position: "absolute", top: -5, right: -2, zIndex: 2,
+            sx={{ position: "absolute", top: -9, right: -7, zIndex: 2,
                   width: 20, height: 20, p: 0,
                   bgcolor: "background.paper",
                   border: "1px solid", borderColor: "divider",
