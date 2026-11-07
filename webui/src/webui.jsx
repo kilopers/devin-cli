@@ -450,6 +450,12 @@ function ChatBusy({ t }) {
 // (cout) + строка активности; скролла внутри пузыря нет —
 // сообщение растягивается, прокручивается вся колонка
 const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel }) {
+  // крестик удаления — только по наведению на пару «вопрос→ответ»
+  // (hov); сам ✕ выступает за край пузыря, поэтому его hover
+  // отслеживаем отдельно (delHov) — наведённый на себя крестик
+  // не гаснет, пока курсор с него не уйдёт
+  const [hov, setHov] = useState(false);
+  const [delHov, setDelHov] = useState(false);
   const mine = {
     alignSelf: "flex-end", maxWidth: "88%", px: 1.1, py: 0.7,
     borderRadius: "12px 12px 4px 12px", fontSize: 13,
@@ -488,11 +494,15 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel }) {
   // в правом верхнем углу и удаляет её целиком (у активной —
   // сначала останавливает, подтверждение в диалоге)
   return (
-    <Box sx={{ position: "relative", display: "flex",
+    <Box onMouseEnter={() => setHov(true)}
+         onMouseLeave={() => setHov(false)}
+         sx={{ position: "relative", display: "flex",
                flexDirection: "column", gap: 0.8 }}>
-      {onDel &&
+      {onDel && (hov || delHov) &&
         <Tooltip title="удалить сообщение">
           <IconButton size="small" onClick={() => onDel(t)}
+            onMouseEnter={() => setDelHov(true)}
+            onMouseLeave={() => setDelHov(false)}
             sx={{ position: "absolute", top: -9, right: -7, zIndex: 2,
                   width: 20, height: 20, p: 0,
                   bgcolor: "background.paper",
