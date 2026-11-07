@@ -115,6 +115,10 @@ def main() -> int:
     # просроченные расписания ставят новую карточку в свою колонку
     threading.Thread(target=sched_cron, daemon=True,
                      name="sched-cron").start()
+    # ночной GC сиротских сессий агентов (старше SESS_GC_AGE_DAYS,
+    # не прибиты к темам) — sessions.db/транскрипты не распухают
+    threading.Thread(target=sess_gc_cron, daemon=True,
+                     name="sess-gc-cron").start()
     log(f"watching {INBOX} every {POLL_INTERVAL}s "
         f"(timeout {TASK_TIMEOUT}s, workers {WORKER_THREADS})")
     # воркеры: задачи РАЗНЫХ проектов идут параллельно, одного —
