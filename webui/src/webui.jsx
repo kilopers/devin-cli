@@ -2186,8 +2186,10 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
            sx={{ p: 0.8, display: "flex", flexDirection: "column",
                  gap: 0.8, flex: 1, minHeight: 0, overflowY: "auto",
                  // скролл не «протекает» наружу: у края ленты крутится
-                 // только она, а не вся доска/страница
-                 overscrollBehavior: "contain",
+                 // только она, а не вся страница; Y-контейн —
+                 // X-оверсcroll остаётся доске, иначе горизонтальный
+                 // свайп между колонками над телом чата съедался
+                 overscrollBehaviorY: "contain",
                  "& > *": { flexShrink: 0 },
                  "&::-webkit-scrollbar": { width: 8 } }}
            onDragOver={chat ? undefined : onBodyOver}
