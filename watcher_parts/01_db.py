@@ -1324,10 +1324,13 @@ def run_task(task: dict) -> None:
                      tstats.get("cost"), tstats.get("duration")))
     except Exception as e:
         log(f"topic_stats: {e}")
-    # «удалять предыдущую» у cron-расписания: новый прогон завершён —
-    # карточки прошлых прогонов этой серии стираются из колонки
+    # «удалять предыдущую» у cron-расписания: прогон завершён УСПЕШНО —
+    # карточки прошлых прогонов этой серии стираются из колонки; при
+    # падении старая карточка остаётся — не теряем последний хороший
+    # результат (успех = task_status содержит «exit code: 0»)
     try:
-        if task.get("sched_id"):
+        if task.get("sched_id") \
+                and "exit code: 0" in (status or ""):
             _sched_autoclean(task["sched_id"], stem)
     except Exception as e:
         log(f"sched autoclean: {e}")
