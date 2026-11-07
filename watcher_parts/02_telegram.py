@@ -595,26 +595,36 @@ def multi_mode() -> bool:
     return bool(list_projects())
 
 
+def _tg_actor() -> str:
+    """Юзер, чей бот сейчас обслуживает апдейт (TLS вебхук-потока)."""
+    return getattr(_tg_tls, "actor", "") or WEB_ADMIN_USER
+
+
 def current_project(scope: str = "telegram") -> tuple:
     """(project name or None, workdir Path). Single mode: (None, WORKDIR).
 
     Скоупы раздельные: у телеграма свой последний выбранный проект
-    (kv.project), у веба — свой (kv.project_web, fallback на телеграмовский).
+    (per-user tg_proj:<uid>, фолбэк общий kv.project), у веба — свой
+    (kv.project_web, fallback на телеграмовский).
     """
     if not multi_mode():
         return None, WORKDIR
     if scope == "web":
         name = kv_get(f"project_web:{_current_user()}")             or kv_get("project_web") or kv_get("project")
     else:
-        name = kv_get("project")
+        name = kv_get(f"tg_proj:{_tg_actor()}") or kv_get("project")
     if name and (PROJECTS_ROOT / name).is_dir():
         return name, PROJECTS_ROOT / name
     return None, PROJECTS_ROOT
 
 
 def set_project(name: str, scope: str = "telegram") -> None:
-    kv_set(f"project_web:{_current_user()}" if scope == "web"
-           else "project", name)
+    if scope == "web":
+        kv_set(f"project_web:{_current_user()}", name)
+    else:
+        kv_set(f"tg_proj:{_tg_actor()}", name)
+        if _tg_actor() == WEB_ADMIN_USER:
+            kv_set("project", name)   # админский выбор — общий, как раньше
     log(f"project switched to {name} (scope {scope})")
 
 
@@ -623,16 +633,31 @@ def project_label() -> str:
 
 
 def send_projects(chat_id, msg_id=None) -> None:
-    projects = list_projects()
+    actor = kv_get(f"tg_user:{chat_id}") or WEB_ADMIN_USER
+    projects = _user_projects(actor)
     cur = current_project()[0]
     if not projects:
         tg_send(chat_id, "Проектов нет — положи папки с репозиториями "
                 f"в {PROJECTS_ROOT} (multi-project mode выключен, "
                 "работаю с /workspace).")
         return
-    kb = [[{"text": ("✅ " if p == cur else "") + p,
-            "callback_data": f"proj:{p}"}] for p in projects[:15]]
-    text = f"Текущий проект: {project_label()}\nВыбери проект:"
+    wslist = _user_ws(actor)
+    order = {w["id"]: i for i, w in enumerate(wslist)}
+    wsname = {w["id"]: w["name"] for w in wslist}
+    projects = sorted(
+        projects,
+        key=lambda p: (order.get(_project_ws(actor, p), 999),
+                       p.lower()))
+    multi = len(wslist) > 1
+    kb = []
+    for p in projects[:60]:
+        label = ((wsname.get(_project_ws(actor, p)) or "?") + "/"
+                 if multi else "") + p
+        kb.append([{"text": ("✅ " if p == cur else "") + label,
+                    "callback_data": f"proj:{p}"}])
+    more = (f"\n…и ещё {len(projects) - 60}"
+            if len(projects) > 60 else "")
+    text = f"Текущий проект: {project_label()}\nВыбери проект:{more}"
     if msg_id:
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
                text=text, reply_markup={"inline_keyboard": kb})
@@ -1400,6 +1425,7 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
         log(f"update ignored (no chat): {json.dumps(upd)[:200]}")
         return
     actor = actor or WEB_ADMIN_USER
+    _tg_tls.actor = actor
     kv_set(f"tg_user:{chat_id}", actor)
     kv_set(f"tg_bot:{chat_id}", _tg_tls.token or TG_TOKEN)
     try:
