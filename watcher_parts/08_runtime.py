@@ -97,6 +97,7 @@ def main() -> int:
     _self_deploy_report()
     migrate_files_to_db()
     migrate_env_secrets()
+    migrate_env_secrets_v2()
     _migrate_workspaces()
     cleanup_legacy_files()
     ensure_repo()

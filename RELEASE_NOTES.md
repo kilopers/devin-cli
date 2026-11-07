@@ -1,3 +1,20 @@
+## 2.1.5 — per-user адресат телеграм-уведомлений
+
+- У каждого юзера свои настройки телеграма: `telegram.chat_id` и
+  `telegram.thread_id` (id темы форума, опционально) рядом с уже
+  существующим `telegram.bot_token` — поля в «Настройки», env-фолбэки
+  `TELEGRAM_CHAT_ID` / `TELEGRAM_THREAD_ID`, разовая миграция
+  `migrate_env_secrets_v2` переносит env-значения админу.
+- Веб- и cron-задачи без чата получают адресат из настроек автора:
+  `enqueue_task` подставляет `chat_id`/`thread_id` и токен его бота
+  (`tasks.thread_id`, `tasks.bot`) — результат, статистика и оффер
+  коммита приходят в тг даже задачам из веба.
+- Форумы: `message_thread_id` входящего сообщения хранится в pending/
+  tasks и глушится в `_tg_tls.thread` — все ответы `sendMessage`
+  уходят в ту же ветку автоматически; асинхронные ответы воркера
+  берут `tasks.thread_id` (tg_send/progress_loop/offer_commit/
+  send_task_stats/notify_chat).
+
 ## 2.1.4 — autoclean: пачка ошибок не копится бесконечно
 
 - При падении cron-прогона чистка теперь тоже работает — стираются

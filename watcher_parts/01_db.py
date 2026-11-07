@@ -80,6 +80,7 @@ def init_db() -> None:
         text MEDIUMTEXT NOT NULL,
         project VARCHAR(255) NULL,
         message_id BIGINT NULL,
+        thread_id BIGINT NULL,
         created DOUBLE NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     # мультиюзер: учётки веба (админ = WEB_ADMIN_USER, живёт в kv) и
@@ -256,12 +257,18 @@ def init_db() -> None:
                      ("agent", "agent VARCHAR(32) NULL"),
                      # расписание (task_schedules.id), породившее эту
                      # карточку — связь для «удалять предыдущую»
-                     ("sched_id", "sched_id INT NULL")):
+                     ("sched_id", "sched_id INT NULL"),
+                     # ветка форума (message_thread_id) — ответы в tg
+                     ("thread_id", "thread_id BIGINT NULL")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
             db_exec(f"ALTER TABLE tasks ADD COLUMN {ddl}")
     db_exec("UPDATE tasks SET sort=created WHERE sort=0")
+    if not db_query("SELECT 1 FROM information_schema.COLUMNS"
+                    " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='pending'"
+                    " AND COLUMN_NAME='thread_id'", (MYSQL["database"],)):
+        db_exec("ALTER TABLE pending ADD COLUMN thread_id BIGINT NULL")
     # карточки-заметки («сказать»): статус note — запись в колонке,
     # не идёт в очередь; «начать выполнение» переводит её в queued
     st_type = db_query("SELECT COLUMN_TYPE AS ct"
@@ -502,17 +509,19 @@ def _insert_task(stem: str, prompt: str, source: str,
                  bot: str | None = None,
                  instr: str | None = None,
                  topic_id: int | None = None,
-                 sched_id: int | None = None) -> None:
+                 sched_id: int | None = None,
+                 thread_id=None) -> None:
     # sched_id — прямо в INSERT (не пост-апдейтом): при коллизии
     # стема ON DUPLICATE меняет только prompt, и по sched_id видно,
     # чья запись победила (планировщик тогда ждёт след. секунду)
     db_exec("INSERT INTO tasks (stem, source, project, chat_id, prompt,"
             " model, reply_mode, user, bot, instr, topic_id, sched_id,"
-            " created, sort) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            " thread_id, created, sort) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON DUPLICATE KEY UPDATE prompt=VALUES(prompt)",
             (stem, source, project, chat_id, prompt, model, reply_mode,
-             user, bot, instr, topic_id, sched_id, created, created))
+             user, bot, instr, topic_id, sched_id, thread_id, created,
+             created))
 
 
 def task_row(stem: str) -> dict | None:
@@ -872,7 +881,7 @@ def _task_cost(st: dict) -> float | None:
 
 def progress_loop(chat_id, export_path: Path, out_path: Path,
                   proc: subprocess.Popen, since: float,
-                  transcripts: Path) -> None:
+                  transcripts: Path, thread=None) -> None:
     """While the task runs, send live progress to telegram.
 
     Primary source: the launcher's stdout/stderr captured to out_path
@@ -928,7 +937,7 @@ def progress_loop(chat_id, export_path: Path, out_path: Path,
         if buf and time.time() - last_sent >= 20:
             text = "\n".join(buf)
             buf.clear()
-            tg_send(chat_id, "🛠 " + text[-3500:])
+            tg_send(chat_id, "🛠 " + text[-3500:], thread=thread)
             last_sent = time.time()
 
 
@@ -1204,6 +1213,7 @@ def run_task(task: dict) -> None:
                GIT_USER_EMAIL=uset("git.email", task_user,
                                    "GIT_USER_EMAIL", ""))
     chat_id = task.get("chat_id")
+    thread_id = task.get("thread_id")
     out_path = progress_dir / f"{stem}.out"
 
     def _run_once(env2: dict) -> tuple:
@@ -1229,7 +1239,7 @@ def run_task(task: dict) -> None:
                     target=progress_loop, daemon=True,
                     args=(chat_id, export_path, out_path,
                           proc, started_ts,
-                          ag["transcripts"])).start()
+                          ag["transcripts"], thread_id)).start()
             try:
                 proc.wait(timeout=TASK_TIMEOUT)
                 st = f"exit code: {proc.returncode}"
@@ -1373,11 +1383,11 @@ def run_task(task: dict) -> None:
             urllib.request.urlopen(req, timeout=15)
         except Exception as e:
             log(f"{name}: ext-hook {ext['hook']} не ответил: {e}")
-    offer_commit(task, chat_id, workdir)
+    offer_commit(task, chat_id, workdir, thread_id)
     if TG_TOKEN:
         notify_chat(stem, f"{name}\n{status}\n\n{body[-3500:]}")
         if chat_id:
-            send_task_stats(chat_id, tstats)
+            send_task_stats(chat_id, tstats, thread_id)
 
 
 def _tail_json(text: str):

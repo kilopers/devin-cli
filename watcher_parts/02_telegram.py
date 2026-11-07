@@ -14,6 +14,11 @@ def _chat_token(chat_id) -> str:
 
 def tg_api(method: str, **params) -> dict:
     token = params.pop("_token", None) or _chat_token(params.get("chat_id"))
+    params = {k: v for k, v in params.items() if v is not None}
+    if method == "sendMessage" and "message_thread_id" not in params:
+        t = getattr(_tg_tls, "thread", None)
+        if t:
+            params["message_thread_id"] = t
     shown = {k: ("***" if k == "secret_token" else str(v)[:120])
              for k, v in params.items()}
     log(f"tg -> {method} {shown}")
@@ -33,7 +38,8 @@ def tg_api(method: str, **params) -> dict:
     return res
 
 
-def tg_send(chat_id: int, text: str, token: str | None = None) -> None:
+def tg_send(chat_id: int, text: str, token: str | None = None,
+            thread=None) -> None:
     """sendMessage, splitting into <=4000-char chunks, max 5 messages."""
     chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)][:5]
     if len(text) > 20000:
@@ -42,7 +48,7 @@ def tg_send(chat_id: int, text: str, token: str | None = None) -> None:
     for chunk in chunks:
         try:
             tg_api("sendMessage", chat_id=chat_id, text=chunk,
-                   _token=token)
+                   _token=token, message_thread_id=thread)
         except Exception as e:
             log(f"telegram sendMessage error: {e}")
 
@@ -415,7 +421,8 @@ def enqueue_task(text: str, chat_id: int | None = None,
                  override_mode: str | None = None,
                  topic_id: int | None = None,
                  user: str | None = None,
-                 sched_id: int | None = None) -> str:
+                 sched_id: int | None = None,
+                 thread_id=None) -> str:
     source = {"tg": "telegram", "web": "web"}.get(prefix, prefix)
     scope = source if source in ("web", "telegram") else ""
     proj = project or (current_project(scope)[0] if multi_mode() else None)
@@ -456,12 +463,25 @@ def enqueue_task(text: str, chat_id: int | None = None,
                  or reply_mode(scope))
     if override_mode in ("ask", "code", "say"):
         rmode = override_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
+    # у веб/cron-задач чата нет — дефолтный адресат из настроек
+    # юзера: telegram.chat_id + telegram.thread_id (env-фолбэк)
+    if not chat_id:
+        try:
+            chat_id = int(uset("telegram.chat_id", author,
+                               "TELEGRAM_CHAT_ID") or 0) or None
+        except ValueError:
+            chat_id = None
+    if thread_id is None:
+        tt = uset("telegram.thread_id", author, "TELEGRAM_THREAD_ID")
+        thread_id = int(tt) if (tt or "").isdigit() else None
     bot = getattr(_tg_tls, "token", "") or \
-        (kv_get(f"tg_bot:{chat_id}") if chat_id else "")
+        (kv_get(f"tg_bot:{chat_id}") if chat_id else "") \
+        or us_get(author, "telegram.bot_token")
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
                  rmode, author, bot,
                  instr=_instr_block(author, proj, topic_id),
-                 topic_id=topic_id, sched_id=sched_id)
+                 topic_id=topic_id, sched_id=sched_id,
+                 thread_id=thread_id)
     if rmode == "say":
         # дефолт колонки «заметка»: карточка в колонке, но не в
         # очереди — Devin её не получает (как mode=say из веба)
@@ -474,11 +494,12 @@ def enqueue_task(text: str, chat_id: int | None = None,
 def _save_pending(entry: dict) -> str:
     pid = str(entry.get("id") or int(time.time() * 1000))
     db_exec("INSERT INTO pending (pid, chat_id, text, project, message_id,"
-            " created) VALUES (%s,%s,%s,%s,%s,%s)"
+            " thread_id, created) VALUES (%s,%s,%s,%s,%s,%s,%s)"
             " ON DUPLICATE KEY UPDATE text=VALUES(text),"
             " message_id=VALUES(message_id)",
             (pid, entry.get("chat_id") or 0, entry.get("text") or "",
-             entry.get("project"), entry.get("message_id"), time.time()))
+             entry.get("project"), entry.get("message_id"),
+             entry.get("thread_id"), time.time()))
     return pid
 
 
@@ -1003,7 +1024,7 @@ def _fmt_dur(sec) -> str:
     return f"{sec}с"
 
 
-def send_task_stats(chat_id, st: dict) -> None:
+def send_task_stats(chat_id, st: dict, thread=None) -> None:
     """Метрики завершённой задачи — то же, что кнопка «инфо» в вебе."""
     s = st or {}
     day, nday, week, nweek = usage_totals()
@@ -1017,7 +1038,8 @@ def send_task_stats(chat_id, st: dict) -> None:
         f"за 24ч: {day} токенов ({nday} задач), "
         f"за 7д: {week} токенов ({nweek} задач)",
     ]
-    tg_send(chat_id, "📊 Статистика задачи:\n" + "\n".join(lines))
+    tg_send(chat_id, "📊 Статистика задачи:\n" + "\n".join(lines),
+            thread=thread)
 
 
 def _git_clean_locks(workdir, min_age: int = 60) -> int:
@@ -1059,7 +1081,7 @@ def _git(workdir, *args) -> tuple:
     return rc, out
 
 
-def offer_commit(task: dict, chat_id, workdir) -> None:
+def offer_commit(task: dict, chat_id, workdir, thread=None) -> None:
     """After a task: flag commit_offered (web buttons) + tg buttons if chat."""
     try:
         _, st = _git(workdir, "status", "--porcelain")
@@ -1080,7 +1102,7 @@ def offer_commit(task: dict, chat_id, workdir) -> None:
         label = f"✅ Закоммитить и запушить ({dirty} файл(ов))"
     else:
         label = f"⬆ Запушить {unpushed} коммит(ов)"
-    tg_api("sendMessage", chat_id=chat_id,
+    tg_api("sendMessage", chat_id=chat_id, message_thread_id=thread,
            text=f"В репо: {dirty} незакоммиченных, {unpushed} незапушенных. Что делаем?",
            reply_markup={"inline_keyboard": [
                [{"text": label, "callback_data": f"commit:{stem}"}],
@@ -1340,7 +1362,8 @@ def handle_callback(cb: dict) -> None:
 
     if action in ("ok", "cd", "ask", "note"):
         rmode = {"cd": "code", "ask": "ask", "note": "say"}.get(action)
-        name = enqueue_task(entry["text"], chat_id, override_mode=rmode)
+        name = enqueue_task(entry["text"], chat_id, override_mode=rmode,
+                            thread_id=entry.get("thread_id"))
         tag = {"cd": " — режим кода", "ask": " — вопрос",
                "note": " — заметка, агент не запускается"}.get(action, "")
         tg_api("editMessageText", chat_id=chat_id, message_id=msg_id,
@@ -1363,6 +1386,7 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
 
     msg = upd.get("message") or upd.get("edited_message") or {}
     chat_id = (msg.get("chat") or {}).get("id")
+    thread_id = msg.get("message_thread_id")
     sender = (msg.get("from") or {}).get("username", "?")
     if not chat_id:
         log(f"update ignored (no chat): {json.dumps(upd)[:200]}")
@@ -1417,6 +1441,7 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
             _save_pending({"chat_id": chat_id, "text": text,
                            "project": project_label(),
                            "message_id": status_msg,
+                           "thread_id": thread_id,
                            "id": pid})
             log(f"pending confirm {pid} -> chat {chat_id}")
         elif text := (msg.get("text") or "").strip():
@@ -1441,6 +1466,7 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
             _save_pending({"chat_id": chat_id, "text": text,
                            "project": project_label(),
                            "message_id": res["result"]["message_id"],
+                           "thread_id": thread_id,
                            "id": pid})
             log(f"pending confirm {pid} -> chat {chat_id} (text)")
         else:
@@ -1460,7 +1486,8 @@ def notify_chat(task_stem: str, response_text: str) -> None:
         log(f"no chat mapping for {task_stem} — result not sent to telegram")
         return
     log(f"delivering result of {task_stem} to chat {chat_id}")
-    tg_send(chat_id, response_text, token=row.get("bot") or None)
+    tg_send(chat_id, response_text, token=row.get("bot") or None,
+            thread=row.get("thread_id"))
 
 
 _BOT_COMMANDS = [

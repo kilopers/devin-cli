@@ -110,6 +110,24 @@ def migrate_env_secrets() -> None:
         log(f"env->user secrets migration failed (retry): {e}")
 
 
+def migrate_env_secrets_v2() -> None:
+    """Разово: адресат tg-уведомлений env → настройки админа."""
+    if kv_get("secrets_migrated_v2"):
+        return
+    kv_set("secrets_migrated_v2", "1")
+    try:
+        a = WEB_ADMIN_USER
+        for k, e in (("telegram.chat_id", "TELEGRAM_CHAT_ID"),
+                     ("telegram.thread_id", "TELEGRAM_THREAD_ID")):
+            v = os.environ.get(e)
+            if v and not us_get(a, k):
+                us_set(a, k, v)
+        log("env tg-dest migrated to user settings")
+    except Exception as e:
+        kv_set("secrets_migrated_v2", "")
+        log(f"env->user tg-dest migration failed (retry): {e}")
+
+
 # --- настройки проекта (kv.pj:<name> = JSON) -----------------------------
 # model / reply_mode / auto_commit — задаются в шестерёнке селекта
 # проектов; пустое = наследовать (модель — юзера, режим — юзера,
