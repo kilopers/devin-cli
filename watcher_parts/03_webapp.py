@@ -175,6 +175,14 @@ def api_tasks(project: str | None = None, limit: int = 5,
                 "auto_commit": td["auto_commit"]
                                or pj_get(project, "auto_commit") or "0",
             }
+    # карточки-якоря cron-расписаний проекта: stem -> включено ли —
+    # колокольчик на карточке (sched/sched_on в ответе)
+    anch = {}
+    if project:
+        for r in db_query("SELECT stem, enabled FROM task_schedules"
+                          " WHERE project=%s AND stem IS NOT NULL",
+                          (project,)):
+            anch[r["stem"]] = bool(r["enabled"])
     items = []
     for r in rows:
         stem = r["stem"]
@@ -281,6 +289,10 @@ def api_tasks(project: str | None = None, limit: int = 5,
             # «✨ оформить» ещё идёт — фронт держит спиннер даже
             # после перезагрузки страницы
             "fmt": bool(kv_get(f"fmt:{stem}")),
+            # колокольчик cron: карточка-якорь с ВКЛ расписанием
+            # горит (sched_on); прогоны серии и якорь с выкл — обычный
+            "sched": bool(r.get("sched_id") or stem in anch),
+            "sched_on": bool(anch.get(stem)),
             "stats": st_json,
             "tid": r["topic_id"],
             "topic": (tmap.get(r["topic_id"])
@@ -308,6 +320,8 @@ def api_tasks(project: str | None = None, limit: int = 5,
                 # не перерисовывалась до перезагрузки страницы
                 f"|{hashlib.md5((r['prompt'] or '').encode()).hexdigest()[:16]}"
                 f"|{bool(kv_get(f'fmt:{stem}'))}|{r.get('sort') or 0}"
+                f"|{bool(r.get('sched_id') or stem in anch)}"
+                f"|{bool(anch.get(stem))}"
                 f"|{starting}"
                 .encode()).hexdigest()[:12],
         })

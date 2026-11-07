@@ -196,10 +196,19 @@ def init_db() -> None:
         next_run DOUBLE NULL,
         last_run DOUBLE NULL,
         last_stem VARCHAR(80) NULL,
+        stem VARCHAR(80) NULL,
         created DOUBLE NOT NULL,
         KEY idx_due (enabled, next_run),
         KEY idx_proj (project)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    # stem — карточка-якорь расписания (v2.1.1): на ней горит
+    # колокольчик, новые прогоны ставятся в колонку, где она сейчас
+    if not db_query("SELECT 1 FROM information_schema.COLUMNS"
+                    " WHERE TABLE_SCHEMA=%s"
+                    " AND TABLE_NAME='task_schedules'"
+                    " AND COLUMN_NAME='stem'", (MYSQL["database"],)):
+        db_exec("ALTER TABLE task_schedules ADD COLUMN"
+                " stem VARCHAR(80) NULL")
     # инструкции, привязанные к КОЛОНКЕ (теме): работают только в
     # задачах этой темы — к проекту при этом подключены быть не обязаны;
     # topic_id 0 = «главная» (NULL в PK нельзя, поэтому не NULL)

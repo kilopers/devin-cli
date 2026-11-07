@@ -78,16 +78,22 @@ def _sched_fire(sc: dict) -> str:
     секунду на одном проекте/юзере слиплись бы в одну запись
     (ON DUPLICATE): проверяем победивший sched_id и при чужом ждём
     следующую секунду."""
+    # карточка-якорь (v2.1.1): прогон ставится в колонку, где якорь
+    # сейчас лежит, с его актуальным текстом; якоря нет (карточку
+    # удалили — расписание стирается каскадом, это страховка) —
+    # фолбэк на поля расписания
+    anchor = task_row(sc["stem"]) if sc.get("stem") else None
+    tid = anchor["topic_id"] if anchor else sc.get("topic_id")
+    prompt = (anchor["prompt"] if anchor else "") or sc["prompt"]
     # дефолты колонки в скоупе «без юзера»: reply_mode задачи идёт
     # строго из настроек колонки → проекта → глобальных
-    eff = _eff_topic_defaults(sc["project"], sc.get("topic_id"),
-                              scope="")
+    eff = _eff_topic_defaults(sc["project"], tid, scope="")
     mode = eff.get("reply_mode")
     stem = ""
     for _ in range(5):
         stem = enqueue_task(
-            sc["prompt"], project=sc["project"], prefix="cron",
-            topic_id=sc.get("topic_id"), user=sc.get("user") or None,
+            prompt, project=sc["project"], prefix="cron",
+            topic_id=tid, user=sc.get("user") or None,
             sched_id=sc["id"],
             override_mode=mode if mode in ("ask", "code", "say")
                           else None).removesuffix(".txt")
@@ -97,8 +103,11 @@ def _sched_fire(sc: dict) -> str:
         stem = ""                        # стем занят чужой — ждём
         time.sleep(1.05)
     if stem:
-        db_exec("UPDATE task_schedules SET last_run=%s, last_stem=%s"
-                " WHERE id=%s", (time.time(), stem, sc["id"]))
+        # якорь переползает на свежую карточку — колокольчик всегда
+        # горит на последней, topic_id расписания следует за колонкой
+        db_exec("UPDATE task_schedules SET last_run=%s, last_stem=%s,"
+                " stem=%s, topic_id=%s WHERE id=%s",
+                (time.time(), stem, stem, tid, sc["id"]))
         log(f"sched #{sc['id']} fired -> {stem}")
     else:
         log(f"sched #{sc['id']}: stem занят 5 раз подряд — пропуск")
@@ -157,16 +166,20 @@ def _api_sched_get():
     if not p or not _owns_project(p):
         return jsonify({"ok": False, "error": "нет доступа"}), 403
     tv = (request.args.get("topic") or "main").strip()
+    sv = (request.args.get("stem") or "").strip()
     sql, params = ("SELECT * FROM task_schedules WHERE project=%s",
                    [p])
-    if tv == "main":
+    if sv:
+        sql += " AND stem=%s"
+        params.append(sv)
+    elif tv == "main":
         sql += " AND topic_id IS NULL"
     elif tv.isdigit():
         sql += " AND topic_id=%s"
         params.append(int(tv))
     rows = db_query(sql + " ORDER BY id", params)
     return jsonify({"ok": True, "schedules": [
-        {"id": r["id"], "topic_id": r["topic_id"],
+        {"id": r["id"], "topic_id": r["topic_id"], "stem": r["stem"],
          "prompt": r["prompt"], "cron": r["cron"],
          "enabled": bool(r["enabled"]),
          "autoclean": bool(r["autoclean"]),
@@ -193,14 +206,30 @@ def _api_sched_set():
                                  "(напр. «*/15 * * * *»)"}), 400
 
     if act == "create":
-        text = (b.get("prompt") or "").strip()
+        sv = (b.get("stem") or "").strip()
+        anchor = None
+        if sv:
+            # расписание на карточке (v2.1.1): текст и колонка — из
+            # карточки-якоря, она же метка «периодическая» в ленте
+            anchor = task_row(sv)
+            if not anchor:
+                return jsonify({"ok": False,
+                                "error": "нет такой задачи"}), 404
+            if db_query("SELECT 1 FROM task_schedules WHERE stem=%s",
+                        (sv,)):
+                return jsonify({"ok": False,
+                                "error": "у карточки уже есть "
+                                         "расписание"}), 409
+        text = ((anchor["prompt"] if anchor else "")
+                or (b.get("prompt") or "")).strip()
         if not text:
             return jsonify({"ok": False, "error": "пустой текст"}), 400
         if len(text) > 20000:
             return jsonify({"ok": False, "error": "text too long"}), 400
         tv = str(b.get("topic") or "main").strip()
-        tid = None if tv in ("", "main") else (
-            int(tv) if tv.isdigit() else -1)
+        tid = anchor["topic_id"] if anchor else (
+            None if tv in ("", "main") else (
+                int(tv) if tv.isdigit() else -1))
         if tid == -1 or (tid is not None and not db_query(
                 "SELECT 1 FROM topics WHERE id=%s AND project=%s",
                 (tid, p))):
@@ -210,21 +239,32 @@ def _api_sched_set():
         if nr is None:
             return _cron_err()
         db_exec("INSERT INTO task_schedules(project,topic_id,user,"
-                "prompt,cron,enabled,autoclean,next_run,created)"
-                " VALUES(%s,%s,%s,%s,%s,1,%s,%s,%s)",
+                "prompt,cron,enabled,autoclean,next_run,stem,created)"
+                " VALUES(%s,%s,%s,%s,%s,1,%s,%s,%s,%s)",
                 (p, tid, u, text, cron, 1 if b.get("autoclean") else 0,
-                 nr, time.time()))
+                 nr, sv or None, time.time()))
         sid = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
+        if anchor:
+            # якорь — первая карточка серии: autoclean уберёт и её,
+            # когда завершится первый прогон
+            db_exec("UPDATE tasks SET sched_id=%s WHERE stem=%s",
+                    (sid, sv))
         log(f"sched #{sid} created in {p} topic={tid or 'main'} "
             f"'{cron}'")
         return jsonify({"ok": True, "id": sid, "next_run": nr})
     sid = int(b.get("id") or 0)
-    row = db_query("SELECT * FROM task_schedules"
-                   " WHERE id=%s AND project=%s", (sid, p))
+    sv = (b.get("stem") or "").strip()
+    if sv:
+        row = db_query("SELECT * FROM task_schedules"
+                       " WHERE stem=%s AND project=%s", (sv, p))
+    else:
+        row = db_query("SELECT * FROM task_schedules"
+                       " WHERE id=%s AND project=%s", (sid, p))
     if not row:
         return jsonify({"ok": False,
                         "error": "нет такого расписания"}), 404
     sc = row[0]
+    sid = sc["id"]
     if act == "update":
         sets, vals = [], []
         if "prompt" in b:
@@ -267,7 +307,9 @@ def _api_sched_set():
                 (_cron_next(sc["cron"], time.time()), sid))
         return jsonify({"ok": True})
     if act == "delete":
-        # карточки прошлых прогонов остаются обычными задачами
+        # карточки серии остаются обычными задачами — метку снимаем
+        db_exec("UPDATE tasks SET sched_id=NULL WHERE sched_id=%s",
+                (sid,))
         db_exec("DELETE FROM task_schedules WHERE id=%s", (sid,))
         log(f"sched #{sid} deleted ({p})")
         return jsonify({"ok": True})

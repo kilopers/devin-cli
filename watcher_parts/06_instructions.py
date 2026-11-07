@@ -1044,6 +1044,8 @@ def drop_failed_task(stem: str) -> None:
     db_exec("DELETE FROM tasks WHERE stem=%s", (stem,))
     for k in (f"tag:{stem}", f"opts:{stem}"):
         db_exec("DELETE FROM kv WHERE k=%s", (k,))
+    # стёртая карточка-якорь забирает своё расписание с собой
+    db_exec("DELETE FROM task_schedules WHERE stem=%s", (stem,))
     prog = TASKS_DIR / ".progress"
     for p in ([prog / f"{stem}.out", prog / f"{stem}.json"]
               + list(prog.glob(f"{stem}.attach*"))):

@@ -55,6 +55,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
+import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import MenuIcon from "@mui/icons-material/Menu";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
@@ -607,6 +608,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const [open, setOpen] = useState(false);
   // prompt с бэкенда — превью (2000): полный текст догружаем по кнопке
   const [full, setFull] = useState(null);
+  const [schedOpen, setSchedOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   // кэш полного текста инвалидируется по хэшу карточки: правка или
   // дописка меняет h → полный текст молча перечитывается (иначе
@@ -1152,6 +1154,26 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         : <ContentCopyIcon sx={{ fontSize: 15 }} />}
               </IconButton>
             </Tooltip>
+            {t.project && !(cols || [])
+                .find(c => c.key === curColKey)?.chat && (
+              <Tooltip title={t.sched_on
+                    ? "периодическая — править расписание"
+                    : "сделать периодической (cron) — новые карточки в этой колонке"}>
+                <IconButton size="small"
+                  onClick={e => { e.stopPropagation();
+                                  setSchedOpen(true); }}
+                  sx={{ p: "3px",
+                        color: t.sched_on ? "primary.main"
+                                          : "text.secondary" }}>
+                  <NotificationsNoneIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {schedOpen &&
+              <SchedDlg t={t} project={t.project} open
+                onClose={() => setSchedOpen(false)}
+                toast={toast}
+                onChanged={() => pend && pend(t.stem, async () => {})} />}
             {(cols || []).some(c => c.key !== curColKey) && (
               <Tooltip title="переместить в другую тему — уровень колонки выше запустит карточку">
                 <IconButton size="small"
@@ -1941,7 +1963,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onDict, dictOn, dictBusy, onStats, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
                       collapsed, onCollapse, full, onFull, chat,
-                      onReset, kick, colKey, onSched }) {
+                      onReset, kick, colKey }) {
   const [menu, setMenu] = useState(null);
   // чат-колонка: следим за прокруткой треда — при уходе от низа
   // показываем плавающую стрелку «к последнему сообщению»
@@ -2055,7 +2077,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
         {(onDelete || onSettings || onMoveL || onMoveR || onStats ||
-           onTplNew || onReset || onSched) &&
+           onTplNew || onReset) &&
           <>
             <Tooltip title="действия с темой">
               <IconButton size="small" sx={{ p: 0.2 }}
@@ -2076,11 +2098,6 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onTplNew(); }}>
                   🔖 Новый шаблон
-                </MenuItem>}
-              {onSched &&
-                <MenuItem dense sx={{ fontSize: 13 }}
-                  onClick={() => { setMenu(null); onSched(); }}>
-                  ⏱ Расписание
                 </MenuItem>}
               {chat && onReset &&
                 <MenuItem dense sx={{ fontSize: 13 }}
@@ -2453,7 +2470,6 @@ export default function App() {
   // диалог «📊 Статистика» темы: {key: 'main'|topic_id, name}
   const [statDlg, setStatDlg] = useState(null);
   // диалог «⏱ Расписание» колонки: {key: 'main'|topic_id, name}
-  const [schedDlg, setSchedDlg] = useState(null);
   // drawer keeps its scroll position across re-renders (selecting
   // mode/model inside it used to yank the list back to the top)
   const drawerBoxRef = useRef(null);
@@ -3843,10 +3859,6 @@ export default function App() {
                                           || "Главная") })}
                         onTplNew={() => openTplNew("main",
                           "⭐ " + (mainDef.name || "Главная"))}
-                        onSched={() => setSchedDlg(
-                          { key: "main",
-                            name: "⭐ " + (mainDef.name
-                                           || "Главная") })}
                         onSettings={() => setTSetDlg(
                           { kind: "main", current: mainDef })}
                         onMoveL={mvL} onMoveR={mvR}
@@ -3895,9 +3907,6 @@ export default function App() {
                       onTplNew={tp.chat ? null
                         : () => openTplNew(String(tp.id),
                           tp.name || `тема #${tp.id}`)}
-                      onSched={() => setSchedDlg(
-                        { key: String(tp.id),
-                          name: tp.name || `тема #${tp.id}` })}
                       more={colMore[String(tp.id)]}
                       busy={!!colBusy[String(tp.id)]}
                       onMore={() => loadColMore(String(tp.id))}
@@ -4149,9 +4158,6 @@ export default function App() {
       <TopicStatsDlg dlg={statDlg} project={project}
                      onClose={() => setStatDlg(null)}
                      toast={setToast} />
-      <SchedDlg dlg={schedDlg} project={project}
-                onClose={() => setSchedDlg(null)}
-                toast={setToast} />
       <TopicSettings project={project} dlg={tSetDlg} topics={topics}
                      onClose={() => setTSetDlg(null)}
                      onSaved={id => { loadTasks();
