@@ -3865,7 +3865,7 @@ export default function App() {
                              borderStyle: "dashed", borderColor: "divider",
                              "&:hover": { borderColor:
                                accent || "primary.main" } }}>
-                  <Tooltip title="новая тема — первая задача стартует свою сессию агента">
+                  <Tooltip title="создать новую тему">
                     <Box sx={{ px: 1.1, py: 0.8, display: "flex",
                                alignItems: "center", gap: 0.6 }}>
                       <Typography sx={{ fontSize: 13, fontWeight: 600,
