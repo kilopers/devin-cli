@@ -93,7 +93,9 @@ echo "Добавь endpoint /healthz, возвращающий 200" > tasks/inbo
 импортируются туда же), выполняет её и пишет статус (`task_status`,
 например `exit code: 0`) и полный вывод Devin в колонку `output`.
 
-Задачи выполняются последовательно, по одной. Старые файлы состояния
+Задачи одного проекта выполняются строго по очереди (общая сессия и
+git-workdir), задачи разных проектов — параллельно, `WORKER_THREADS`
+потоками (default 3, диапазон 1–8). Старые файлы состояния
 (`inbox/done/outbox`, `tg-chats.json`, `tg-pending.json`, `*.txt` настроек)
 при первом старте **мигрируются в MySQL автоматически** — история задач
 не теряется; сами файлы на диске остаются нетронутыми.
@@ -396,6 +398,7 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool 
 | `DEVIN_PERMISSION_MODE` | `dangerous` | Режим разрешений Devin CLI (`dangerous` = `bypass`/`yolo`) |
 | `POLL_INTERVAL` | `30` | Период опроса `inbox/`, сек |
 | `TASK_TIMEOUT` | `7200` | Таймаут одной задачи, сек |
+| `WORKER_THREADS` | `3` | Параллельные воркеры задач (1–8): разные проекты — одновременно, один проект — по очереди |
 | `GIT_USER_NAME` / `GIT_USER_EMAIL` | `devin-bot` | Git-идентичность для коммитов |
 | `GIT_REPO_URL` | — | Клонируется в пустой `/workspace` при старте и перед каждой задачей |
 | `GIT_BRANCH` | — | Ветка при клонировании |

@@ -22,6 +22,9 @@ services:
       TASKS_DIR: /tasks
       POLL_INTERVAL: ${POLL_INTERVAL:-30}
       TASK_TIMEOUT: ${TASK_TIMEOUT:-7200}
+      # Параллельные воркеры задач (1–8): задачи РАЗНЫХ проектов
+      # выполняются одновременно, одного проекта — строго по очереди.
+      WORKER_THREADS: ${WORKER_THREADS:-3}
       # If set and PROJECT_DIR is empty — the repo is cloned automatically.
       GIT_REPO_URL: ${GIT_REPO_URL:-}
       GIT_BRANCH: ${GIT_BRANCH:-}
