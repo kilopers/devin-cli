@@ -3077,6 +3077,16 @@ export default function App() {
   // иначе после «стоп» непонятно, что происходит
   const [dictProc, setDictProc] = useState(null);
   const [dictInfo, setDictInfo] = useState("");
+  // ошибка распознавания — показываем в том же тёмном окошке ~3с
+  const [dictErr, setDictErr] = useState("");
+  const dictErrSeq = useRef(0);
+  const flashDictErr = m => {
+    const n = ++dictErrSeq.current;
+    setDictErr(m);
+    setTimeout(() => {
+      if (dictErrSeq.current === n) setDictErr("");
+    }, 3000);
+  };
   // скелетон-карточка в целевой колонке: пока диктуем и идёт
   // распознавание/постановка (быстрый режим) — видно, что карточка
   // вот-вот появится; при ошибке пропадает, при ок — подменяется
@@ -3110,14 +3120,14 @@ export default function App() {
         body: wav })).json();
       const txt = cleanDictText((d.text || "").trim());
       if (!d.ok || !txt) {
-        setToast(d.ok ? "Ничего не распознано"
-                      : "STT: " + (d.error || "?"));
+        flashDictErr(d.ok ? "Ничего не распознано"
+                          : "STT: " + (d.error || "?"));
         setDictSkel(null);
       } else if (r.target.kind === "note") {
         const a = await post("/api/task/append",
                              { stem: r.target.stem, text: txt });
-        setToast(a.ok ? "Дописано в заметку"
-                      : "append: " + (a.error || "?"));
+        if (a.ok) setToast("Дописано в заметку");
+        else flashDictErr("append: " + (a.error || "?"));
         loadTasks();
       } else if (effFast) {
         // тогл быстрого могли включить уже после начала записи —
@@ -3128,9 +3138,9 @@ export default function App() {
           text: txt, topic: r.target.key,
           ...(r.target.mode === "say" ? { mode: "say" } : {}),
           ...(r.target.mode === "ask" ? { mode: "ask" } : {}) });
-        setToast(a.ok ? "Задача поставлена"
-                      : "Ошибка: " + (a.error || "?"));
-        if (a.ok) kickEnd(r.target.key);
+        if (a.ok) { setToast("Задача поставлена");
+                    kickEnd(r.target.key); }
+        else flashDictErr("Ошибка: " + (a.error || "?"));
         // скелетон живёт до прихода настоящей карточки; при ошибке
         // просто гасим — toast выше объяснил
         await loadTasks();
@@ -3140,7 +3150,7 @@ export default function App() {
         setCompInj(c => ({ text: txt, n: c.n + 1 }));
         document.getElementById("composer-input")?.focus();
       }
-    } catch (e) { setToast("STT сеть: " + e); setDictSkel(null); }
+    } catch (e) { flashDictErr("STT сеть: " + e); setDictSkel(null); }
     setDictProc(null);
   };
   const startDict = async target => {
@@ -3162,12 +3172,12 @@ export default function App() {
         clock: setInterval(() => setDictInfo(
           new Date(Date.now() - t0).toISOString().substr(14, 5)), 250),
         timer: setTimeout(stopDict, 300000) };
-      setDict(target); setDictInfo("00:00");
+      setDict(target); setDictInfo("00:00"); setDictErr("");
       // быстрый режим + диктовка из колонки → задача ляжет в неё:
       // скелетон-карточка сразу показывает «процесс идёт»
       if (target.kind === "col" && effFast) setDictSkel(target.key);
     } catch (e) {
-      setToast("Микрофон: " + e);
+      flashDictErr("Микрофон: " + e);
       setDict(null); setNoteSel(null); setDictSkel(null);
     }
   };
@@ -4125,31 +4135,40 @@ export default function App() {
                     if (d.ok) setMode(m);
                   }).catch(() => setToast("Сеть: не сохранил режим"))} />}
 
-      {(dict || dictProc) && (
+      {/* тёмное всплывающее окошко диктовки — по центру снизу,
+          в стиле тоста «Задача поставлена»: запись (красная точка +
+          таймер + стоп) → «идёт распознавание…» (спиннер, живёт до
+          конца обработки) → ошибка тем же окном ~3с; иначе пропадает */}
+      {(dict || dictProc || dictErr) && (
         <Paper elevation={0} sx={{
           position: "fixed", left: "50%", transform: "translateX(-50%)",
-          bottom: { xs: 150, md: 130 }, zIndex: 30, px: 1.6, py: 0.7,
-          borderRadius: "12px", display: "flex", alignItems: "center",
-          gap: 1, border: "1px solid", borderColor: "divider",
-          boxShadow: "0 8px 24px rgba(28,33,40,.14)" }}>
-          {dict ? (
+          bottom: { xs: 150, md: 130 }, zIndex: 1400, px: 1.6, py: 0.9,
+          borderRadius: "10px", display: "flex", alignItems: "center",
+          gap: 1, bgcolor: "#1c2128", color: "#fff",
+          boxShadow: "0 8px 32px rgba(28,33,40,.4)" }}>
+          {dict || dictErr ? (
             <Box sx={{ width: 9, height: 9, borderRadius: "50%",
-                       bgcolor: "error.main",
-                       animation: "blink 1s ease-in-out infinite",
-                       "@keyframes blink": { "50%": { opacity: .25 } } }} />
+                       bgcolor: "#ff6f60", flexShrink: 0,
+                       ...(dict ? {
+                         animation: "blink 1s ease-in-out infinite",
+                         "@keyframes blink":
+                           { "50%": { opacity: .25 } } } : {}) }} />
           ) : (
             <CircularProgress size={13} thickness={6}
-                              sx={{ color: "info.main" }} />
+                              sx={{ color: "#fff" }} />
           )}
-          <Typography variant="body2" sx={{ fontSize: 13 }}>
+          <Typography variant="body2"
+                      sx={{ fontSize: 13,
+                            color: dictErr ? "#ffb4ac" : "#fff" }}>
             {dict
               ? <>{dictInfo || "00:00"} — {dict.kind === "note"
                   ? "диктую в заметку" : "диктую в колонку"}</>
-              : "идёт распознавание…"}
+              : dictErr || "идёт распознавание…"}
           </Typography>
           {dict &&
-            <Button size="small" color="error" onClick={stopDict}
-                    sx={{ textTransform: "none", fontSize: 12 }}>
+            <Button size="small" onClick={stopDict}
+                    sx={{ textTransform: "none", fontSize: 12,
+                          color: "#ff9b94" }}>
               ■ стоп
             </Button>}
         </Paper>)}
