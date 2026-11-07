@@ -477,6 +477,10 @@ def enqueue_task(text: str, chat_id: int | None = None,
     bot = getattr(_tg_tls, "token", "") or \
         (kv_get(f"tg_bot:{chat_id}") if chat_id else "") \
         or us_get(author, "telegram.bot_token")
+    if chat_id:
+        kv_set(f"tg_user:{chat_id}", author)
+        if bot:
+            kv_set(f"tg_bot:{chat_id}", bot)
     _insert_task(stem, text, source, proj, chat_id, time.time(), model,
                  rmode, author, bot,
                  instr=_instr_block(author, proj, topic_id),
@@ -1384,10 +1388,14 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
             log(f"callback error: {e}")
         return
 
-    msg = upd.get("message") or upd.get("edited_message") or {}
+    msg = upd.get("message") or upd.get("edited_message") or \
+          upd.get("channel_post") or upd.get("edited_channel_post") or {}
     chat_id = (msg.get("chat") or {}).get("id")
     thread_id = msg.get("message_thread_id")
     sender = (msg.get("from") or {}).get("username", "?")
+    if (msg.get("from") or {}).get("is_bot"):
+        log(f"update from bot @{sender} ignored")
+        return
     if not chat_id:
         log(f"update ignored (no chat): {json.dumps(upd)[:200]}")
         return

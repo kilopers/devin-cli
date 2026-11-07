@@ -540,6 +540,7 @@ def _handle_ctx(upd: dict, uid: str | None, token: str) -> None:
     от него) + привязка чата к юзеру/боту в kv для асинхронных ответов."""
     _tg_tls.token = token or ""
     msg = upd.get("message") or upd.get("edited_message") or \
+        upd.get("channel_post") or upd.get("edited_channel_post") or \
         (upd.get("callback_query") or {}).get("message") or {}
     _tg_tls.thread = msg.get("message_thread_id")
     handle_update(upd, actor=uid)
