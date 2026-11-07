@@ -114,19 +114,30 @@ def _sched_fire(sc: dict) -> str:
     return stem
 
 
-def _sched_autoclean(sched_id: int, keep_stem: str) -> None:
-    """Опция «удалять предыдущую»: новый прогон завершился УСПЕШНО —
-    стираем карточки прошлых прогонов этого расписания (done/note),
-    в колонке остаётся только последний запуск. При падении нового
-    прогона вызова нет — предыдущая хорошая карточка сохраняется.
-    Вызов — из run_task."""
+def _sched_autoclean(sched_id: int, keep_stem: str,
+                     ok: bool) -> None:
+    """Опция «удалять предыдущую». Вызов — из run_task по завершении
+    прогона. Успех (`ok`) — стираем ВСЕ карточки прошлых прогонов
+    серии (done/note), в колонке остаётся только свежий результат.
+    Падение — предыдущая хорошая карточка сохраняется, но прошлые
+    УПАВШИЕ прогоны чистим: в серии падений в колонке не копится
+    бесконечная пачка ошибок — остаётся последняя хорошая + свежая
+    упавшая."""
     sc = db_query("SELECT autoclean FROM task_schedules WHERE id=%s",
                   (sched_id,))
     if not sc or not sc[0]["autoclean"]:
         return
-    rows = db_query("SELECT stem FROM tasks WHERE sched_id=%s"
-                    " AND stem<>%s AND status IN ('done','note')",
-                    (sched_id, keep_stem))
+    if ok:
+        rows = db_query("SELECT stem FROM tasks WHERE sched_id=%s"
+                        " AND stem<>%s AND status IN ('done','note')",
+                        (sched_id, keep_stem))
+    else:
+        rows = db_query("SELECT stem FROM tasks WHERE sched_id=%s"
+                        " AND stem<>%s AND status='done'"
+                        " AND task_status IS NOT NULL"
+                        " AND task_status<>''"
+                        " AND task_status NOT LIKE '%exit code: 0%'",
+                        (sched_id, keep_stem))
     for r in rows:
         drop_failed_task(r["stem"])
     if rows:
