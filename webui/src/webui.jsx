@@ -1909,7 +1909,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       onDict, dictOn, dictBusy, onStats, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
                       collapsed, onCollapse, full, onFull, chat,
-                      onReset, kick }) {
+                      onReset, kick, colKey }) {
   const [menu, setMenu] = useState(null);
   // чат-колонка: следим за прокруткой треда — при уходе от низа
   // показываем плавающую стрелку «к последнему сообщению»
@@ -1938,7 +1938,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
   }, [kick]);
   const toEnd = () => chatToEnd(bodyRef.current, true);
   return (
-    <Paper variant="outlined" sx={{ position: "relative",
+    <Paper variant="outlined" data-colkey={colKey}
+      sx={{ position: "relative",
       width: collapsed ? { xs: 36, md: 38 }
              : full ? "100%"
              : { xs: "82vw", sm: 300, md: 320 },
@@ -2787,9 +2788,11 @@ export default function App() {
 
   const selectProject = useCallback(p => {
     setProject(p); projRef.current = p;
-    // тема проекта восстанавливается — выбор живёт в localStorage
+    // тема проекта восстанавливается — локальный кэш мгновенно,
+    // серверный us:<u>.seltopic:<проект> подтянется настройками
     const tsel = loadTopicMap()[p] || "main";
     setTopicSel(tsel); topicRef.current = tsel;
+    if (tsel !== "main") needTopicScroll.current = true;
     setTopics([]); topicsLoaded.current = false;
     if (multiMode)
       post("/api/project", { project: p })
@@ -2808,11 +2811,40 @@ export default function App() {
   }, [multiMode, loadTasks, wsmap, wsInfo]);
 
   // целевая тема: клик по колонке канбана решает, куда упадут новые
-  // задачи; лента общая — перезагружать её не нужно
+  // задачи; лента общая — перезагружать её не нужно. Выбор пишется
+  // и на сервер (us:<u>.seltopic:<проект>) — одинаков на всех
+  // устройствах и переживает чистку localStorage (v2.0.16)
+  const pushTopicSel = v =>
+    post("/api/project/settings",
+         { project: projRef.current, seltopic: v || "main" })
+      .catch(() => {});
   const selectTopic = v => {
     setTopicSel(v); topicRef.current = v;
     saveTopicSel(projRef.current, v);
+    pushTopicSel(v);
   };
+  // доска и флаг «докрутить до восстановленной темы»: после
+  // перезагрузки/смены проекта канбан открывается с первой колонки —
+  // прокручиваем горизонтально до целевой (однократно на восстановление)
+  const boardRef = useRef(null);
+  const needTopicScroll = useRef(false);
+  useEffect(() => {
+    if (!needTopicScroll.current) return;
+    const b = boardRef.current;
+    if (!b) return;
+    // целевая скрыта развёрнутой другой колонкой — крутить некуда
+    if (fullKey && fullKey !== String(topicSel)) {
+      needTopicScroll.current = false; return; }
+    const el = b.querySelector(
+      `[data-colkey="${CSS.escape(String(topicSel))}"]`);
+    if (!el) return;  // колонка ещё не отрендерилась — ждём след. рендер
+    needTopicScroll.current = false;
+    const cs = getComputedStyle(b);
+    b.scrollLeft += el.getBoundingClientRect().left
+                  - b.getBoundingClientRect().left
+                  - (parseFloat(cs.borderLeftWidth) || 0)
+                  - (parseFloat(cs.paddingLeft) || 0);
+  });
   // «сразу к низу»: отправка сообщения в чат-колонку плавно крутит
   // её тред к концу сразу (кик), не дожидаясь прихода пузыря по
   // поллингу; сам пузырь потом доскролливает ChatEnd-ом
@@ -3107,6 +3139,15 @@ export default function App() {
         if (d.ok && typeof d.colfull === "string") {
           const v = d.colfull || null;
           setColFull(v); saveColFull(project, v);
+        }
+        // серверная целевая тема важнее локального кэша — одно
+        // состояние на всех устройствах (v2.0.16); пустое — значит
+        // на сервере ещё не выбирали, оставляем локальный выбор
+        if (d.ok && d.seltopic) {
+          const v = String(d.seltopic);
+          setTopicSel(v); topicRef.current = v;
+          saveTopicSel(project, v);
+          if (v !== "main") needTopicScroll.current = true;
         }
       })
       .catch(() => {});
@@ -3695,7 +3736,8 @@ export default function App() {
                 листается влево-вправо (на мобильной — со снапом);
                 «целевая» колонка (клик по заголовку) — куда падают
                 новые задачи из композера */}
-            <Box sx={{ display: "flex", gap: 1.2, alignItems: "stretch",
+            <Box ref={boardRef}
+                 sx={{ display: "flex", gap: 1.2, alignItems: "stretch",
                        overflowX: "auto",
                        px: { xs: 0.6, md: 0 },
                        // доска занимает ровно оставшуюся высоту
@@ -3722,7 +3764,7 @@ export default function App() {
                     ? () => moveTopic(c.key, "right") : null;
                   if (c.key === "main")
                     return (
-                      <TopicColumn key="main" sess={false}
+                      <TopicColumn key="main" colKey="main" sess={false}
                         name={c.name}
                         count={mainItems.length}
                         sel={topicSel === "main"}
@@ -3769,7 +3811,7 @@ export default function App() {
                     t => String(t.id) === c.key);
                   if (!tp) return null;
                   return (
-                    <TopicColumn key={tp.id}
+                    <TopicColumn key={tp.id} colKey={String(tp.id)}
                       name={tp.name || `тема #${tp.id}`}
                       sess={tp.has_session}
                       count={byTopic(tp.id).length}
@@ -3829,7 +3871,7 @@ export default function App() {
               {orphanTids
                 .filter(tid => !fullKey || String(tid) === fullKey)
                 .map(tid =>
-                <TopicColumn key={"t" + tid}
+                <TopicColumn key={"t" + tid} colKey={String(tid)}
                   name={"тема #" + tid} sess={false}
                   count={byTopic(tid).length}
                   sel={topicSel === String(tid)} accent={accent}

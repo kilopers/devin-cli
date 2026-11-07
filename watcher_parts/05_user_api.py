@@ -59,6 +59,8 @@ def _api_project_settings_get():
                     "colhide": colhide,
                     "colfull": us_get(_current_user(),
                                       f"colfull:{p}") or "",
+                    "seltopic": us_get(_current_user(),
+                                       f"seltopic:{p}") or "",
                     "model": pj_get(p, "model"),
                     "agent": pj_get(p, "agent"),
                     "reply_mode": pj_get(p, "reply_mode"),
@@ -128,6 +130,14 @@ def _api_project_settings_set():
     if "colfull" in body:
         us_set(_current_user(), f"colfull:{p}",
                str(body.get("colfull") or "")[:20])
+    # целевая колонка канбана — «main» или id темы (v2.0.16),
+    # синхронизируется между устройствами
+    if "seltopic" in body:
+        v = str(body.get("seltopic") or "")[:20]
+        if v and v != "main" and not v.isdigit():
+            return jsonify({"ok": False,
+                            "error": "seltopic: «main» или id темы"}), 400
+        us_set(_current_user(), f"seltopic:{p}", v)
     return jsonify({"ok": True})
 
 
