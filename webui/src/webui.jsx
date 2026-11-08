@@ -1979,8 +1979,8 @@ function SessDlg({ dlg, project, onClose, reload, toast, pend }) {
   }, [key, project]);
   const clear = () => pend(() => post("/api/topics",
         { action: "sess_clear", project, id: key })).then(d => {
-    if (d?.ok) { toast?.("Сессия очищена — следующая задача "
-                         "начнёт новую"); onClose(); reload?.(); }
+    if (d?.ok) { toast?.("Сессия очищена — следующая задача начнёт "
+                         + "новую"); onClose(); reload?.(); }
     else toast?.(d?.error || "ошибка"); });
   const rows = info && info !== "err" ? [
     ["Сессия", info.sid || "не закреплена"],
