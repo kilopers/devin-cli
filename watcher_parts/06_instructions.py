@@ -386,6 +386,7 @@ def _api_topics_get():
                     # их чипами рисует шапка колонки
                     "main": dict(_topic_defaults(p, None),
                                  name=_main_col_name(p),
+                                 has_session=bool(kv_get(f"tsess:{p}")),
                                  sort=(_main_col_json(p).get("sort")
                                        or 0),
                                  tpls=tpls.get(None) or [],
@@ -393,6 +394,117 @@ def _api_topics_get():
                                  scheds=scheds.get(None) or 0,
                                  eff=_eff_topic_defaults(p, None)),
                     "topics": out})
+
+
+def _sess_ago(ts) -> str:
+    """'N мин/ч/д назад' по unix-времени активности сессии."""
+    if not ts:
+        return ""
+    d = int(time.time() - ts)
+    if d < 60:
+        return "только что"
+    if d < 3600:
+        return f"{d // 60} мин назад"
+    if d < 86400:
+        return f"{d // 3600} ч назад"
+    return f"{d // 86400} дн назад"
+
+
+def _devin_sess_list(workdir) -> list:
+    """`devin list --format json` в workdir, кэш в kv на 60с —
+    диалог открывается редко, но и спам subprocess'ами не нужен."""
+    key = f"sesslist:{workdir}"
+    try:
+        c = json.loads(kv_get(key) or "{}")
+        if time.time() - c.get("at", 0) < 60:
+            return c.get("list") or []
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(
+            ["devin", "list", "--format", "json"], cwd=str(workdir),
+            capture_output=True, text=True, timeout=60)
+        lst = json.loads(out.stdout or "[]")
+        kv_set(key, json.dumps({"at": time.time(), "list": lst}))
+        return lst
+    except Exception as e:
+        log(f"devin list in {workdir} failed: {e}")
+        return []
+
+
+@app.get("/api/topic/session")
+@login_required
+def _api_topic_session():
+    """Инфо закреплённой сессии колонки: id, тип привязки, title и
+    активность из devin list / claude-транскрипта, итоги прогонов
+    темы из topic_stats."""
+    p = (request.args.get("project") or "").strip()
+    tv = (request.args.get("topic") or "main").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    tid = None if tv in ("", "main") else (
+        int(tv) if tv.isdigit() else -1)
+    if tid == -1:
+        return jsonify({"ok": False, "error": "нет такой темы"}), 404
+    row = db_query("SELECT name, session_id, own_session,"
+                   " session_topic_id FROM topics"
+                   " WHERE id=%s AND project=%s", (tid, p)) if tid else []
+    if tid and not row:
+        return jsonify({"ok": False, "error": "нет такой темы"}), 404
+    kind, sid, attach_name = "own", None, None
+    tname = _main_col_name(p) if tid is None else (
+        (row[0]["name"] or f"тема #{tid}"))
+    if tid:
+        if row[0]["own_session"]:
+            sid = row[0]["session_id"]
+        elif row[0]["session_topic_id"]:
+            kind = "attached"
+            t2 = db_query("SELECT name, session_id FROM topics"
+                          " WHERE id=%s",
+                          (row[0]["session_topic_id"],))
+            attach_name = ((t2[0]["name"] or
+                            f"тема #{row[0]['session_topic_id']}")
+                           if t2 else f"тема #{row[0]['session_topic_id']}")
+            sid = t2[0]["session_id"] if t2 else None
+        else:
+            kind = "shared"
+            sid = kv_get(f"tsess:{p}")
+    else:
+        sid = kv_get(f"tsess:{p}")
+    info = {"sid": sid, "kind": kind, "attach_name": attach_name,
+            "topic": tname}
+    title, ago, alive = None, None, None
+    if sid:
+        workdir = (PROJECTS_ROOT / p) if (
+            PROJECTS_ROOT and (PROJECTS_ROOT / p).is_dir()) else WORKDIR
+        hit = next((s for s in _devin_sess_list(workdir)
+                    if s.get("id") == sid), None)
+        if hit:
+            alive, title = True, hit.get("title")
+            ago = (hit.get("last_activity_ago")
+                   or _sess_ago(hit.get("last_activity_at")))
+        else:
+            try:
+                files = list((Path.home() / ".claude" / "projects")
+                             .rglob(f"{sid}.jsonl"))
+            except Exception:
+                files = []
+            if files:
+                alive = True
+                ago = _sess_ago(max(f.stat().st_mtime for f in files))
+            else:
+                alive = False
+    info.update(title=title, ago=ago, alive=alive)
+    cond = "topic_id IS NULL" if tid is None else "topic_id=%s"
+    args = (p,) if tid is None else (p, tid)
+    a = (db_query(f"SELECT COUNT(*) n,"
+                  f" SUM(prompt_tok+cached_tok+completion_tok) tok,"
+                  f" SUM(cost) cost, SUM(duration) dur"
+                  f" FROM topic_stats WHERE project=%s AND {cond}",
+                  args) or [{}])[0]
+    info.update(runs=a.get("n") or 0, tokens=a.get("tok") or 0,
+                cost=a.get("cost") or 0, duration=a.get("dur") or 0)
+    return jsonify({"ok": True, **info})
 
 
 @app.post("/api/topic/tpl")
@@ -651,6 +763,48 @@ def _api_topics_set():
             drop_failed_task(r["stem"])
         db_exec("UPDATE topics SET session_id=NULL, updated=%s"
                 " WHERE id=%s", (time.time(), tid))
+        return jsonify({"ok": True})
+    if act == "sess_clear":
+        # «очистить сессию»: снимаем пин — следующая задача темы
+        # стартует новую сессию; карточки и тема не трогаются, старая
+        # сессия-сирота уйдёт в ночной sess_gc (≤5 дней)
+        tv = str(b.get("id") or "main")
+        tid2 = None if tv in ("", "main") else (
+            int(tv) if tv.isdigit() else -1)
+        if tid2 == -1 or (tid2 is not None and not db_query(
+                "SELECT 1 FROM topics WHERE id=%s AND project=%s",
+                (tid2, p))):
+            return jsonify({"ok": False,
+                            "error": "нет такой темы"}), 404
+        cond = "topic_id IS NULL" if tid2 is None else "topic_id=%s"
+        args = (p,) if tid2 is None else (p, tid2)
+        act_rows = db_query(
+            f"SELECT stem FROM tasks WHERE project=%s AND {cond}"
+            " AND status IN ('queued','running') LIMIT 4", args)
+        if act_rows:
+            names = ", ".join(_task_name(r["stem"])
+                              for r in act_rows[:3])
+            return jsonify({"ok": False,
+                            "error": "очистить нельзя — в теме "
+                                     "выполняется или ждёт очереди "
+                                     f"задача: {names}. "
+                                     "Повторите после её завершения"}), 409
+        if tid2 is None:
+            db_exec("DELETE FROM kv WHERE k=%s", (f"tsess:{p}",))
+            return jsonify({"ok": True})
+        row = db_query("SELECT own_session, session_topic_id"
+                       " FROM topics WHERE id=%s", (tid2,))
+        if not row[0]["own_session"] and row[0]["session_topic_id"]:
+            return jsonify({"ok": False,
+                            "error": "тема прицеплена к чужой "
+                                     "сессии — очищайте у целевой "
+                                     "темы"}), 409
+        if not row[0]["own_session"]:
+            # общая сессия проекта — тот же пин, что у «Главной»
+            db_exec("DELETE FROM kv WHERE k=%s", (f"tsess:{p}",))
+        else:
+            db_exec("UPDATE topics SET session_id=NULL, updated=%s"
+                    " WHERE id=%s", (time.time(), tid2))
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "bad action"}), 400
 

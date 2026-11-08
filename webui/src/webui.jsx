@@ -1964,12 +1964,92 @@ const boostColor = hex => {
 // — новые задачи падают в неё (рамка — яркая версия цвета темы).
 // «Главная» не удаляется, но переименовывается — имя в «⚙ Настройки»
 // (ключ name в pj:<p>.tmain).
+function SessDlg({ dlg, project, onClose, reload, toast, pend }) {
+  const [info, setInfo] = useState(null);   // карточка сессии | "err"
+  const [ask, setAsk] = useState(false);
+  const key = dlg?.key;
+  useEffect(() => {
+    setAsk(false);
+    if (!key) return;
+    setInfo(null);
+    apiJson("/api/topic/session?project=" + encodeURIComponent(project)
+            + "&topic=" + encodeURIComponent(key))
+      .then(d => setInfo(d.ok ? d : "err"))
+      .catch(() => setInfo("err"));
+  }, [key, project]);
+  const clear = () => pend(() => post("/api/topics",
+        { action: "sess_clear", project, id: key })).then(d => {
+    if (d?.ok) { toast?.("Сессия очищена — следующая задача "
+                         "начнёт новую"); onClose(); reload?.(); }
+    else toast?.(d?.error || "ошибка"); });
+  const rows = info && info !== "err" ? [
+    ["Сессия", info.sid || "не закреплена"],
+    ["Тип", info.kind === "attached"
+            ? "прицеплена к «" + info.attach_name + "»"
+            : info.kind === "shared" ? "общая сессия проекта"
+            : "своя"],
+    info.title ? ["Название", info.title] : null,
+    info.ago ? ["Активность", info.ago] : null,
+    info.sid ? ["Статус", info.alive === false
+                ? "не найдена у движка — следующая задача начнёт новую"
+                : "живая, продолжится"] : null,
+    ["Прогонов", String(info.runs || 0)],
+    info.runs ? ["Токены", Number(info.tokens || 0).toLocaleString()] : null,
+    info.runs ? ["Стоимость", "$" + Number(info.cost || 0).toFixed(3)] : null,
+    info.runs ? ["Время суммарно", Math.round((info.duration || 0) / 60) + " мин"] : null,
+  ].filter(Boolean) : [];
+  return (
+    <Dialog open={!!dlg} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+        🔁 Сессия — {dlg?.name}
+      </DialogTitle>
+      <DialogContent sx={{ pt: 1 }}>
+        {info === "err" &&
+          <Typography fontSize={13} color="error">
+            не удалось загрузить</Typography>}
+        {!info &&
+          <Typography fontSize={13} color="text.secondary">
+            загрузка…</Typography>}
+        {rows.map(([k, v]) => (
+          <Box key={k} sx={{ display: "flex", gap: 1, py: 0.25 }}>
+            <Typography fontSize={13} color="text.secondary"
+                        sx={{ minWidth: 90 }}>{k}</Typography>
+            <Typography fontSize={13}
+                        sx={{ fontFamily: k === "Сессия" ? "monospace" : "inherit",
+                              wordBreak: "break-all" }}>{v}</Typography>
+          </Box>))}
+        {info && info !== "err" && !info.sid &&
+          <Typography fontSize={12} color="text.secondary" sx={{ mt: 1 }}>
+            Сессия появится после первой выполненной задачи темы.
+          </Typography>}
+      </DialogContent>
+      <DialogActions>
+        {info && info !== "err" && info.sid &&
+          (ask
+            ? <>
+                <Button size="small" color="error" variant="contained"
+                        onClick={clear} disableElevation>
+                  точно очистить?
+                </Button>
+                <Button size="small" onClick={() => setAsk(false)}>
+                  назад
+                </Button>
+              </>
+            : <Button size="small" color="error"
+                      onClick={() => setAsk(true)}>
+                Очистить сессию
+              </Button>)}
+        <Button size="small" onClick={onClose}>закрыть</Button>
+      </DialogActions>
+    </Dialog>);
+}
+
 function TopicColumn({ name, sess, count, sel, accent, color, tset,
                       eff, onSelect, onNewTask, onDelete,
                       onSettings, onMoveL, onMoveR,
                       empty, children, more, busy, onMore,
                       onBodyOver, onBodyDrop, loading,
-                      onDict, dictOn, dictBusy, onStats, pending,
+                      onDict, dictOn, dictBusy, onStats, onSess, pending,
                       skel, tpls, onTplRun, onTplDel, onTplNew,
                       collapsed, onCollapse, full, onFull, chat,
                       onReset, kick, colKey }) {
@@ -2078,11 +2158,18 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                      : <OpenInFullIcon sx={{ fontSize: 14 }} />}
             </IconButton>
           </Tooltip>}
-        {sess &&
-          <Tooltip title="закреплённая devin-сессия — следующая задача темы продолжит её">
-            <Typography component="span" sx={{ fontSize: 12,
-                        lineHeight: 1, flexShrink: 0 }}>🔁</Typography>
-          </Tooltip>}
+        {sess && (onSess
+          ? <Tooltip title="сессия темы — информация и очистка">
+              <IconButton size="small" sx={{ p: 0, flexShrink: 0 }}
+                onClick={e => { e.stopPropagation(); onSess(); }}>
+                <Typography component="span" sx={{ fontSize: 12,
+                            lineHeight: 1 }}>🔁</Typography>
+              </IconButton>
+            </Tooltip>
+          : <Tooltip title="закреплённая сессия — следующая задача темы продолжит её">
+              <Typography component="span" sx={{ fontSize: 12,
+                          lineHeight: 1, flexShrink: 0 }}>🔁</Typography>
+            </Tooltip>)}
         <Chip size="small" label={count}
               sx={{ height: 17, fontSize: 10.5, flexShrink: 0 }} />
         {(onDelete || onSettings || onMoveL || onMoveR || onStats ||
@@ -2107,6 +2194,11 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <MenuItem dense sx={{ fontSize: 13 }}
                   onClick={() => { setMenu(null); onTplNew(); }}>
                   🔖 Новый шаблон
+                </MenuItem>}
+              {onSess &&
+                <MenuItem dense sx={{ fontSize: 13 }}
+                  onClick={() => { setMenu(null); onSess(); }}>
+                  🔁 Сессия
                 </MenuItem>}
               {chat && onReset &&
                 <MenuItem dense sx={{ fontSize: 13 }}
@@ -2480,6 +2572,7 @@ export default function App() {
   const [confirm, setConfirm] = useState(null);
   // диалог «📊 Статистика» темы: {key: 'main'|topic_id, name}
   const [statDlg, setStatDlg] = useState(null);
+  const [sessDlg, setSessDlg] = useState(null);   // {key, name} — диалог сессии темы
   // диалог «⏱ Расписание» колонки: {key: 'main'|topic_id, name}
   // drawer keeps its scroll position across re-renders (selecting
   // mode/model inside it used to yank the list back to the top)
@@ -3858,7 +3951,11 @@ export default function App() {
                     ? () => moveTopic(c.key, "right") : null;
                   if (c.key === "main")
                     return (
-                      <TopicColumn key="main" colKey="main" sess={false}
+                      <TopicColumn key="main" colKey="main"
+                        sess={!!mainDef.has_session}
+                        onSess={() => setSessDlg(
+                          { key: "main",
+                            name: "⭐ " + (mainDef.name || "Главная") })}
                         name={c.name}
                         count={mainItems.length}
                         sel={topicSel === "main"}
@@ -3925,6 +4022,9 @@ export default function App() {
                                 && dictProc?.key === String(tp.id)}
                       skel={dictSkel === String(tp.id)}
                       onStats={() => setStatDlg(
+                        { key: String(tp.id),
+                          name: tp.name || `тема #${tp.id}` })}
+                      onSess={() => setSessDlg(
                         { key: String(tp.id),
                           name: tp.name || `тема #${tp.id}` })}
                       onTplNew={tp.chat ? null
@@ -4190,6 +4290,11 @@ export default function App() {
       <TopicStatsDlg dlg={statDlg} project={project}
                      onClose={() => setStatDlg(null)}
                      toast={setToast} />
+      <SessDlg dlg={sessDlg} project={project}
+               onClose={() => setSessDlg(null)}
+               reload={loadTasks}
+               toast={setToast}
+               pend={fn => pendRun("col:" + sessDlg?.key, fn)} />
       <TopicSettings project={project} dlg={tSetDlg} topics={topics}
                      onClose={() => setTSetDlg(null)}
                      onSaved={id => { loadTasks();
