@@ -2302,6 +2302,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             [eff.model ? "М: " + eff.model : null,
              tset?.model, "модель"],
             [eff.show_out === "1" ? "👁 ответ в карточке" : null,
+             tset?.show_out, "ответ в карточке"],
             [eff.fast === "1" ? "⚡ быстрый" : "обычный",
              tset?.fast, "быстрый режим — голос сразу в задачу"],
           ].filter(([label]) => label).map(([label, own, hint]) => (
