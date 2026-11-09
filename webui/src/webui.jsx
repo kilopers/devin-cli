@@ -1602,6 +1602,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
 // страницы (проект/цвет/иконка подтягиваются целиком)
 function ProjectTabs({ projects, tabs, current, onTab, titles, onClose, onAdd,
                        wsmap, wsList, onWs, onSettings, accent }) {
+  const pname = p => (titles && titles[p]) || p;
   const [menu, setMenu] = useState(null);
   const [wsMenu, setWsMenu] = useState(null);
   const wsColor = p => {
