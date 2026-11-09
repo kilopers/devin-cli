@@ -306,6 +306,9 @@ def init_db() -> None:
                      # «показывать ответ в карточке» — превью done-
                      # задачи рисует output вместо prompt
                      ("show_out", "show_out VARCHAR(4) NULL"),
+                     # «скрыть подробности» — не рисовать ряд тегов
+                     # eff-настроек под шапкой колонки
+                     ("hide_tags", "hide_tags VARCHAR(4) NULL"),
                      # чат-колонка (диалог): задаётся при создании,
                      # пузыри вместо карточек, своя сессия
                      ("chat", "chat TINYINT(1) NOT NULL DEFAULT 0")):
@@ -533,7 +536,7 @@ def task_row(stem: str) -> dict | None:
 
 
 TOPIC_SET_KEYS = ("color", "model", "reply_mode", "auto_commit", "fast",
-                  "agent", "show_out")
+                  "agent", "show_out", "hide_tags")
 
 
 def _topic_defaults(project: str, topic_id: int | None) -> dict:
@@ -544,7 +547,8 @@ def _topic_defaults(project: str, topic_id: int | None) -> dict:
         return {}
     if topic_id:
         r = db_query("SELECT color, model, reply_mode, auto_commit, fast,"
-                     " agent, show_out FROM topics WHERE id=%s AND project=%s",
+                     " agent, show_out, hide_tags FROM topics"
+                     " WHERE id=%s AND project=%s",
                      (topic_id, project))
         if not r:
             return {}
@@ -578,6 +582,8 @@ def _eff_topic_defaults(project: str | None, topic_id: int | None,
         "agent": td.get("agent") or pj("agent") or "",
         # показ ответа в карточке — чисто колоночный флаг, дефолт выкл
         "show_out": td.get("show_out") or "0",
+        # скрыть ряд тегов eff-настроек в шапке — тоже колоночный
+        "hide_tags": td.get("hide_tags") or "0",
     }
 
 

@@ -33,6 +33,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   const [ac, setAc] = useState("");
   const [fast, setFast] = useState("");
   const [showOut, setShowOut] = useState("");
+  const [hideTags, setHideTags] = useState("");
   // чья сессия у темы — только при создании, потом не меняется:
   // "main" — общая сессия проекта (как у «Главной», дефолт),
   // "own" — своя новая, "<id>" — прицепиться к сессии темы
@@ -62,6 +63,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setAc(src.auto_commit || "");
     setFast(src.fast || "");
     setShowOut(src.show_out || "");
+    setHideTags(src.hide_tags || "");
     setSess("main");
     setChat(false);
     setInstrSel(new Set(src.instrs || []));
@@ -102,6 +104,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     try {
       const body = { project, color, model, agent, reply_mode: mode,
                      auto_commit: ac, fast, show_out: showOut,
+                     hide_tags: hideTags,
                      instrs: [...instrSel]
                        .filter(id => !instrProj.has(id)) };
       const d = await post("/api/topics",
@@ -186,6 +189,12 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                          e.target.checked ? "1" : "")} />}
               label={"📄 Ответ в карточке — после выполнения " +
                      "превью показывает ответ агента (до ~10 строк)"} />}
+          <FormControlLabel
+            control={<Checkbox checked={hideTags === "1"}
+                     onChange={e => setHideTags(
+                       e.target.checked ? "1" : "")} />}
+            label={"🏷 Скрыть подробности — не показывать ряд тегов " +
+                   "настроек (режим, коммит, модель) под шапкой"} />
           {dlg?.kind === "edit" && dlg.topic?.chat &&
             <Typography variant="caption" color="primary">
               💬 диалог — чат-колонка (тип задаётся при создании)
