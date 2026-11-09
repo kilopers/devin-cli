@@ -1,3 +1,10 @@
+## 2.1.17 — фикс белого экрана (TDZ)
+
+- В TaskCard `isNote` использовалась в `showAnswer` (v2.1.13), но
+  объявлялась на ~200 строк ниже → ReferenceError «Cannot access
+  before initialization» при рендере доски. Объявление поднято
+  к promptShown.
+
 ## 2.1.16 — фикс сборки веб-UI
 
 - Сломанный элемент массива чипов в шапке колонки (webui.jsx, въехал

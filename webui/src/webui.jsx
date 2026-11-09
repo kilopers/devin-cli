@@ -622,6 +622,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
       .then(d => { if (d.ok) setFull(d.prompt); })
       .catch(() => {});
   const promptShown = full !== null ? full : t.prompt;
+  const isNote = t.status === "note";
   // «ответ в карточке» — настройка колонки: у done-задачи превью
   // рисует последнюю секцию output (продолжения дописываются
   // через "---"), вся история — в модалке 📄
@@ -847,8 +848,9 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // карточка-заметка («сказать», status=note): не уходит Devin, клик
   // по карточке «нажимает» её — композер переходит в режим заметки и
   // дописывает текст в неё. В работу заметка уходит только переносом
-  // в колонку уровня «спросить»/«код» (dnd или «переместить»)
-  const isNote = t.status === "note";
+  // в колонку уровня «спросить»/«код» (dnd или «переместить»).
+  // isNote объявлена выше — рядом с promptShown (используется
+  // в showAnswer, v2.1.17: была ниже → TDZ «before initialization»)
   // «✨ оформить» — devin переоформляет текст заметки в markdown:
   // результат падает в output (поллинг привезёт) → кнопка «вариант»
   // открывает превью с «применить». Спиннер держим до смены output
