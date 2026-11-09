@@ -2378,7 +2378,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
             <Box sx={{ display: "flex", gap: 0.5 }}>
             <Button size="small" onClick={onNewTask}
                     sx={{ flex: 1, textTransform: "none", fontSize: 13,
-                          py: 0.6, fontWeight: 600,
+                          py: 0, height: 28, fontWeight: 600,
                           border: "1.5px dashed", borderRadius: "9px",
                           color: btnC, borderColor: btnC,
                           "&:hover": { bgcolor:
@@ -2397,7 +2397,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
                 <span><IconButton size="small" disabled={dictBusy}
                   onClick={e => { e.stopPropagation(); onDict(); }}
                   sx={{ border: "1.5px dashed", borderRadius: "9px",
-                        width: 32, flexShrink: 0,
+                        width: 32, height: 28, flexShrink: 0,
                         color: dictBusy || dictOn ? "error.main" : btnC,
                         borderColor: dictBusy || dictOn
                                      ? "error.main" : btnC }}>
