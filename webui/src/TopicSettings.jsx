@@ -32,6 +32,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
   const [mode, setMode] = useState("");
   const [ac, setAc] = useState("");
   const [fast, setFast] = useState("");
+  const [showOut, setShowOut] = useState("");
   // чья сессия у темы — только при создании, потом не меняется:
   // "main" — общая сессия проекта (как у «Главной», дефолт),
   // "own" — своя новая, "<id>" — прицепиться к сессии темы
@@ -60,6 +61,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setMode(src.reply_mode || "");
     setAc(src.auto_commit || "");
     setFast(src.fast || "");
+    setShowOut(src.show_out || "");
     setSess("main");
     setChat(false);
     setInstrSel(new Set(src.instrs || []));
@@ -99,7 +101,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
     setBusy(true);
     try {
       const body = { project, color, model, agent, reply_mode: mode,
-                     auto_commit: ac, fast,
+                     auto_commit: ac, fast, show_out: showOut,
                      instrs: [...instrSel]
                        .filter(id => !instrProj.has(id)) };
       const d = await post("/api/topics",
@@ -177,6 +179,13 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                   🧵 как у темы «{t.name || "тема #" + t.id}»
                 </MenuItem>))}
             </TextField>}
+          {!chat && !(dlg?.topic?.chat) &&
+            <FormControlLabel
+              control={<Checkbox checked={showOut === "1"}
+                       onChange={e => setShowOut(
+                         e.target.checked ? "1" : "")} />}
+              label={"📄 Ответ в карточке — после выполнения " +
+                     "превью показывает ответ агента (до ~10 строк)"} />}
           {dlg?.kind === "edit" && dlg.topic?.chat &&
             <Typography variant="caption" color="primary">
               💬 диалог — чат-колонка (тип задаётся при создании)

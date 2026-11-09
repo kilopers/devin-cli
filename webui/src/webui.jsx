@@ -601,6 +601,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                onDict, dictOn, dictBusy,
                                                pending, pend, onGone,
                                                mergeSel, onMergeOver,
+                                               showOut,
                                                onMergeDrop,
                                                onMergeLeave }) {
   // свёрнута: ~5 строк задачи; «подробнее» появляется только когда
@@ -621,6 +622,12 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
       .then(d => { if (d.ok) setFull(d.prompt); })
       .catch(() => {});
   const promptShown = full !== null ? full : t.prompt;
+  // «ответ в карточке» — настройка колонки: у done-задачи превью
+  // рисует последнюю секцию output (продолжения дописываются
+  // через "---"), вся история — в модалке 📄
+  const showAnswer = showOut && !isNote && t.status === "done"
+                     && !!(t.output || "").trim();
+  const lastOut = (t.output || "").split(/\n\n---\n\n+/).pop();
   const maybeCut = full === null && (t.prompt || "").length >= 2000;
   // «инфо» — статистика завершённой задачи (tasks.stats + длительность)
   const [info, setInfo] = useState(false);
@@ -1288,6 +1295,25 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             <Markdown text={promptShown} />
           </Box>
           )
+        ) : showAnswer ? (
+        <Box onClick={() => setOpen(o => !o)}
+             sx={{ cursor: "pointer",
+                   ...(!open && { maxHeight: 200, overflow: "hidden" }) }}>
+          {open && (<>
+            <Typography variant="caption"
+              sx={{ display: "block", fontWeight: 600,
+                    color: "text.secondary", mb: 0.5 }}>
+              Задача</Typography>
+            <Typography variant="body2"
+              sx={{ whiteSpace: "pre-wrap", fontSize: 12.5,
+                    lineHeight: 1.45, color: "text.secondary", mb: 1,
+                    display: "-webkit-box", WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: 4, overflow: "hidden" }}>
+              {promptShown}</Typography>
+            <Divider sx={{ mb: 1 }} />
+          </>)}
+          <Markdown text={open ? (t.output || "") : lastOut} />
+        </Box>
         ) : (
         <Typography variant="body2" ref={txtRef}
           onClick={(canExpand || open)
@@ -1468,7 +1494,21 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                 ? <Markdown text={promptShown} />
                 : t.status === "done"
                 ? (t.output
-                    ? <Markdown text={t.output} />
+                    ? (<>
+                        {showOut && (<>
+                          <Typography variant="caption"
+                            sx={{ display: "block", fontWeight: 600,
+                                  color: "text.secondary", mb: 0.5 }}>
+                            Задача</Typography>
+                          <Typography variant="body2"
+                            sx={{ whiteSpace: "pre-wrap", fontSize: 12.5,
+                                  color: "text.secondary", mb: 1.5,
+                                  maxHeight: 120, overflow: "auto" }}>
+                            {promptShown}</Typography>
+                          <Divider sx={{ mb: 1.5 }} />
+                        </>)}
+                        <Markdown text={t.output} />
+                      </>)
                     : <Typography variant="body2" color="text.secondary">
                         вывод пуст — агент ничего не вернул</Typography>)
                 : ((frozenOut ?? t.output)
@@ -2261,6 +2301,7 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
              tset?.auto_commit, "автокоммит после задачи"],
             [eff.model ? "М: " + eff.model : null,
              tset?.model, "модель"],
+            [eff.show_out === "1" ? "👁 ответ в карточке" : null,
             [eff.fast === "1" ? "⚡ быстрый" : "обычный",
              tset?.fast, "быстрый режим — голос сразу в задачу"],
           ].filter(([label]) => label).map(([label, own, hint]) => (
@@ -2914,7 +2955,7 @@ export default function App() {
     }).catch(() => setToast("Сеть: не перенёс карточку"));
   };
   // карточки колонки с пунктирным плейсхолдером в месте вставки
-  const colCards = (list, key) => {
+  const colCards = (list, key, cEff) => {
     const out = [];
     const mark = (
       <Box key="__drop" sx={{
@@ -2925,6 +2966,7 @@ export default function App() {
       if (dropAt?.col === key && dropAt.idx === i) out.push(mark);
       out.push(
         <TaskCard key={t.stem} t={t} hideTopic
+          showOut={cEff?.show_out === "1"}
           sel={noteSel === t.stem || contSel === t.stem}
           onNote={toggleNote} onCont={toggleCont}
           onStop={askStop} onCancel={askCancel}
@@ -4002,7 +4044,7 @@ export default function App() {
                         full={fullKey === "main"}
                         onFull={() => toggleColFull("main")}
                         pending={pendSet.has("col:main")}>
-                        {colCards(mainItems, "main")}
+                        {colCards(mainItems, "main", mainDef.eff)}
                       </TopicColumn>);
                   const tp = topics.find(
                     t => String(t.id) === c.key);
@@ -4062,7 +4104,8 @@ export default function App() {
                       onFull={() => toggleColFull(String(tp.id))}
                       pending={pendSet.has("col:" + tp.id)}>
                       {tp.chat ? chatMsgs(byTopic(tp.id), String(tp.id))
-                               : colCards(byTopic(tp.id), String(tp.id))}
+                               : colCards(byTopic(tp.id), String(tp.id),
+                                          tp.eff)}
                     </TopicColumn>);
                 });
               })()}
@@ -4096,7 +4139,7 @@ export default function App() {
                   full={fullKey === String(tid)}
                   onFull={() => toggleColFull(String(tid))}
                   loading={!booted}>
-                  {colCards(byTopic(tid), String(tid))}
+                  {colCards(byTopic(tid), String(tid), null)}
                 </TopicColumn>)}
               {project && project !== "workspace" && !fullKey &&
                 <Paper variant="outlined" onClick={createTopic}

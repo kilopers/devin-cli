@@ -259,7 +259,7 @@ def _topic_settings_from(b: dict) -> dict:
         st["model"] = (b.get("model") or "").strip()[:80]
     if "reply_mode" in b and (b.get("reply_mode") or "") in ("", "code", "ask", "say", "plan"):
         st["reply_mode"] = (b.get("reply_mode") or "")
-    for k in ("auto_commit", "fast"):
+    for k in ("auto_commit", "fast", "show_out"):
         if k in b and (b.get(k) or "") in ("", "0", "1"):
             st[k] = (b.get(k) or "")
     if "agent" in b and (b.get("agent") or "") in ("",) + tuple(AGENTS):
