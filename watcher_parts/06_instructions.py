@@ -1808,6 +1808,7 @@ def _api_project_add():
     folder = (body.get("folder") or "").strip()
     url = (body.get("url") or "").strip()
     token = (body.get("token") or "").strip()
+    title = (body.get("title") or "").strip()[:120]
     local = bool(body.get("local"))
     if not re.fullmatch(r"[A-Za-z0-9._-]+", folder or ""):
         return jsonify({"ok": False, "error":
@@ -1842,6 +1843,8 @@ def _api_project_add():
                                      or "git init failed"}), 500
         db_exec("INSERT IGNORE INTO project_owner(name, owner)"
                 " VALUES(%s,%s)", (folder, _current_user()))
+        if title:
+            pj_set(folder, "title", title)
         wsel = int(body.get("ws") or 0)
         if wsel in [w["id"] for w in _user_ws(_current_user())]:
             db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"
@@ -1885,6 +1888,8 @@ def _api_project_add():
                         out[-4000:] or "clone failed"}), 500
     db_exec("INSERT IGNORE INTO project_owner(name, owner)"
             " VALUES(%s,%s)", (folder, _current_user()))
+    if title:
+        pj_set(folder, "title", title)
     wsel = int(body.get("ws") or 0)
     if wsel in [w["id"] for w in _user_ws(_current_user())]:
         db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"

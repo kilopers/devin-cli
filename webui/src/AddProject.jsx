@@ -35,10 +35,20 @@ function previewUrl(url, token) {
          `${d.path}.git`;
 }
 
+const TR = { "а":"a","б":"b","в":"v","г":"g","д":"d","е":"e","ё":"yo",
+  "ж":"zh","з":"z","и":"i","й":"y","к":"k","л":"l","м":"m","н":"n",
+  "о":"o","п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f","х":"kh",
+  "ц":"ts","ч":"ch","ш":"sh","щ":"shch","ы":"y","э":"e","ю":"yu","я":"ya" };
+const translit = s => s.toLowerCase().split("")
+  .map(c => TR[c] !== undefined ? TR[c]
+        : /[a-z0-9._-]/.test(c) ? c : /\s/.test(c) ? "_" : "")
+  .join("").replace(/_+/g, "_").replace(/^[-._]+|[-._]+$/g, "");
+
 export default function AddProject({ open, onClose, onAdded,
                                      wsList = [], wsActive = 0,
                                      preset = null }) {
   const [ws, setWs] = useState(wsActive);
+  const [title, setTitle] = useState("");
   const [folder, setFolder] = useState("");
   const folderDirty = useRef(false);        // autofill until user edits
   const [url, setUrl] = useState("");
@@ -75,7 +85,7 @@ export default function AddProject({ open, onClose, onAdded,
     setBusy(true); setResult(null);
     try {
       const d = await post("/api/project/add",
-                           { folder, url, token, ws, local });
+                           { folder, url, token, ws, local, title });
       setResult(d.ok ? { ok: true, output: d.output || "готово" }
                      : { ok: false, output: d.error || "?" });
       if (d.ok) onAdded?.(d.folder);
@@ -86,8 +96,8 @@ export default function AddProject({ open, onClose, onAdded,
   };
 
   const close = () => {
-    setResult(null); setFolder(""); setUrl(""); setToken("");
-    setLocal(false);
+    setResult(null); setFolder(""); setTitle(""); setUrl("");
+    setToken(""); setLocal(false);
     folderDirty.current = false;
     onClose();
   };
@@ -116,6 +126,12 @@ export default function AddProject({ open, onClose, onAdded,
         <TextField label="Ссылка на репозиторий" size="small" value={url}
                    onChange={e => urlChanged(e.target.value)}
                    placeholder="https://github.com/org/repo.git или git@gitlab.com:org/repo.git" />)}
+        <TextField label="Название проекта" size="small" value={title}
+                   onChange={e => { setTitle(e.target.value);
+                     if (!folderDirty.current)
+                       setFolder(translit(e.target.value)); }}
+                   placeholder="Новый сайт школы"
+                   helperText="показываемое имя — любой язык" />
         <TextField label="Папка проекта" size="small" value={folder}
                    onChange={e => { folderDirty.current = true;
                                     setFolder(e.target.value); }}

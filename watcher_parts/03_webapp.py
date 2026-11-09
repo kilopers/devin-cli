@@ -62,6 +62,7 @@ def api_projects() -> dict:
     cur = cur if cur in mine else         (last if last in mine else (mine[0] if mine else None))
     return {"projects": mine,
             "wsmap": {p: _project_ws(u, p) for p in visible},
+            "titles": {p: pj_get(p, "title") for p in visible},
             "current": cur,
             "multi": multi_mode()}
 

@@ -653,7 +653,7 @@ def send_projects(chat_id, msg_id=None) -> None:
     kb = []
     for p in projects[:60]:
         label = ((wsname.get(_project_ws(actor, p)) or "?") + "/"
-                 if multi else "") + p
+                 if multi else "") + (pj_get(p, "title") or p)
         kb.append([{"text": ("✅ " if p == cur else "") + label,
                     "callback_data": f"proj:{p}"}])
     more = (f"\n…и ещё {len(projects) - 60}"

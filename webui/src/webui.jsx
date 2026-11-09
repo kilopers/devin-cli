@@ -1600,7 +1600,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
 // вкладка = открытый проект (крестик закрывает), «+» — список
 // всех проектов → новая вкладка; переключение — перезагрузкой
 // страницы (проект/цвет/иконка подтягиваются целиком)
-function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
+function ProjectTabs({ projects, tabs, current, onTab, titles, onClose, onAdd,
                        wsmap, wsList, onWs, onSettings, accent }) {
   const [menu, setMenu] = useState(null);
   const [wsMenu, setWsMenu] = useState(null);
@@ -1631,7 +1631,7 @@ function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
           <WsDot color={wsColor(p)} />
           <Typography component="span" noWrap
                       sx={{ fontSize: "inherit", maxWidth: 160 }}>
-            {p}
+            {pname(p)}
           </Typography>
           <IconButton size="small"
             onClick={e => { e.stopPropagation(); onClose(p); }}
@@ -1665,7 +1665,7 @@ function ProjectTabs({ projects, tabs, current, onTab, onClose, onAdd,
                                       alignItems: "center" }}
                         onClick={() => { setMenu(null); onTab(p); }}>
                 <WsDot color={wsColor(p)} />
-                <Box sx={{ flex: 1 }}>{p}</Box>
+                <Box sx={{ flex: 1 }}>{pname(p)}</Box>
                 <IconButton size="small" sx={{ p: 0.2, ml: 1 }}
                   onClick={e => { e.stopPropagation();
                                   setWsMenu({ a: e.currentTarget, p }); }}>
@@ -1809,7 +1809,7 @@ function TopicStatsDlg({ dlg, project, onClose, toast }) {
     </Dialog>);
 }
 
-function ProjectSelect({ projects, current, onChange, onAdd,
+function ProjectSelect({ projects, current, onChange, onAdd, titles,
                          wsmap, wsList, onWs, onSettings }) {
   const [wsMenu, setWsMenu] = useState(null); // {anchor, project}
   const wsColor = p => {
@@ -1843,7 +1843,7 @@ function ProjectSelect({ projects, current, onChange, onAdd,
         <MenuItem key={p} value={p}
                   sx={{ display: "flex", alignItems: "center" }}>
           <WsDot color={wsColor(p)} />
-          <Box sx={{ flex: 1 }}>{p}</Box>
+          <Box sx={{ flex: 1 }}>{(titles || {})[p] || p}</Box>
           <Tooltip title="перенести в пространство">
             <IconButton size="small"
               onClick={e => { e.stopPropagation();
@@ -2429,6 +2429,8 @@ function TopicColumn({ name, sess, count, sel, accent, color, tset,
 
 export default function App() {
   const [projects, setProjects] = useState([]);
+  const [projTitles, setProjTitles] = useState({});
+  const pname = p => (projTitles && projTitles[p]) || p;
   const [multiMode, setMultiMode] = useState(false);
   const [project, setProject] = useState(null);
   const projRef = useRef(null);
@@ -2795,6 +2797,7 @@ export default function App() {
       setWsmap(d.wsmap || {});
       if (d.projects.length) {
         setProjects(d.projects); setMultiMode(true);
+        setProjTitles(d.titles || {});
         // смена пространства → если текущий проект пропал из списка,
         // выбираем первый доступный (status.current — серверный fallback)
         if (!d.projects.includes(projRef.current))
@@ -3426,6 +3429,7 @@ export default function App() {
         setWsmap(d.wsmap || {}); loadWs();
         const projs = d.projects.length ? d.projects : ["workspace"];
         setProjects(projs); setMultiMode(!!d.projects.length);
+        setProjTitles(d.titles || {});
         // онбординг: проектов нет → сначала ключи, потом репозиторий
         if (!d.projects.length && d.current === null)
           setKeysOpen(true);
@@ -3704,7 +3708,7 @@ export default function App() {
                       WebkitMaskImage: { xs: "linear-gradient(90deg," +
                                        " #000 60%, transparent 96%)",
                                        sm: "none" } }}>
-                {project}
+                {pname(project)}
               </Typography>)}
             <Box sx={{ mr: "auto" }} />
             <Typography variant="body2"
@@ -3794,6 +3798,7 @@ export default function App() {
             клик = перезагрузка страницы на выбранном проекте */}
         {multiMode && (
           <ProjectTabs projects={projects} tabs={tabs} current={project}
+                       titles={projTitles}
                        onTab={switchTab} onClose={closeTab}
                        onAdd={() => setAddOpen(true)}
                        wsmap={wsmap} wsList={wsInfo.ws}

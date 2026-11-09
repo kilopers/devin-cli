@@ -75,6 +75,7 @@ def _api_project_settings_get():
                     "url": pj_get(p, "url"),
                     "icon": pj_get(p, "icon"),
                     "color": pj_get(p, "color"),
+                    "title": pj_get(p, "title"),
                     "mcp": pj_get(p, "mcp"),
                     "eff_model": pj_get(p, "model") or current_model("web"),
                     "eff_mode": (pj_get(p, "reply_mode")
@@ -96,7 +97,8 @@ def _api_project_settings_set():
                   ("agent", ("",) + tuple(AGENTS)),
                   ("main_branch", None),
                   ("icon", None),
-                  ("color", None)):
+                  ("color", None),
+                  ("title", None)):
         if k not in body:
             continue  # частичное обновление — не трогаем пропущенные ключи
         v = (body.get(k) or "").strip()[:200]

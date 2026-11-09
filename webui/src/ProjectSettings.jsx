@@ -26,6 +26,7 @@ export default function ProjectSettings({ project, onClose, toast,
   const [icon, setIcon] = useState("");
   const [color, setColor] = useState("");
   const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
 
   useEffect(() => {
     if (!project) return;
@@ -36,7 +37,8 @@ export default function ProjectSettings({ project, onClose, toast,
                    setFast(j.fast || "");
                    setMainBranch(j.main_branch || "");
                    setMcp(j.mcp || ""); setIcon(j.icon || "");
-                   setColor(j.color || ""); setUrl(j.url || ""); });
+                   setColor(j.color || ""); setUrl(j.url || "");
+                   setTitle(j.title || ""); });
     get("/api/agents").then(j =>
       setAgents((j.agents || []).filter(a => a.configured)))
       .catch(() => {});
@@ -57,7 +59,8 @@ export default function ProjectSettings({ project, onClose, toast,
       project, model, agent, reply_mode: mode,
       auto_commit: autoCommit ? "1" : "0", fast,
       main_branch: mainBranch.trim(), mcp: mcp.trim(),
-      icon: icon.trim(), color: color.trim(), url: url.trim() });
+      icon: icon.trim(), color: color.trim(), url: url.trim(),
+      title: title.trim() });
     setBusy(false);
     if (j.ok) { toast?.("Настройки проекта сохранены"); onClose(true); }
   };
@@ -130,6 +133,10 @@ export default function ProjectSettings({ project, onClose, toast,
             {branches.map(b => (
               <MenuItem key={b} value={b}>{b}</MenuItem>))}
           </TextField>
+          <TextField label="Название проекта" size="small" fullWidth
+                     value={title}
+                     onChange={e => setTitle(e.target.value)}
+                     helperText="показываемое имя — пусто = имя папки" />
           <TextField label="Ссылка проекта" size="small" fullWidth
                      value={url}
                      onChange={e => setUrl(e.target.value)}
