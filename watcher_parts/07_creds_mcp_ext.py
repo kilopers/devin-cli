@@ -362,7 +362,7 @@ def _api_task_new():
 @app.get("/index.html")
 @login_required
 def _index():
-    return render_template("webui.html")
+    return render_template("webui.html", v=APP_VERSION)
 
 
 
