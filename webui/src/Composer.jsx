@@ -104,10 +104,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const effMode = note ? "say" : curMode;
   const say = effMode === "say";
 
-  const pickFile = async e => {
-    const fl = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!fl) return;
+  const uploadFile = async fl => {
     if (fl.size > 50 * 1024 * 1024) { toast("Файл > 50 МБ"); return; }
     try {
       const d = await (await api("/api/attach?name=" +
@@ -115,6 +112,30 @@ export default function Composer({ project, sttStatus, toast, onSent,
       if (d.ok) setAtt({ id: d.id, name: d.name });
       else toast("Файл: " + (d.error || "?"));
     } catch (err) { toast("Сеть: " + err); }
+  };
+  const pickFile = async e => {
+    const fl = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (fl) uploadFile(fl);
+  };
+  const onPasteFile = e => {
+    const items = e.clipboardData && e.clipboardData.items;
+    const it = items && Array.from(items).find(i => i.kind === "file");
+    const fl = it && it.getAsFile();
+    if (!fl) return;
+    e.preventDefault();
+    const now = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const stamp = now.getFullYear() + pad(now.getMonth() + 1) +
+      pad(now.getDate()) + "-" + pad(now.getHours()) +
+      pad(now.getMinutes());
+    const ext = (fl.name && fl.name.includes(".")
+      ? fl.name.split(".").pop()
+      : (fl.type.split("/")[1] || "png")).replace(/[^a-zA-Z0-9]/g, "");
+    const name = /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(fl.name || "") ||
+                 !fl.name
+      ? `clip-${stamp}.${ext}` : fl.name;
+    uploadFile(new File([fl], name, { type: fl.type }));
   };
   const fileInput = (
     <input ref={fileRef} type="file" hidden onChange={pickFile} />);
@@ -460,6 +481,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                             : `Задача для «${project || "…"}»`}
           value={text}
           onChange={e => setText(e.target.value)}
+          onPaste={onPasteFile}
           onKeyDown={e => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
               e.preventDefault(); send();
@@ -549,6 +571,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                          " — Ctrl+Enter чтобы отправить"}
             value={text}
             onChange={e => setText(e.target.value)}
+            onPaste={onPasteFile}
             onKeyDown={e => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault(); send();

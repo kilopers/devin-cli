@@ -243,7 +243,8 @@ def _api_instr_set():
 def _topic_rows(project: str) -> list:
     return db_query("SELECT id, name, session_id, own_session,"
                     " session_topic_id, sort, user, created, updated,"
-                    " color, model, reply_mode, auto_commit, fast, chat"
+                    " color, model, reply_mode, auto_commit, fast, chat,"
+                    " agent, show_out, hide_tags"
                     " FROM topics WHERE project=%s"
                     " ORDER BY sort, id", (project,))
 
@@ -587,12 +588,16 @@ def _api_topics_set():
                 attach = atid
         db_exec("INSERT INTO topics(project,user,name,color,model,"
                 "reply_mode,auto_commit,fast,own_session,"
-                "session_topic_id,chat,created,updated)"
-                " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "session_topic_id,chat,agent,show_out,hide_tags,"
+                "created,updated)"
+                " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "%s,%s)",
                 (p, u, name, st.get("color") or None,
                  st.get("model") or None, st.get("reply_mode") or None,
                  st.get("auto_commit") or None, st.get("fast") or None,
-                 own, attach, chat, time.time(), time.time()))
+                 own, attach, chat, st.get("agent") or None,
+                 st.get("show_out") or None, st.get("hide_tags") or None,
+                 time.time(), time.time()))
         new_id = db_query("SELECT LAST_INSERT_ID() AS i")[0]["i"]
         # новая тема — последняя (справа); бессортовые старые добиваем
         db_exec("UPDATE topics SET sort=id WHERE sort=0 AND id<>%s",

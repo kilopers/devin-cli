@@ -195,7 +195,7 @@ export default function TopicSettings({ project, dlg, onClose, onSaved,
                        e.target.checked ? "1" : "")} />}
             label={"🏷 Скрыть подробности — не показывать ряд тегов " +
                    "настроек (режим, коммит, модель) под шапкой"} />
-          {dlg?.kind === "edit" && dlg.topic?.chat &&
+          {dlg?.kind === "edit" && !!dlg.topic?.chat &&
             <Typography variant="caption" color="primary">
               💬 диалог — чат-колонка (тип задаётся при создании)
             </Typography>}
