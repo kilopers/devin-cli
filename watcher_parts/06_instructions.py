@@ -411,9 +411,11 @@ def _sess_ago(ts) -> str:
     return f"{d // 86400} дн назад"
 
 
-def _devin_sess_list(workdir) -> list:
-    """`devin list --format json` в workdir, кэш в kv на 60с —
-    диалог открывается редко, но и спам subprocess'ами не нужен."""
+def _devin_sess_list(workdir, proj=None) -> list:
+    """Сессии Devin из стора проекта (SESS_DIR/<key>/cli/sessions.db).
+    `devin list` env DEVIN_SESSIONS_DIR не понимает — всегда читает
+    глобальную базу, поэтому стор читаем sqlite напрямую, фильтруя
+    по working_directory, как делает CLI. Кэш в kv на 60с."""
     key = f"sesslist:{workdir}"
     try:
         c = json.loads(kv_get(key) or "{}")
@@ -421,16 +423,29 @@ def _devin_sess_list(workdir) -> list:
             return c.get("list") or []
     except Exception:
         pass
+    lst = []
     try:
-        out = subprocess.run(
-            ["devin", "list", "--format", "json"], cwd=str(workdir),
-            capture_output=True, text=True, timeout=60)
-        lst = json.loads(out.stdout or "[]")
+        db = (_sess_store(_sess_key(proj), workdir)
+              / "cli" / "sessions.db")
+        if db.is_file():
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            try:
+                rows = con.execute(
+                    "SELECT id, title, last_activity_at, created_at,"
+                    " working_directory FROM sessions"
+                    " WHERE working_directory=?"
+                    " AND COALESCE(hidden,0)=0"
+                    " ORDER BY last_activity_at DESC",
+                    (str(workdir),)).fetchall()
+                lst = [{"id": r[0], "title": r[1],
+                        "last_activity_at": r[2], "created_at": r[3],
+                        "working_directory": r[4]} for r in rows]
+            finally:
+                con.close()
         kv_set(key, json.dumps({"at": time.time(), "list": lst}))
-        return lst
     except Exception as e:
-        log(f"devin list in {workdir} failed: {e}")
-        return []
+        log(f"devin sess list in {workdir} failed: {e}")
+    return lst
 
 
 @app.get("/api/topic/session")
@@ -478,7 +493,7 @@ def _api_topic_session():
     if sid:
         workdir = (PROJECTS_ROOT / p) if (
             PROJECTS_ROOT and (PROJECTS_ROOT / p).is_dir()) else WORKDIR
-        hit = next((s for s in _devin_sess_list(workdir)
+        hit = next((s for s in _devin_sess_list(workdir, p)
                     if s.get("id") == sid), None)
         if hit:
             alive, title = True, hit.get("title")
@@ -1534,6 +1549,11 @@ def _fmt_run(text: str, workdir: Path, task_user: str, tag: str,
                                      "WINDSURF_API_KEY"),
                ANTHROPIC_API_KEY=uset("claude.api_key", task_user,
                                       "ANTHROPIC_API_KEY"))
+    # fmt-прогон devin — в сторе проекта задачи, иначе его сессии
+    # уйдут в глобальную базу и GC их не увидит
+    if agent_of(task_ref or {"user": task_user}) == "devin":
+        env.update(_sess_env(
+            _sess_key((task_ref or {}).get("project")), workdir))
     out_f = open(out_path, "w", errors="replace")
     started_ts = time.time()
     proc = subprocess.Popen(

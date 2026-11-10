@@ -396,6 +396,9 @@ def _devin_discuss(msgs: list, user: str | None = None,
         env["WINDSURF_API_KEY"] = key
     env["DEVIN_WORKDIR"] = str(workdir)
     env["DEVIN_CONTINUE"] = "false"
+    # сессии discuss — в сторе проекта, а не в глобальной базе
+    env.update(_sess_env(_sess_key(proj), workdir if not tmpdir
+                                   else None))
     try:
         p = subprocess.Popen(
             ["devin", "--model", current_model(),

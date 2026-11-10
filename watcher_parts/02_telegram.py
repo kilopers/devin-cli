@@ -997,11 +997,25 @@ def send_models(chat_id, msg_id=None) -> None:
                reply_markup={"inline_keyboard": kb})
 
 
+def _transcript_dirs() -> list:
+    """Каталоги транскриптов Devin: глобальный (старьё до v2.2.0) +
+    per-проектные сторы SESS_DIR/*/cli/transcripts."""
+    dirs = [Path.home() / ".local/share/devin/cli/transcripts"]
+    try:
+        dirs += [d / "cli" / "transcripts"
+                 for d in SESS_DIR.iterdir()
+                 if (d / "cli" / "transcripts").is_dir()]
+    except Exception:
+        pass
+    return dirs
+
+
 def session_stats(since: float) -> dict | None:
     """Metrics of the devin session finished after `since`, from its transcript."""
-    td = Path.home() / ".local/share/devin/cli/transcripts"
     try:
-        files = [f for f in td.glob("*.json") if f.stat().st_mtime >= since]
+        files = [f for td in _transcript_dirs()
+                 for f in td.glob("*.json")
+                 if f.stat().st_mtime >= since]
         if not files:
             return None
         d = json.loads(max(files, key=lambda f: f.stat().st_mtime).read_text())
@@ -1023,10 +1037,10 @@ def usage_totals() -> tuple:
     """Cumulative tokens across all sessions: (24h tokens, 24h tasks,
     7d tokens, 7d tasks). CLI exposes no credit/money balance — only
     token metrics in transcripts."""
-    td = Path.home() / ".local/share/devin/cli/transcripts"
     day = week = nday = nweek = 0
     try:
-        files = list(td.glob("*.json"))
+        files = [f for td in _transcript_dirs()
+                 for f in td.glob("*.json")]
     except Exception:
         files = []
     now = time.time()

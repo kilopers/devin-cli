@@ -58,6 +58,34 @@ def _sess_gc_devin(cutoff: float, pins: set) -> tuple:
                     f"({s.get('title', '')[:60]})")
             except Exception as e:
                 log(f"sess-gc: devin rm {sid} failed: {e}")
+    # per-проектные сторы SESS_DIR/* — devin list/rm их не видят
+    # (env DEVIN_SESSIONS_DIR командам list/rm недоступен), стираем
+    # сирот напрямую: _sess_db_prune снимает fts-триггеры на
+    # message_nodes (contentless_delete sqlite ≥3.43 у python нет)
+    for store in (SESS_DIR.iterdir() if SESS_DIR.is_dir() else []):
+        db = store / "cli" / "sessions.db"
+        if not store.is_dir() or not db.is_file():
+            continue
+        try:
+            con = sqlite3.connect(str(db))
+            try:
+                rows = con.execute(
+                    "SELECT id, title, last_activity_at"
+                    " FROM sessions").fetchall()
+                listed += len(rows)
+                dead = [r for r in rows
+                        if r[0] not in pins and (r[2] or 0) < cutoff]
+                if dead:
+                    _sess_db_prune(con, [r[0] for r in dead])
+                    con.commit()
+                    for sid, title, _act in dead:
+                        removed += 1
+                        log(f"sess-gc: removed devin session {sid} "
+                            f"({(title or '')[:60]}) [{store.name}]")
+            finally:
+                con.close()
+        except Exception as e:
+            log(f"sess-gc: devin store {db} failed: {e}")
     return listed, removed
 
 

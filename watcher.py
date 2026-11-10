@@ -27,6 +27,7 @@ import shutil
 import signal
 import socket
 import struct
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,7 @@ except ImportError:
 
 TASKS_DIR = Path(os.environ.get("TASKS_DIR", "/tasks"))
 ATTACH_DIR = TASKS_DIR / "attach"   # файлы, прикреплённые к задачам
+SESS_DIR = TASKS_DIR / "sessions"   # per-проектные сторы сессий Devin
 INBOX = TASKS_DIR / "inbox"
 DONE = TASKS_DIR / "done"
 OUTBOX = TASKS_DIR / "outbox"

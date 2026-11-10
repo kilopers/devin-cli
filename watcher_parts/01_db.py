@@ -1086,6 +1086,96 @@ def _clean_task_output(text: str) -> str:
     return "\n".join(lines[i:j]).strip()
 
 
+# --- per-проектные сторы сессий Devin (v2.2.0) --------------------------
+# env DEVIN_SESSIONS_DIR переносит базу сессий CLI (сама база —
+# <dir>/cli/sessions.db): у каждого проекта свой стор — прогоны разных
+# проектов не делят одну SQLite и не видят чужие сессии. ВАЖНО:
+# `devin list`/`devin rm` env не понимают (всегда глобальная база,
+# проверено на CLI 3000.11.234) — список в диалоге «Сессия» и ночной
+# GC читают/чистят стор напрямую через sqlite.
+_SESS_REL_TABLES = ("prompt_history", "message_nodes",
+                    "rendered_commits", "tool_call_state",
+                    "subagent_heads", "live_row_times")
+
+
+def _sess_db_prune(con, ids: list) -> None:
+    """Стереть сессии ids из открытой базы стора Devin. FTS5-таблица
+    message_search в схеме CLI использует опцию contentless_delete
+    (sqlite ≥3.43), а sqlite в python старее — любая операция с ней
+    отклоняется, включая срабатывание её триггеров на message_nodes.
+    Поэтому триггеры временно снимаем, чистим строки и ставим их
+    обратно (SQL из sqlite_master). Старые строки поискового индекса
+    остаются — не мешают, новые пишет уже сам CLI."""
+    if not ids:
+        return
+    trigs = [r for r in con.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type='trigger'"
+        " AND name LIKE 'message_search_%'") if r[1]]
+    for name, _ in trigs:
+        con.execute(f"DROP TRIGGER IF EXISTS \"{name}\"")
+    for tbl in _SESS_REL_TABLES:
+        con.executemany(f"DELETE FROM {tbl} WHERE session_id=?",
+                        [(i,) for i in ids])
+    con.executemany("DELETE FROM sessions WHERE id=?",
+                    [(i,) for i in ids])
+    for _, sql in trigs:
+        con.execute(sql)
+
+
+def _sess_key(tproj: str | None, ext: dict | None = None) -> str:
+    """Имя стора: проект — его папка, ext-задача — ext-<label>,
+    одиночный WORKDIR — _default."""
+    if ext:
+        return "ext-" + re.sub(r"[^A-Za-z0-9_-]+", "-",
+                               ext.get("label") or "default")
+    if tproj and PROJECTS_ROOT and (PROJECTS_ROOT / tproj).is_dir():
+        return tproj
+    return "_default"
+
+
+
+def _sess_store(key: str, workdir: Path | None = None) -> Path:
+    """DEVIN_SESSIONS_DIR для ключа: <SESS_DIR>/<key> (база — в
+    подкаталоге cli/). При первом обращении и наличии глобальной
+    sessions.db — одноразовая миграция: копия базы, прочищенная до
+    сессий ЭТОГО workdir, — пины тем (topics.session_id, tsess:)
+    продолжают резюмиться из нового стора."""
+    root = SESS_DIR / key
+    db = root / "cli" / "sessions.db"
+    if db.is_file():
+        return root
+    (root / "cli").mkdir(parents=True, exist_ok=True)
+    glob = (Path.home() / ".local" / "share" / "devin" / "cli"
+            / "sessions.db")
+    if glob.is_file() and workdir:
+        try:
+            shutil.copy2(glob, db)
+            con = sqlite3.connect(str(db))
+            try:
+                ids = [r[0] for r in con.execute(
+                    "SELECT id FROM sessions"
+                    " WHERE working_directory<>?", (str(workdir),))]
+                _sess_db_prune(con, ids)
+                con.commit()
+                try:
+                    con.execute("VACUUM")
+                except Exception:
+                    pass
+            finally:
+                con.close()
+            log(f"sessions store {key}: смигрировано из глобальной "
+                f"базы (workdir {workdir})")
+        except Exception as e:
+            log(f"sessions store migrate {key}: {e}")
+            db.unlink(missing_ok=True)
+    return root
+
+
+def _sess_env(key: str, workdir: Path | None = None) -> dict:
+    """env-фрагмент для прогонов devin-CLI в сторе ключа."""
+    return {"DEVIN_SESSIONS_DIR": str(_sess_store(key, workdir))}
+
+
 def run_task(task: dict) -> None:
     stem, name = task["stem"], _task_name(task["stem"])
     log(f"processing {name}")
@@ -1223,6 +1313,12 @@ def run_task(task: dict) -> None:
                                   "devin-bot"),
                GIT_USER_EMAIL=uset("git.email", task_user,
                                    "GIT_USER_EMAIL", ""))
+    # devin: у каждого проекта свой стор сессий (resume/continue живут
+    # внутри него); claude сессии держит per-workdir сам — не трогаем
+    sess_root = (_sess_store(_sess_key(tproj, ext), workdir)
+                 if akey == "devin" else None)
+    if sess_root:
+        env["DEVIN_SESSIONS_DIR"] = str(sess_root)
     chat_id = task.get("chat_id")
     thread_id = task.get("thread_id")
     out_path = progress_dir / f"{stem}.out"
@@ -1250,7 +1346,9 @@ def run_task(task: dict) -> None:
                     target=progress_loop, daemon=True,
                     args=(chat_id, export_path, out_path,
                           proc, started_ts,
-                          ag["transcripts"], thread_id)).start()
+                          (sess_root / "cli" / "transcripts"
+                           if sess_root else ag["transcripts"]),
+                          thread_id)).start()
             try:
                 proc.wait(timeout=TASK_TIMEOUT)
                 st = f"exit code: {proc.returncode}"
@@ -1278,6 +1376,28 @@ def run_task(task: dict) -> None:
         mcp_restore = _mcp_apply(tproj, ag)
         try:
             status, body = _run_once(env)
+
+            # пин сессии не нашёлся в сторе проекта (миграция/GC) —
+            # без фолбэка все задачи темы будут вечно падать на битом
+            # resume: повторяем без --resume и снимаем пин
+            if resume_id and re.search(
+                    r"(invalid|unknown|missing|no) session|"
+                    r"session (not )?found", body, re.I):
+                log(f"{name}: сессия {resume_id} не найдена в сторе"
+                    " — повторяю без --resume, пин снят")
+                if pin_tid:
+                    db_exec("UPDATE topics SET session_id=NULL,"
+                            " updated=%s WHERE id=%s",
+                            (time.time(), pin_tid))
+                else:
+                    db_exec("DELETE FROM kv WHERE k=%s",
+                            (f"tsess:{tproj or ''}",))
+                env2 = dict(env)
+                env2["DEVIN_EXTRA_ARGS"] = re.sub(
+                    r"\s*--resume\s+\S+", "",
+                    env2.get("DEVIN_EXTRA_ARGS") or "")
+                env2["DEVIN_CONTINUE"] = "false"
+                status, body = _run_once(env2)
 
             # Ключ devin.api_key юзера может быть протухшим/обрезанным
             # — CLI тогда падает на загрузке team settings («Invalid
