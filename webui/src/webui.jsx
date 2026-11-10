@@ -629,6 +629,30 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   const showAnswer = showOut && !isNote && t.status === "done"
                      && !!(t.output || "").trim();
   const lastOut = (t.output || "").split(/\n\n---\n\n+/).pop();
+  // вложения задачи (📎 из композера или вставки Ctrl+V):
+  // картинки — миниатюрой (клик — полный размер), файл — чип-ссылка
+  const attEls = (t.atts || []).map((a, i) => {
+    const url = "/api/task/" + t.stem + "/attach/" + i;
+    const img = /\.(jpe?g|png|gif|webp|avif|bmp|heic|svg)$/i.test(a);
+    return img ? (
+      <Box key={i} component="img" src={url} alt={a}
+           onClick={() => window.open(url, "_blank")}
+           sx={{ display: "block", maxWidth: "100%", maxHeight: 200,
+                 borderRadius: "8px", border: "1px solid",
+                 borderColor: "divider", mt: 0.8,
+                 cursor: "zoom-in" }} />
+    ) : (
+      <Box key={i} component="a" href={url} target="_blank"
+           sx={{ display: "inline-flex", alignItems: "center",
+                 gap: 0.5, mt: 0.8, mr: 0.5, px: 0.8, py: 0.3,
+                 borderRadius: "8px", border: "1px solid",
+                 borderColor: "divider", color: "text.secondary",
+                 fontSize: 12, textDecoration: "none",
+                 "&:hover": { bgcolor: "rgba(94,106,210,.07)",
+                              color: "#5e6ad2" } }}>
+        📎 {a}
+      </Box>);
+  });
   const maybeCut = full === null && (t.prompt || "").length >= 2000;
   // «инфо» — статистика завершённой задачи (tasks.stats + длительность)
   const [info, setInfo] = useState(false);
@@ -1327,6 +1351,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   display: "-webkit-box", WebkitBoxOrient: "vertical",
                   WebkitLineClamp: 5, overflow: "hidden" }) }}>
           {promptShown}</Typography>)}
+        {attEls}
         {maybeCut && (
           <Typography variant="caption"
             onClick={e => { e.stopPropagation(); loadFull(); }}
