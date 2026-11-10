@@ -452,13 +452,21 @@ function ChatBusy({ t }) {
 // ответ агента слева; у идущей задачи — живой очищенный текст
 // (cout) + строка активности; скролла внутри пузыря нет —
 // сообщение растягивается, прокручивается вся колонка
-const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel }) {
+const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel,
+                                             codeCols, onToWork }) {
   // крестик удаления — только по наведению на пару «вопрос→ответ»
   // (hov); сам ✕ выступает за край пузыря, поэтому его hover
   // отслеживаем отдельно (delHov) — наведённый на себя крестик
   // не гаснет, пока курсор с него не уйдёт
   const [hov, setHov] = useState(false);
   const [delHov, setDelHov] = useState(false);
+  // ответ агента по умолчанию свёрнут (v2.1.20): короткие —
+  // всегда целиком, длинные зажимаются с кнопкой разворота;
+  // «▶ в работу» ставит текст ответа новой задачей в code-колонку
+  const [open, setOpen] = useState(false);
+  const [wd, setWd] = useState(false);
+  const outTxt = (t.output || "").trim();
+  const longOut = outTxt.length > 220 || outTxt.split("\n").length > 4;
   const mine = {
     alignSelf: "flex-end", maxWidth: "88%", px: 1.1, py: 0.7,
     borderRadius: "12px 12px 4px 12px", fontSize: 13,
@@ -530,13 +538,77 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel }) {
           </Box>}
         {t.status === "done" &&
           (t.output
-            ? <Markdown text={t.output} />
+            ? <>
+              <Box sx={!open && longOut
+                ? { maxHeight: 110, overflow: "hidden",
+                    position: "relative" } : {}}>
+                <Markdown text={t.output} />
+                {!open && longOut &&
+                  <Box sx={{ position: "absolute", left: 0, right: 0,
+                             bottom: 0, height: 34,
+                             background: "linear-gradient(" +
+                                         "rgba(255,255,255,0)," +
+                                         " rgba(255,255,255,1) 90%)" }} />}
+              </Box>
+              <Box sx={{ display: "flex", gap: 0.6, mt: 0.4,
+                         alignItems: "center" }}>
+                {longOut &&
+                  <Box component="span"
+                    onClick={() => setOpen(o => !o)}
+                    sx={{ fontSize: 11, cursor: "pointer",
+                          color: accent || "#5e6ad2",
+                          fontWeight: 600 }}>
+                    {open ? "▲ свернуть" : "▼ развернуть"}
+                  </Box>}
+                {!!onToWork && outTxt &&
+                  <Box component="span"
+                    onClick={() => setWd(true)}
+                    sx={{ fontSize: 11, cursor: "pointer",
+                          color: "text.secondary", fontWeight: 600,
+                          ml: "auto",
+                          "&:hover": { color: accent || "#5e6ad2" } }}>
+                    ▶ в работу
+                  </Box>}
+              </Box>
+              </>
             : <Typography variant="caption" color="text.secondary">
                 пустой ответ</Typography>)}
         {t.status === "note" &&
           <Typography variant="body2" sx={{ fontSize: 13 }}>
             {t.prompt}</Typography>}
       </Paper>
+      <Dialog open={wd} onClose={() => setWd(false)}
+              maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
+          Ответ — в работу
+          <Tooltip title="закрыть">
+            <IconButton size="small" onClick={() => setWd(false)}
+              sx={{ position: "absolute", right: 12, top: 10,
+                    color: "text.secondary" }}>
+              <CloseIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+        </DialogTitle>
+        <DialogContent sx={{ pb: 2 }}>
+          <Typography variant="caption" color="text.secondary"
+                      sx={{ display: "block", mb: 1 }}>
+            Текст ответа уйдёт новой задачей в выбранную колонку
+          </Typography>
+          {(codeCols || []).map(c => (
+            <Box key={c.key}
+              onClick={() => { setWd(false); onToWork(t, c.key); }}
+              sx={{ py: 0.8, px: 1, mb: 0.5, borderRadius: "9px",
+                    border: "1px solid", borderColor: "divider",
+                    fontSize: 13, cursor: "pointer",
+                    "&:hover": { bgcolor: "rgba(94,106,210,.07)",
+                                 borderColor: accent || "#5e6ad2" } }}>
+              🧵 {c.name}
+            </Box>))}
+          {!(codeCols || []).length &&
+            <Typography variant="caption" color="text.secondary">
+              нет колонок уровня «в работу»</Typography>}
+        </DialogContent>
+      </Dialog>
     </Box>);
 });
 
@@ -3029,6 +3101,8 @@ export default function App() {
     return [<Box key="__top" sx={{ mt: "auto", height: 0 }} />]
       .concat(items.map(t =>
         <ChatMsg key={t.stem} t={t} accent={accent}
+                 codeCols={chatCodeCols}
+                 onToWork={chatToWork}
                  onDel={askDelChat} />),
         [<ChatEnd key="__end" n={items.length}
                   h={items.map(t => t.h || "").join("|")}
@@ -3466,6 +3540,28 @@ export default function App() {
     t2 => setConfirm({ kind: "chat_del", stem: t2.stem,
                        st: t2.status,
                        name: (t2.prompt || "").trim().slice(0, 60) }), []);
+  // колонки уровня «в работу» для диалога из пузыря ответа
+  // (v2.1.20): «Главная» с code-режимом + code-темы (не чаты)
+  const chatCodeCols = useMemo(() =>
+    [{ key: "main", name: "⭐ " + (mainDef.name || "Главная"),
+       mode: ((mainDef.eff || {}).reply_mode) || "code" }]
+    .concat((topics || []).map(tp => ({
+      key: String(tp.id), name: tp.name,
+      mode: ((tp.eff || {}).reply_mode) || "code",
+      chat: tp.chat })))
+    .filter(c => c.mode === "code" && !c.chat), [topics, mainDef]);
+  // «▶ в работу» в пузыре: текст ответа — новой задачей в
+  // выбранную code-колонку с её дефолтами
+  const chatToWork = useCallback(async (t2, colKey) => {
+    try {
+      const d = await post("/api/tasks", {
+        text: (t2.output || "").trim(), project,
+        ...(colKey !== "main" ? { topic: colKey } : {}) });
+      setToast(d.ok ? "▶ Ответ поставлен в работу — " + (d.name || "")
+                    : "Ошибка: " + (d.error || "?"));
+      if (d.ok) loadTasks();
+    } catch (e) { setToast("Сеть: " + e); }
+  }, [project]);
   // клик по карточке-заметке — «нажать»/«отжать» её
   const toggleNote = useCallback(t2 => {
     setContSel(null);
