@@ -479,11 +479,11 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel,
     borderColor: "divider",
     "& .md": { maxHeight: "none", overflowY: "visible",
                fontSize: 13 },
-    // «непрочитанный» ответ (v2.2.1) — акцентный фон пузыря до
-    // просмотра (разворот/клик → POST /api/task/read)
+    // «непрочитанный» ответ — красноватый фон пузыря до просмотра
+    // (разворот/клик → POST /api/task/read); v2.2.2
     ...(t.unread && t.status === "done" &&
-        { bgcolor: "rgba(94,106,210,.07)",
-          borderColor: "rgba(94,106,210,.35)",
+        { bgcolor: "#fdeaea",
+          borderColor: "rgba(211,47,47,.35)",
           cursor: "pointer" }) };
   const markRead = () => {
     if (t.unread)
@@ -558,9 +558,13 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel,
                 {!open && longOut &&
                   <Box sx={{ position: "absolute", left: 0, right: 0,
                              bottom: 0, height: 34,
+                             // фейд уходит в фон пузыря: у
+                             // непрочитанного он красноватый, не белый
                              background: "linear-gradient(" +
-                                         "rgba(255,255,255,0)," +
-                                         " rgba(255,255,255,1) 90%)" }} />}
+                                "rgba(255,255,255,0), " +
+                                (t.unread && t.status === "done"
+                                    ? "#fdeaea" : "#ffffff") +
+                                " 90%)" }} />}
               </Box>
               <Box sx={{ display: "flex", gap: 0.6, mt: 0.4,
                          alignItems: "center" }}>
@@ -1109,11 +1113,11 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         borderStyle: "dashed",
                         bgcolor: "rgba(94,106,210,.07)",
                         boxShadow: "0 0 0 2px rgba(94,106,210,.35)" }),
-      // «непрочитанный» ответ (v2.2.1): акцентный фон до просмотра
-      // — гасится POST /api/task/read при открытии 📄
+      // «непрочитанный» ответ: красноватый фон до просмотра
+      // — гасится POST /api/task/read при открытии 📄; v2.2.2
       ...(t.unread && t.status === "done" &&
-          { bgcolor: "rgba(94,106,210,.07)",
-            borderColor: "rgba(94,106,210,.35)" }),
+          { bgcolor: "#fdeaea",
+            borderColor: "rgba(211,47,47,.35)" }),
       "&:hover": { borderColor: sel ? "#5e6ad2" : "#c9cfda",
                    boxShadow: sel ? "0 0 0 1px #5e6ad2"
                                   : "0 4px 18px rgba(16,24,40,.07)" } }}>
