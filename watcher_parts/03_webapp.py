@@ -295,6 +295,9 @@ def api_tasks(project: str | None = None, limit: int = 5,
             "sched": bool(r.get("sched_id") or stem in anch),
             "sched_on": bool(anch.get(stem)),
             "stats": st_json,
+            # «непрочитанный» ответ — фронт тинтует карточку/пузырь;
+            # обязан быть в h, иначе снятие флага не доедет поллингом
+            "unread": bool(r.get("unread")),
             "tid": r["topic_id"],
             "topic": (tmap.get(r["topic_id"])
                       or (f"тема #{r['topic_id']}" if r["topic_id"]
@@ -323,6 +326,7 @@ def api_tasks(project: str | None = None, limit: int = 5,
                 f"|{bool(kv_get(f'fmt:{stem}'))}|{r.get('sort') or 0}"
                 f"|{bool(r.get('sched_id') or stem in anch)}"
                 f"|{bool(anch.get(stem))}"
+                f"|{bool(r.get('unread'))}"
                 f"|{starting}"
                 .encode()).hexdigest()[:12],
         })

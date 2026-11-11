@@ -478,7 +478,17 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel,
     bgcolor: "background.paper", border: "1px solid",
     borderColor: "divider",
     "& .md": { maxHeight: "none", overflowY: "visible",
-               fontSize: 13 } };
+               fontSize: 13 },
+    // «непрочитанный» ответ (v2.2.1) — акцентный фон пузыря до
+    // просмотра (разворот/клик → POST /api/task/read)
+    ...(t.unread && t.status === "done" &&
+        { bgcolor: "rgba(94,106,210,.07)",
+          borderColor: "rgba(94,106,210,.35)",
+          cursor: "pointer" }) };
+  const markRead = () => {
+    if (t.unread)
+      post("/api/task/read", { stem: t.stem }).catch(() => {});
+  };
   const txt = (t.prompt || "").trim();
   // вложения в пузыре юзера: картинка — миниатюрой (клик —
   // полный размер), прочий файл — чип-ссылка 📎
@@ -527,7 +537,9 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel,
         </Tooltip>}
       <Paper elevation={0} sx={mine}>
         {txt}{attEls}</Paper>
-      <Paper elevation={0} sx={theirs}>
+      <Paper elevation={0} sx={theirs}
+        onClick={t.unread && t.status === "done" ? markRead
+                                                : undefined}>
         {t.status === "queued" &&
           <Typography variant="caption" color="text.secondary">
             ⏳ в очереди — отвечу следом</Typography>}
@@ -554,7 +566,9 @@ const ChatMsg = React.memo(function ChatMsg({ t, accent, onDel,
                          alignItems: "center" }}>
                 {longOut &&
                   <Box component="span"
-                    onClick={() => setOpen(o => !o)}
+                    onClick={e => { e.stopPropagation();
+                                    setOpen(o => !o);
+                                    markRead(); }}
                     sx={{ fontSize: 11, cursor: "pointer",
                           color: accent || "#5e6ad2",
                           fontWeight: 600 }}>
@@ -1095,6 +1109,11 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                         borderStyle: "dashed",
                         bgcolor: "rgba(94,106,210,.07)",
                         boxShadow: "0 0 0 2px rgba(94,106,210,.35)" }),
+      // «непрочитанный» ответ (v2.2.1): акцентный фон до просмотра
+      // — гасится POST /api/task/read при открытии 📄
+      ...(t.unread && t.status === "done" &&
+          { bgcolor: "rgba(94,106,210,.07)",
+            borderColor: "rgba(94,106,210,.35)" }),
       "&:hover": { borderColor: sel ? "#5e6ad2" : "#c9cfda",
                    boxShadow: sel ? "0 0 0 1px #5e6ad2"
                                   : "0 4px 18px rgba(16,24,40,.07)" } }}>
@@ -1208,7 +1227,13 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
             <Tooltip title={isNote ? "текст заметки"
                           : succeeded ? "результат задачи"
                                       : "вывод задачи"}>
-              <IconButton size="small" onClick={() => setOutOpen(true)}
+              <IconButton size="small"
+                onClick={() => {
+                  setOutOpen(true);
+                  if (t.unread)
+                    post("/api/task/read", { stem: t.stem })
+                      .catch(() => {});
+                }}
                 sx={{ p: "3px", color: "text.secondary" }}>
                 <ForumOutlinedIcon sx={{ fontSize: 15 }} />
               </IconButton>

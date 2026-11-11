@@ -1236,6 +1236,21 @@ def is_failed_task(row: dict | None) -> bool:
         "exit code: 0" not in (row["task_status"] or "")
 
 
+@app.post("/api/task/read")
+@login_required
+def _api_task_read():
+    """«Прочитано»: юзер посмотрел ответ (модалка 📄, разворот/клик
+    пузыря диалога) — гасим unread. Идемпотентно."""
+    stem = (_req_json().get("stem") or "").strip()
+    row = task_row(stem)
+    if not row:
+        return jsonify({"ok": False, "error": "нет такой задачи"}), 404
+    if row["project"] and not _owns_project(row["project"]):
+        abort(403)
+    db_exec("UPDATE tasks SET unread=0 WHERE stem=%s", (stem,))
+    return jsonify({"ok": True})
+
+
 @app.post("/api/task/append")
 @login_required
 def _api_task_append():

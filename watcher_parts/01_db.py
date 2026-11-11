@@ -259,7 +259,11 @@ def init_db() -> None:
                      # карточку — связь для «удалять предыдущую»
                      ("sched_id", "sched_id INT NULL"),
                      # ветка форума (message_thread_id) — ответы в tg
-                     ("thread_id", "thread_id BIGINT NULL")):
+                     ("thread_id", "thread_id BIGINT NULL"),
+                     # «непрочитанный» ответ: успешное done взводит,
+                     # просмотр (📄/пузырь) гасит через /api/task/read
+                     ("unread",
+                      "unread TINYINT(1) NOT NULL DEFAULT 0")):
         if not db_query("SELECT 1 FROM information_schema.COLUMNS"
                         " WHERE TABLE_SCHEMA=%s AND TABLE_NAME='tasks'"
                         " AND COLUMN_NAME=%s", (MYSQL["database"], col)):
@@ -1444,9 +1448,12 @@ def run_task(task: dict) -> None:
                 tstats["cost"] = cost
     db_exec("UPDATE tasks SET status='done',"
             " output=CONCAT(IFNULL(output,''),%s), task_status=%s,"
-            " finished=%s, stats=%s WHERE stem=%s",
+            " finished=%s, stats=%s, unread=%s WHERE stem=%s",
             (body, status, finished_ts,
              json.dumps(tstats, ensure_ascii=False) if tstats else None,
+             # «непрочитанный» ответ — только успешное завершение;
+             # заодно гасит бейдж при повторном запуске карточки
+             1 if "exit code: 0" in (status or "") else 0,
              stem))
     # статистика темы: строка в topic_stats (project+topic_id на
     # момент завершения) — переживает удаление карточки и её перенос
