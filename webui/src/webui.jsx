@@ -1567,7 +1567,10 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
           </DialogActions>
         </Dialog>
         <Dialog open={outOpen} onClose={() => setOutOpen(false)}
-                maxWidth="md" fullWidth slotProps={dlgSlotProps}>
+                maxWidth={false} fullWidth slotProps={dlgSlotProps}
+                sx={{ "& .MuiDialog-paper":
+                      { width: { xs: "100%", md: "90vw" },
+                        maxWidth: "none" } }}>
           <DialogTitle sx={{ fontSize: 15, fontWeight: 600, pr: 6 }}>
             {isNote ? "Заметка"
                    : succeeded ? "Результат задачи" : "Вывод задачи"}
