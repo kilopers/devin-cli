@@ -905,8 +905,8 @@ def progress_loop(chat_id, export_path: Path, out_path: Path,
     step digests.
     """
     last_id, last_sent, tick = 0, 0.0, 0
-    offset, buf, seen_sizes = 0, [], {}
-    live_transcript = None
+    offset, lines, seen_sizes = 0, [], {}
+    live_transcript, mid, dirty = None, None, False
     while proc.poll() is None:
         time.sleep(10)
         tick += 1
@@ -921,9 +921,12 @@ def progress_loop(chat_id, export_path: Path, out_path: Path,
                     # (claude-relay 💬/🔧/🏁 и т.п.), не сырой лог:
                     # для devin .out — полный поток сессии, его
                     # краткая выжимка идёт через _digest_new_steps
-                    buf += [ln for ln in chunk.splitlines()
-                            if ln.strip().startswith(
-                                ("💬", "🔧", "🏁", "⛔", "🚀", "└"))]
+                    new = [ln for ln in chunk.splitlines()
+                           if ln.strip().startswith(
+                               ("💬", "🔧", "🏁", "⛔", "🚀", "└"))]
+                    if new:
+                        lines += new
+                        dirty = True
         except Exception:
             pass
         src = export_path if export_path.exists() else None
@@ -949,17 +952,23 @@ def progress_loop(chat_id, export_path: Path, out_path: Path,
             except Exception:
                 pass
             try:
-                lines, last_id = _digest_new_steps(src, last_id)
-                buf += lines
+                new, last_id = _digest_new_steps(src, last_id)
+                if new:
+                    lines += new
+                    dirty = True
             except Exception:
                 pass
         elif tick % 6 == 0:
             log("progress: no export file / live transcript yet")
-        if buf and time.time() - last_sent >= 20:
-            text = "\n".join(buf)
-            buf.clear()
-            tg_send(chat_id, "🛠 " + text[-3500:], thread=thread)
+        # прогресс — ОДНО редактируемое сообщение: новые сообщения
+        # каждые 20с превращали дайджест в телеграм-флуд; окно —
+        # последние ~20 строк, обновление не чаще раза в 20с
+        if dirty and lines and time.time() - last_sent >= 20:
+            text = "🛠 " + "\n".join(lines[-20:])[-3500:]
+            if mid is None or not tg_edit(chat_id, mid, text):
+                mid = tg_send(chat_id, text, thread=thread)
             last_sent = time.time()
+            dirty = False
 
 
 def kill_task(stem: str | None = None) -> int:

@@ -39,18 +39,39 @@ def tg_api(method: str, **params) -> dict:
 
 
 def tg_send(chat_id: int, text: str, token: str | None = None,
-            thread=None) -> None:
-    """sendMessage, splitting into <=4000-char chunks, max 5 messages."""
+            thread=None) -> int | None:
+    """sendMessage, splitting into <=4000-char chunks, max 5 messages.
+    Возвращает message_id первого куска — для последующего
+    редактирования (живой прогресс одним сообщением)."""
     chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)][:5]
     if len(text) > 20000:
         chunks[-1] += "\n…[truncated]"
     log(f"reply to chat {chat_id}: {len(chunks)} message(s), {len(text)} chars")
+    mid = None
     for chunk in chunks:
         try:
-            tg_api("sendMessage", chat_id=chat_id, text=chunk,
-                   _token=token, message_thread_id=thread)
+            res = tg_api("sendMessage", chat_id=chat_id, text=chunk,
+                         _token=token, message_thread_id=thread)
+            if mid is None:
+                mid = (res.get("result") or {}).get("message_id")
         except Exception as e:
             log(f"telegram sendMessage error: {e}")
+    return mid
+
+
+def tg_edit(chat_id: int, message_id: int, text: str,
+            token: str | None = None) -> bool:
+    """editMessageText — переписать уже отправленное сообщение
+    (обновление прогресса без новых сообщений). False = не вышло
+    (удалили, устарело) — вызывающий шлёт новое."""
+    try:
+        tg_api("editMessageText", chat_id=chat_id,
+               message_id=message_id, text=text[:4000],
+               _token=token)
+        return True
+    except Exception as e:
+        log(f"telegram editMessageText error: {e}")
+        return False
 
 
 def tg_download(file_id: str) -> bytes:
