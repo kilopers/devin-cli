@@ -189,7 +189,11 @@ def _deepseek_cost_summary(model_id: str) -> str:
         if pat in mid:
             return (f"${pin:g} / 1M Input · ${pcache:g} / 1M "
                     f"Cached input · ${pout:g} / 1M Output")
-    return ""
+    # неизвестный id (совместимый прокси со своими именами, напр.
+    # deepseek-flash) — оценка по тарифу chat, «≈» помечает оценку
+    pin, pcache, pout = _DEEPSEEK_PRICES[1][1]
+    return (f"≈${pin:g} / 1M Input · ${pcache:g} / 1M "
+            f"Cached input · ${pout:g} / 1M Output")
 
 
 def deepseek_models() -> list:
@@ -266,7 +270,9 @@ def _deepseek_collect_stats(export_path: Path, started: float,
                   "model": ev.get("model"),
                   "prompt_tokens": usg.get("prompt_tokens"),
                   "completion_tokens": usg.get("completion_tokens"),
-                  "cached_tokens": cache or None}
+                  "cached_tokens": cache or None,
+                  "steps": ev.get("steps"),
+                  "calls": ev.get("calls")}
     except Exception:
         pass
     if started and finished:
