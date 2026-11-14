@@ -1837,6 +1837,24 @@ def _api_task_merge():
     return jsonify({"ok": True, "stem": dst, "from": src})
 
 
+def _register_added_project(folder: str, title: str, ws_body) -> None:
+    """Пометить папку проектом для текущего юзера: владелец — только
+    если записи нет (INSERT IGNORE, чужого не забираем), title и
+    пространство — явное ws из запроса, иначе АКТИВНОЕ у юзера
+    (не дефолтное, как ленивый _project_ws — иначе «добавил проект
+    и не вижу»: он уезжал в другое пространство)."""
+    u = _current_user()
+    db_exec("INSERT IGNORE INTO project_owner(name, owner)"
+            " VALUES(%s,%s)", (folder, u))
+    if title:
+        pj_set(folder, "title", title)
+    wsel = int(ws_body or 0)
+    if wsel not in [w["id"] for w in _user_ws(u)]:
+        wsel = _active_ws(u)
+    db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"
+            " VALUES(%s,%s,%s)", (u, folder, wsel))
+
+
 @app.post("/api/project/add")
 @login_required
 def _api_project_add():
@@ -1856,10 +1874,24 @@ def _api_project_add():
     if not PROJECTS_ROOT or not PROJECTS_ROOT.is_dir():
         return jsonify({"ok": False, "error":
                         "мультирежим не настроен (DEVIN_PROJECTS_DIR)"}), 400
-    if (PROJECTS_ROOT / folder).exists():
-        return jsonify({"ok": False,
-                        "error": f"папка {folder} уже существует"}), 409
     dest = PROJECTS_ROOT / folder
+    if dest.exists():
+        # папка уже есть: оборвался прошлый add (клон прошёл, а
+        # регистрация упала) или её скопировали вручную — подключаем
+        # как проект вместо тупика «уже существует»; чужую не трогаем
+        own = db_query("SELECT owner FROM project_owner WHERE name=%s",
+                       (folder,))
+        if (own and own[0]["owner"] != _current_user()
+                and not _is_admin(_current_user())):
+            return jsonify({"ok": False, "error":
+                            f"папка {folder} — проект пользователя "
+                            f"{own[0]['owner']}"}), 409
+        _register_added_project(folder, title, body.get("ws"))
+        log(f"web adopted existing project {folder} "
+            f"(owner {_current_user()})")
+        return jsonify({"ok": True, "folder": folder, "adopted": True,
+                        "output": f"папка {folder} уже была — "
+                                  "проект подключён"})
     if local:
         # «локальный репозиторий» (v1.8.92): без клона — просто
         # папка + git init и пустой первый коммит, чтобы бар ветки
@@ -1881,15 +1913,7 @@ def _api_project_add():
             return jsonify({"ok": False,
                             "error": out[-4000:]
                                      or "git init failed"}), 500
-        db_exec("INSERT IGNORE INTO project_owner(name, owner)"
-                " VALUES(%s,%s)", (folder, _current_user()))
-        if title:
-            pj_set(folder, "title", title)
-        wsel = int(body.get("ws") or 0)
-        if wsel in [w["id"] for w in _user_ws(_current_user())]:
-            db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"
-                    " VALUES(%s,%s,%s)",
-                    (_current_user(), folder, wsel))
+        _register_added_project(folder, title, body.get("ws"))
         log(f"web added LOCAL project {folder} "
             f"(owner {_current_user()})")
         return jsonify({"ok": True, "folder": folder,
@@ -1926,14 +1950,7 @@ def _api_project_add():
         shutil.rmtree(dest, ignore_errors=True)
         return jsonify({"ok": False, "error":
                         out[-4000:] or "clone failed"}), 500
-    db_exec("INSERT IGNORE INTO project_owner(name, owner)"
-            " VALUES(%s,%s)", (folder, _current_user()))
-    if title:
-        pj_set(folder, "title", title)
-    wsel = int(body.get("ws") or 0)
-    if wsel in [w["id"] for w in _user_ws(_current_user())]:
-        db_exec("INSERT IGNORE INTO project_ws(user, name, ws_id)"
-                " VALUES(%s,%s,%s)", (_current_user(), folder, wsel))
+    _register_added_project(folder, title, body.get("ws"))
     log(f"web added project {folder} <- {host}/{path}"
         f" (owner {_current_user()})")
     return jsonify({"ok": True, "folder": folder, "output": out[-4000:]})
