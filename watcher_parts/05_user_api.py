@@ -52,10 +52,11 @@ SETTING_FIELDS = [
      "свой бот для задач — иначе общий (env)", "TELEGRAM_BOT_TOKEN",
      "telegram", "text"),
     ("telegram.chat_id", "Telegram chat id", False,
-     "куда слать результаты веб/cron-задач — id чата", "TELEGRAM_CHAT_ID",
+     "«дом» для уведомлений — ВСЕ результаты задач идут сюда; "
+     "для канала id -100… и бот должен быть админом", "TELEGRAM_CHAT_ID",
      "telegram", "text"),
     ("telegram.thread_id", "Telegram thread id", False,
-     "id темы форума (message_thread_id), опционально",
+     "id темы форума (message_thread_id), опционально — у канала нет",
      "TELEGRAM_THREAD_ID", "telegram", "text"),
     ("gitlab.base_url", "GitLab base URL", True, "self-hosted домен",
      "GITLAB_BASE_URL", "repos", "text"),
@@ -267,6 +268,7 @@ def _api_settings_set():
     body = _req_json()
     u = _current_user()
     old_tg = us_get(u, "telegram.bot_token")
+    old_chat = us_get(u, "telegram.chat_id")
     for k in body.get("clear") or []:
         us_set(u, k, "")
     for k, l, s, h, e, g, kd in SETTING_FIELDS:
@@ -278,6 +280,7 @@ def _api_settings_set():
         elif isinstance(v, str) and v != "":
             us_set(u, k, v)
     new_tg = us_get(u, "telegram.bot_token")
+    new_chat = us_get(u, "telegram.chat_id")
     if new_tg != old_tg:
         if old_tg:
             try:    # снять вебхук со старого токена
@@ -286,7 +289,22 @@ def _api_settings_set():
                 log(f"deleteWebhook for old bot of {u}: {e}")
         if new_tg:
             register_bot_webhook(u, new_tg)
-    return jsonify({"ok": True})
+    # проверка связки бот+чат: при смене токена или адресата шлём
+    # пробное сообщение новым ботом — юзер сразу видит, что его
+    # бот+канал живы (и понятная ошибка, если бот не админ канала)
+    warn = ""
+    if new_tg and new_chat and \
+            (new_tg != old_tg or new_chat != old_chat):
+        try:
+            tg_api("sendMessage", chat_id=int(new_chat),
+                   text="✅ Бот подключён — уведомления воркера будут "
+                        "приходить сюда.",
+                   _token=new_tg)
+        except Exception as e:
+            warn = (f"бот не смог написать в chat {new_chat}: {e} — "
+                    "добавь его участником/админом в чат или канал")
+            log(f"tg settings test send for {u} failed: {e}")
+    return jsonify({"ok": True, "warn": warn})
 
 
 @app.post("/api/ws/active")

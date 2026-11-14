@@ -27,6 +27,7 @@ def api_status() -> dict:
         "fast": pj_get(_web_current(_current_user()) or "", "fast") or "0",
         "stt_status": STATE.get("stt") or "",
         "version": APP_VERSION,
+        "env": WORKER_ENV,
         "user": _current_user() if _admin_hash() else "",
         "is_admin": _is_admin(),
     }

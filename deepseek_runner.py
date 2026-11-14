@@ -41,15 +41,43 @@ MAX_TURNS = 120
 OUT_CAP = 8000        # хвост вывода инструмента в контекст
 HIST_MSGS = 60        # сколько последних сообщений держим при resume/росте
 
-TOOL_MODELS = {"deepseek-chat"}   # reasoner — без function calling
+_USAGE_KEYS = ("prompt_tokens", "completion_tokens",
+               "prompt_cache_hit_tokens", "prompt_cache_miss_tokens",
+               "total_tokens")
 
 
 def emit(s: str) -> None:
     print(s, flush=True)
 
 
+def _sanitized(msgs: list) -> list:
+    """Валидная для API история: после усечения/резюма могут остаться
+    tool-ответы-сироты или assistant.tool_calls без ответов — API их
+    отвергает (400). Сироты выкидываем, недостающие ответы добиваем
+    заглушками."""
+    call_ids = {tc.get("id") for m in msgs
+                for tc in (m.get("tool_calls") or [])}
+    tool_ids = {m.get("tool_call_id") for m in msgs
+                if m.get("role") == "tool"}
+    out = []
+    for m in msgs:
+        if m.get("role") == "tool" \
+                and m.get("tool_call_id") not in call_ids:
+            continue
+        out.append(m)
+        if m.get("role") == "assistant":
+            for tc in m.get("tool_calls") or []:
+                if tc.get("id") and tc.get("id") not in tool_ids:
+                    out.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id"),
+                        "name": (tc.get("function") or {}).get("name"),
+                        "content": "(ответ утерян при усечении истории)"})
+    return out
+
+
 def api_call(messages: list, tools=None, tries: int = 4) -> dict:
-    body = {"model": MODEL, "messages": messages}
+    body = {"model": MODEL, "messages": _sanitized(messages)}
     if tools:
         body["tools"] = tools
     data = json.dumps(body).encode()
@@ -262,7 +290,9 @@ def main() -> int:
     if (resume or cont) and not _load_session(sid):
         emit("⚠ session not found — стартую чистую")
 
-    tools = TOOLS if MODEL in TOOL_MODELS else None
+    # reasoner не умеет function calling; у прочих моделей (включая
+    # совместимые прокси через DEEPSEEK_BASE_URL) инструменты включены
+    tools = None if "reasoner" in MODEL.lower() else TOOLS
     emit(f"🚀 deepseek {MODEL} session {sid}"
          + (" · resumed" if len(messages) > 1 else "")
          + ("" if tools else " · без инструментов"))
@@ -273,7 +303,13 @@ def main() -> int:
     try:
         for _ in range(MAX_TURNS):
             resp = api_call(messages, tools)
-            usage_all = resp.get("usage") or usage_all
+            u = resp.get("usage") or {}
+            # суммируем по вызовам: у tool-цикла N запросов к API,
+            # последний usage описывает лишь финальный — статистика
+            # и цена задачи занижались бы в разы
+            for k in _USAGE_KEYS:
+                if isinstance(u.get(k), (int, float)):
+                    usage_all[k] = usage_all.get(k, 0) + u[k]
             msg = (resp.get("choices") or [{}])[0].get("message") or {}
             messages.append(msg)
             text = (msg.get("content") or "").strip()

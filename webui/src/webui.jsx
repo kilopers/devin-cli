@@ -3552,6 +3552,8 @@ export default function App() {
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
   const askDel = useCallback(
     t2 => setConfirm({ kind: "del", name: t2.name, stem: t2.stem }), []);
+  const askToProd = useCallback(
+    () => setConfirm({ kind: "toprod" }), []);
   // ✕ на пузыре чат-колонки: удаляет пару «вопрос+ответ» целиком;
   // активная задача (queued/running) при этом останавливается —
   // текст подтверждения зависит от её статуса
@@ -3675,6 +3677,7 @@ export default function App() {
     const pk = c.kind === "topic_del" || c.kind === "topic_reset"
              ? "col:" + c.tid
              : c.kind === "tpl_del" ? "col:" + c.col
+             : c.kind === "toprod" ? "deploy"
              : c.stem;
     try {
       const d = await pendRun(pk, async () => c.kind === "stop"
@@ -3692,6 +3695,8 @@ export default function App() {
         : c.kind === "tpl_del"
         ? await post("/api/topic/tpl", { action: "delete",
                       project: projRef.current, id: c.id })
+        : c.kind === "toprod"
+        ? await post("/api/deploy/prod", { stem: c.stem })
         : await post("/api/task/cancel", { stem: c.stem }));
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
@@ -3704,6 +3709,12 @@ export default function App() {
                  : c.kind === "topic_reset"
                    ? "↺ Сессия сброшена — диалог очищен"
                  : c.kind === "tpl_del" ? "🗑 Шаблон удалён"
+                 : c.kind === "toprod"
+                   ? (d.nothing
+                      ? "Прод уже на dev — мержить нечего"
+                      : "🚀 dev → main" +
+                        (d.sha ? ` (${d.sha})` : "") +
+                        " — CI соберёт :latest и обновит прод")
                                    : "Удалено из очереди: " + c.name);
         if (c.kind === "cancel" || c.kind === "del" ||
             c.kind === "chat_del")
@@ -4018,6 +4029,16 @@ export default function App() {
                               height: { xs: 22, md: 24 },
                               whiteSpace: "nowrap", minWidth: 0 }}>
                   ✅ коммит+пуш</Button>
+              </Tooltip>}
+            {status.env === "dev" &&
+              <Tooltip title="отправить в прод — слить dev → main, CI соберёт :latest и обновит прод">
+                <Button size="small" variant="contained" color="warning"
+                        onClick={askToProd}
+                        sx={{ fontSize: { xs: 10, md: 11 },
+                              px: { xs: 0.8, md: 1.5 }, py: 0,
+                              height: { xs: 22, md: 24 },
+                              whiteSpace: "nowrap", minWidth: 0 }}>
+                  🚀 в прод</Button>
               </Tooltip>}
             <Tooltip title="переключить/создать ветку репозитория">
               <Button size="small" variant="outlined"
@@ -4572,6 +4593,7 @@ export default function App() {
            : confirm?.kind === "topic_del" ? "Удалить тему?"
            : confirm?.kind === "topic_reset" ? "Сбросить сессию?"
            : confirm?.kind === "tpl_del" ? "Удалить шаблон?"
+           : confirm?.kind === "toprod" ? "Отправить в прод?"
                                    : "Удалить задачу из очереди?"}
         </DialogTitle>
         <DialogContent>
@@ -4622,6 +4644,10 @@ export default function App() {
               : confirm?.kind === "tpl_del"
               ? `Шаблон «${confirm?.name}…» будет удалён из шапки ` +
                 "темы — сама колонка и её задачи не трогаются."
+              : confirm?.kind === "toprod"
+              ? "Сольётся ветка dev → main в GitHub — CI соберёт " +
+                ":latest и обновит прод. В merge попадут ВСЕ " +
+                "изменения dev, не отдельная задача."
               : `«${confirm?.name}» будет удалена из очереди и не ` +
                 "выполнится. Действие необратимо."}
           </Typography>
@@ -4634,6 +4660,7 @@ export default function App() {
                       (confirm?.active || []).length > 0}>
             {confirm?.kind === "stop" ? "Остановить"
              : confirm?.kind === "topic_reset" ? "Сбросить"
+             : confirm?.kind === "toprod" ? "Отправить"
                                            : "Удалить"}
           </Button>
         </DialogActions>

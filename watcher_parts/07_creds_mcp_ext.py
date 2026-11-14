@@ -595,3 +595,98 @@ def _service_worker():
 @app.get("/<path:_any>")   # unknown GET → status page (public, as before)
 def _status_page(_any: str = ""):
     return Response(_legacy_status_page(), mimetype="text/html")
+
+
+@app.post("/api/deploy/prod")
+@login_required
+def _deploy_prod():
+    """Dev-инстанс: слить DEV_BRANCH → DEPLOY_BRANCH через GitHub merge
+    API — CI на прод-ветке сам соберёт :latest и катнёт прод.
+    Кнопка 🚀 в баре ветки видна только при WORKER_ENV=dev."""
+    if WORKER_ENV != "dev":
+        return jsonify({"ok": False,
+                        "error": "эндпоинт доступен только на "
+                                 "dev-инстансе"}), 400
+    # Исключение: merge в прод идёт ТОЛЬКО env/репо-кредами владельца —
+    # per-user PAT может не иметь прав push на DEPLOY_REPO. Кандидаты
+    # по приоритету, при 401/403 пробуется следующий:
+    toks = _deploy_tokens()
+    if not toks:
+        return jsonify({"ok": False,
+                        "error": "нет GitHub-токена владельца — "
+                                 "GITHUB_TOKEN в .env или PAT в "
+                                 "remote.origin чекаута репо"}), 400
+    stem = str((request.get_json(silent=True) or {}).get("stem") or "")[:60]
+    note = f" [task {stem}]" if stem else ""
+    body = json.dumps({
+        "base": DEPLOY_BRANCH, "head": DEV_BRANCH,
+        "commit_message":
+        f"deploy: merge {DEV_BRANCH} into {DEPLOY_BRANCH}{note}",
+    }).encode()
+    for i, tk in enumerate(toks):
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{DEPLOY_REPO}/merges",
+            data=body, method="POST",
+            headers={"Accept": "application/vnd.github+json",
+                     "Authorization": "Bearer " + tk,
+                     "Content-Type": "application/json",
+                     "User-Agent": "devin-worker"})
+        try:
+            with TG_OPENER.open(req, timeout=20) as r:
+                d = json.loads(r.read())
+            return jsonify({"ok": True, "sha": d.get("sha", "")[:8],
+                            "branch": DEPLOY_BRANCH})
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode("utf-8", errors="replace")[:240].strip()
+            if e.code == 422 and "commit" in raw:
+                # "No commits between main and dev" — нечего мерджить
+                return jsonify({"ok": True, "sha": "", "nothing": True})
+            if e.code in (401, 403) and i + 1 < len(toks):
+                continue  # кред не подошёл — следующий кандидат
+            return jsonify({"ok": False,
+                            "error": f"GitHub {e.code}: {raw}"}), 502
+        except Exception as e:
+            return jsonify({"ok": False,
+                            "error": f"{type(e).__name__}: "
+                                     f"{str(e)[:120]}"}), 502
+
+
+def _deploy_tokens() -> list:
+    """Кандидаты env/репо-кредов владельца для deploy-merge (per-user
+    креды не участвуют):
+      1. GITHUB_TOKEN — явный env;
+      2. PAT в remote.origin.url чекаута DEPLOY_REPO — те же креды,
+         которыми задачи пушат в репо (клон по token-URL);
+      3. PAT в env GIT_REPO_URL.
+    """
+    toks = []
+    if GITHUB_TOKEN:
+        toks.append(GITHUB_TOKEN)
+    name = DEPLOY_REPO.rsplit("/", 1)[-1]
+    cands = ([PROJECTS_ROOT / name] if PROJECTS_ROOT else []) + \
+            [WORKDIR / name]
+    for d in cands:
+        try:
+            if not (d / ".git").exists():
+                continue
+            out = subprocess.run(
+                ["git", "-C", str(d), "config", "--get",
+                 "remote.origin.url"],
+                capture_output=True, text=True, timeout=10)
+            m = re.search(r"://[^/:@]+:([^/@]+)@",
+                          (out.stdout or "").strip())
+            if m:
+                toks.append(m.group(1))
+            break
+        except Exception:
+            continue
+    m = re.search(r"://[^/:@]+:([^/@]+)@",
+                  os.environ.get("GIT_REPO_URL", ""))
+    if m:
+        toks.append(m.group(1))
+    seen, uniq = set(), []
+    for t in toks:
+        if t and t not in seen:
+            seen.add(t)
+            uniq.append(t)
+    return uniq
