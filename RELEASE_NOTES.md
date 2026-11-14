@@ -1,3 +1,10 @@
+## 2.4.1 — dev deploy-hook без фолбэка на прод
+
+- Workflow: dev-пуш дёргает только vars.DEPLOY_HOOK_URL_DEV
+  (https://dev.ai.kilop.ru/deploy → watchtower scope=dev). Убран
+  фолбэк на продовский DEPLOY_HOOK_URL — dev-билд больше не может
+  пересоздать прод-контейнеры, если переменная не задана.
+
 ## 2.4.0 — dev-окружение: триггер «в прод» и env-флаг
 
 - WORKER_ENV ("prod"/"dev", env воркера) отдаётся в /api/status — на
