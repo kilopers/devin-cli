@@ -17,8 +17,7 @@ import {
 import MicIcon from "@mui/icons-material/Mic";
 import StopIcon from "@mui/icons-material/Stop";
 import AddIcon from "@mui/icons-material/Add";
-import { STT_RATE, resample, encodeWav,
-         micDeviceId, setMicDeviceId, getMicStream, listMics }
+import { STT_RATE, resample, encodeWav, getMicStream }
        from "./audio.js";
 import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -26,7 +25,7 @@ import KeyIcon from "@mui/icons-material/VpnKey";
 import LockIcon from "@mui/icons-material/Lock";
 import SettingsIcon from "@mui/icons-material/Settings";
 import RepoKeys from "./RepoKeys.jsx";
-import Settings from "./Settings.jsx";
+import SettingsPage from "./SettingsPage.jsx";
 import Workspaces, { Dot as WsDot } from "./Workspaces.jsx";
 import ProjectSettings from "./ProjectSettings.jsx";
 import TuneIcon from "@mui/icons-material/Tune";
@@ -2663,19 +2662,7 @@ export default function App() {
   const [colorPreview, setColorPreview] = useState(null); // превью из диалога настроек
   const [profileOpen, setProfileOpen] = useState(false);
   const [profMenu, setProfMenu] = useState(null);  // anchor профиля
-  // выбор микрофона для диктовки (v1.8.84): список аудиовходов +
-  // «по умолчанию», id — в localStorage (devin.mic)
-  const [micOpen, setMicOpen] = useState(false);
-  const [micList, setMicList] = useState([]);
-  const [micId, setMicId] = useState(micDeviceId);
-  const openMic = async () => {
-    setMicOpen(true); setMicList(await listMics()); };
-  const pickMic = id => {
-    setMicId(id); setMicDeviceId(id);
-    setToast(id ? "Микрофон выбран" : "Микрофон: по умолчанию");
-  };
   const [keysOpen, setKeysOpen] = useState(false); // «Ключи репозиториев»
-  const [setOpen, setSetOpen] = useState(false);   // «Настройки»
   const [usersOpen, setUsersOpen] = useState(false); // «Пользователи» (админ)
   const [wsOpen, setWsOpen] = useState(false);   // «Рабочее пространство»
   const [branchDlg, setBranchDlg] = useState(null); // «🌿 новая ветка»
@@ -2684,7 +2671,7 @@ export default function App() {
   const [branchName, setBranchName] = useState("");
   const [wsInfo, setWsInfo] = useState({ ws: [], active: 0 });
   const [wsmap, setWsmap] = useState({});        // project -> ws id
-  const [view, setView] = useState("feed");      // feed | models
+  const [view, setView] = useState("feed");      // feed | models | settings
   const [pSetOpen, setPSetOpen] = useState(null); // настройки проекта
   const [drawerOpen, setDrawerOpen] = useState(false);
   // сворачивание правого сайдбара на десктопе — hamburger в шапке;
@@ -3959,12 +3946,7 @@ export default function App() {
                 Ключи репозиториев
               </MenuItem>
               <MenuItem onClick={() => { setProfMenu(null);
-                                         openMic(); }}>
-                <MicIcon fontSize="small" sx={{ mr: 1 }} />
-                Микрофон
-              </MenuItem>
-              <MenuItem onClick={() => { setProfMenu(null);
-                                         setSetOpen(true); }}>
+                                         setView("settings"); }}>
                 <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
                 Настройки
               </MenuItem>
@@ -4082,7 +4064,11 @@ export default function App() {
             резолвить нечего */}
         <Box sx={{ flexGrow: 1, flexBasis: 0, display: "flex",
                    width: "100%", minHeight: 0 }}>
-          {view === "models"
+          {view === "settings"
+            ? <SettingsPage accent={accent} toast={setToast}
+                            onClose={() => setView("feed")}
+                            onChanged={refreshProjects} />
+          : view === "models"
             ? <ModelsPage accent={accent} toast={setToast}
                           onClose={() => setView("feed")} />
           : (agents && !agents.any)
@@ -4101,7 +4087,7 @@ export default function App() {
                     или в Настройках аккаунта.
                   </Typography>
                   <Button variant="contained" size="small"
-                          onClick={() => setSetOpen(true)}>
+                          onClick={() => setView("settings")}>
                     Открыть настройки
                   </Button>
                 </Paper>
@@ -4507,8 +4493,6 @@ export default function App() {
                      toast={setToast} />
       <FileEditor project={project} path={editPath}
                   onClose={() => setEditPath(null)} toast={setToast} />
-      <Settings open={setOpen} onClose={() => setSetOpen(false)}
-                onChanged={refreshProjects} />
       <RepoKeys open={keysOpen}
                 onClose={() => { setKeysOpen(false);
                                  if (!multiMode) setAddOpen(true); }} />
@@ -4701,43 +4685,6 @@ export default function App() {
         <DialogActions>
           <Button variant="contained" onClick={savePw}>Сохранить</Button>
         </DialogActions>
-      </Dialog>
-
-      {/* выбор микрофона для диктовки */}
-      <Dialog open={micOpen} onClose={() => setMicOpen(false)}
-              maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontSize: 15, fontWeight: 600,
-                           pt: 2, pb: 0.5, pr: 5 }}>
-          Микрофон для диктовки
-          <Tooltip title="закрыть (Esc)"><span>
-            <IconButton onClick={() => setMicOpen(false)} size="small"
-              sx={{ position: "absolute", right: 8, top: 8 }}>
-              <CloseIcon sx={{ fontSize: 17 }} />
-            </IconButton>
-          </span></Tooltip>
-        </DialogTitle>
-        <DialogContent sx={{ pt: "8px !important" }}>
-          {!micList.length &&
-            <Typography variant="body2" color="text.secondary"
-                        sx={{ fontSize: 12.5, py: 1 }}>
-              Микрофоны не найдены — проверь, что браузеру разрешён
-              доступ к микрофону.
-            </Typography>}
-          <RadioGroup value={micId}
-                      onChange={e => pickMic(e.target.value)}>
-            <FormControlLabel value="" control={<Radio size="small" />}
-              label={<Typography sx={{ fontSize: 13 }}>
-                       По умолчанию (системный)
-                     </Typography>} />
-            {micList.map((d, i) =>
-              <FormControlLabel key={d.deviceId || i}
-                value={d.deviceId}
-                control={<Radio size="small" />}
-                label={<Typography sx={{ fontSize: 13 }}>
-                         {d.label || "устройство " + (i + 1)}
-                       </Typography>} />)}
-          </RadioGroup>
-        </DialogContent>
       </Dialog>
 
       <Snackbar open={!!toast || !!toastNode} autoHideDuration={3000}

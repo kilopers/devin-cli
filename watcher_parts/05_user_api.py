@@ -1,41 +1,67 @@
 # --- настройки юзера (API-ключи и пр.) ----------------------------------
 
+# Группы настроек страницы «Настройки»: (ключ, заголовок, подсказка).
+# Порядок списка = порядок секций на странице; поле с неизвестной
+# группой уедет в конец («Прочее»).
+SETTING_GROUPS = [
+    ("agents", "🤖 Движки агентов", "ключи движков, выполняющих задачи"),
+    ("stt", "🎙 Диктовка (STT)",
+     "распознавание речи — провайдеры и ключи"),
+    ("telegram", "📨 Telegram",
+     "свой бот и адресат уведомлений о задачах"),
+    ("repos", "📦 Git и репозитории", "клонирование и подпись коммитов"),
+    ("ui", "🖥 Интерфейс", "поведение веб-панели"),
+    ("ext", "🔑 Внешний API", "ключ для постановки задач извне"),
+]
+
 SETTING_FIELDS = [
-    # (key, label, секрет?, подсказка, env-фолбэк)
+    # (key, label, секрет?, подсказка, env-фолбэк, группа, тип)
+    # тип: "text" — поле ввода, "bool" — чекбокс 0/1
     ("devin.api_key", "Devin API ключ", True,
-     "ключ аккаунта Devin — им задачи кладутся в CLI", "WINDSURF_API_KEY"),
+     "ключ аккаунта Devin — им задачи кладутся в CLI", "WINDSURF_API_KEY",
+     "agents", "text"),
     ("claude.api_key", "Claude API ключ", True,
      "ключ Anthropic для движка Claude — console.anthropic.com",
-     "ANTHROPIC_API_KEY"),
+     "ANTHROPIC_API_KEY", "agents", "text"),
     ("stt.provider", "STT провайдер(ы)", False,
      "gemini / openai / yandex, через запятую — fallback-цепочка",
-     "STT_PROVIDER"),
+     "STT_PROVIDER", "stt", "text"),
     ("stt.api_key", "STT API ключ", True,
-     "openai-совместимый и yandex делят один ключ", "STT_API_KEY"),
+     "openai-совместимый и yandex делят один ключ", "STT_API_KEY",
+     "stt", "text"),
     ("stt.base_url", "STT base URL", True,
      "напр. https://api.groq.com/openai/v1 или api.openai.com",
-     "STT_BASE_URL"),
+     "STT_BASE_URL", "stt", "text"),
     ("stt.model", "STT модель", False,
-     "whisper-1 / whisper-large-v3-turbo", "STT_MODEL"),
-    ("gemini.api_key", "Gemini API ключ", True, "AIza…", "GEMINI_API_KEY"),
+     "whisper-1 / whisper-large-v3-turbo", "STT_MODEL", "stt", "text"),
+    ("gemini.api_key", "Gemini API ключ", True, "AIza…", "GEMINI_API_KEY",
+     "stt", "text"),
     ("gemini.model", "Gemini модель", False, "gemini-2.5-flash",
-     "GEMINI_MODEL"),
+     "GEMINI_MODEL", "stt", "text"),
     ("yandex.folder_id", "Yandex folder id", False, "b1g…",
-     "YANDEX_FOLDER_ID"),
-    ("yandex.lang", "Yandex язык", False, "ru-RU", "YANDEX_LANG"),
+     "YANDEX_FOLDER_ID", "stt", "text"),
+    ("yandex.lang", "Yandex язык", False, "ru-RU", "YANDEX_LANG",
+     "stt", "text"),
     ("telegram.bot_token", "Telegram bot token", True,
-     "свой бот для задач — иначе общий (env)", "TELEGRAM_BOT_TOKEN"),
+     "свой бот для задач — иначе общий (env)", "TELEGRAM_BOT_TOKEN",
+     "telegram", "text"),
     ("telegram.chat_id", "Telegram chat id", False,
-     "куда слать результаты веб/cron-задач — id чата", "TELEGRAM_CHAT_ID"),
+     "куда слать результаты веб/cron-задач — id чата", "TELEGRAM_CHAT_ID",
+     "telegram", "text"),
     ("telegram.thread_id", "Telegram thread id", False,
      "id темы форума (message_thread_id), опционально",
-     "TELEGRAM_THREAD_ID"),
+     "TELEGRAM_THREAD_ID", "telegram", "text"),
     ("gitlab.base_url", "GitLab base URL", True, "self-hosted домен",
-     "GITLAB_BASE_URL"),
+     "GITLAB_BASE_URL", "repos", "text"),
     ("git.name", "Git user.name", False, "подпись коммитов",
-     "GIT_USER_NAME"),
+     "GIT_USER_NAME", "repos", "text"),
     ("git.email", "Git user.email", False, "email коммитов",
-     "GIT_USER_EMAIL"),
+     "GIT_USER_EMAIL", "repos", "text"),
+    ("all_projects", "Показывать все проекты", False,
+     "проекты из всех пространств на доске", "", "ui", "bool"),
+    ("tg.progress", "Живой прогресс задач в telegram", False,
+     "«🛠»-сообщение с дайджестом шагов во время прогона (выкл — "
+     "только результат)", "", "telegram", "bool"),
 ]
 
 
@@ -214,32 +240,37 @@ def _api_settings_get():
     for k, v in _us_raw(u).items():
         mine[k] = us_get(u, k) if isinstance(v, str) and             v.startswith("enc:v1:") else v
     fields, eff = [], {}
-    for k, l, s, h, e in SETTING_FIELDS:
+    for k, l, s, h, e, g, kd in SETTING_FIELDS:
         ev = os.environ.get(e, "")
         fields.append({"key": k, "label": l, "secret": s, "hint": h,
-                       "env": ev, "set": k in mine})
+                       "env": ev, "set": k in mine,
+                       "group": g, "kind": kd})
         eff[k] = mine.get(k) or ev
     return jsonify({"ok": True, "settings": mine, "effective": eff,
-                    "fields": fields})
+                    "fields": fields,
+                    "groups": [{"key": g, "label": t, "hint": h}
+                               for g, t, h in SETTING_GROUPS]})
 
 
 @app.post("/api/settings")
 @login_required
 def _api_settings_set():
     """Сохранить настройки: непустые значения пишутся (секреты
-    шифруются), пустые пропускаются. Удаление — отдельным списком
-    clear: [key…]."""
+    шифруются), пустые пропускаются. bool-поля — всегда 0/1.
+    Удаление — отдельным списком clear: [key…]."""
     body = _req_json()
     u = _current_user()
-    if "all_projects" in body:   # чекбокс «все проекты» — сразу 0/1
-        us_set(u, "all_projects",
-               "1" if str(body["all_projects"]) in ("1", "true") else "0")
     old_tg = us_get(u, "telegram.bot_token")
     for k in body.get("clear") or []:
         us_set(u, k, "")
-    for k, l, s, h, e in SETTING_FIELDS:
-        if k in body and isinstance(body[k], str) and body[k] != "":
-            us_set(u, k, body[k])
+    for k, l, s, h, e, g, kd in SETTING_FIELDS:
+        if k not in body:
+            continue
+        v = body[k]
+        if kd == "bool":
+            us_set(u, k, "1" if str(v) in ("1", "true", "True") else "0")
+        elif isinstance(v, str) and v != "":
+            us_set(u, k, v)
     new_tg = us_get(u, "telegram.bot_token")
     if new_tg != old_tg:
         if old_tg:
