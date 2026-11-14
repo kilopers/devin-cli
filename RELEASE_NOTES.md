@@ -1,3 +1,15 @@
+## 2.4.0 — dev-окружение: триггер «в прод» и env-флаг
+
+- WORKER_ENV ("prod"/"dev", env воркера) отдаётся в /api/status — на
+  dev-инстансе у done-карточек появляется кнопка 🚀 «отправить в
+  прод»: confirm → POST /api/deploy/prod → мердж DEV_BRANCH →
+  DEPLOY_BRANCH через GitHub merge API (base/head/repo —
+  DEPLOY_BRANCH/DEV_BRANCH/DEPLOY_REPO в env), токен — git-креды
+  юзера (github.com) или GITHUB_TOKEN. Успешный merge запускает CI
+  main → :latest → прод обновляется watchtower'ом. Ответ «нечего
+  мерджить» (422 no commits) возвращается как ok+nothing.
+- За границей dev эндпоинт отвечает 400 — прод кнопку не показывает.
+
 ## 2.3.0 — движок DeepSeek (API, per-user)
 
 - Третий движок в реестре AGENTS — «deepseek»: задачи идут через

@@ -49,6 +49,7 @@ import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import RedoIcon from "@mui/icons-material/Redo";
+import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
@@ -689,6 +690,7 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                sel, onNote, onCont, cols,
                                                onDict, dictOn, dictBusy,
                                                pending, pend, onGone,
+                                               onToProd,
                                                mergeSel, onMergeOver,
                                                showOut,
                                                onMergeDrop,
@@ -1272,6 +1274,14 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   disabled={retryBusy}
                   sx={{ p: "3px", color: "text.secondary" }}>
                   <ReplayIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {t.status === "done" && onToProd && (
+              <Tooltip title="отправить в прод — слить dev → main, CI соберёт :latest и обновит прод">
+                <IconButton size="small" onClick={() => onToProd(t)}
+                  sx={{ p: "3px", color: "text.secondary" }}>
+                  <RocketLaunchIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -3090,6 +3100,7 @@ export default function App() {
           onNote={toggleNote} onCont={toggleCont}
           onStop={askStop} onCancel={askCancel}
           onDel={askDel} toast={setToast} cols={boardCols}
+          onToProd={status.env === "dev" ? askToProd : undefined}
           onDict={toggleDict}
           dictOn={dict?.kind === "note" && dict?.stem === t.stem}
           dictBusy={dictProc?.kind === "note"
@@ -3552,6 +3563,10 @@ export default function App() {
     t2 => setConfirm({ kind: "cancel", name: t2.name, stem: t2.stem }), []);
   const askDel = useCallback(
     t2 => setConfirm({ kind: "del", name: t2.name, stem: t2.stem }), []);
+  const askToProd = useCallback(
+    t2 => setConfirm({ kind: "toprod", stem: t2.stem,
+                       name: (t2.name || t2.prompt || "")
+                               .trim().slice(0, 60) }), []);
   // ✕ на пузыре чат-колонки: удаляет пару «вопрос+ответ» целиком;
   // активная задача (queued/running) при этом останавливается —
   // текст подтверждения зависит от её статуса
@@ -3692,6 +3707,8 @@ export default function App() {
         : c.kind === "tpl_del"
         ? await post("/api/topic/tpl", { action: "delete",
                       project: projRef.current, id: c.id })
+        : c.kind === "toprod"
+        ? await post("/api/deploy/prod", { stem: c.stem })
         : await post("/api/task/cancel", { stem: c.stem }));
       if (d.ok) {
         setToast(c.kind === "stop" ? "⛔ Остановлено: " + d.stopped
@@ -3704,6 +3721,12 @@ export default function App() {
                  : c.kind === "topic_reset"
                    ? "↺ Сессия сброшена — диалог очищен"
                  : c.kind === "tpl_del" ? "🗑 Шаблон удалён"
+                 : c.kind === "toprod"
+                   ? (d.nothing
+                      ? "Прод уже на dev — мержить нечего"
+                      : "🚀 dev → main" +
+                        (d.sha ? ` (${d.sha})` : "") +
+                        " — CI соберёт :latest и обновит прод")
                                    : "Удалено из очереди: " + c.name);
         if (c.kind === "cancel" || c.kind === "del" ||
             c.kind === "chat_del")
@@ -4572,6 +4595,7 @@ export default function App() {
            : confirm?.kind === "topic_del" ? "Удалить тему?"
            : confirm?.kind === "topic_reset" ? "Сбросить сессию?"
            : confirm?.kind === "tpl_del" ? "Удалить шаблон?"
+           : confirm?.kind === "toprod" ? "Отправить в прод?"
                                    : "Удалить задачу из очереди?"}
         </DialogTitle>
         <DialogContent>
@@ -4622,6 +4646,10 @@ export default function App() {
               : confirm?.kind === "tpl_del"
               ? `Шаблон «${confirm?.name}…» будет удалён из шапки ` +
                 "темы — сама колонка и её задачи не трогаются."
+              : confirm?.kind === "toprod"
+              ? "Сольётся ветка dev → main в GitHub — CI соберёт " +
+                ":latest и обновит прод. Задача «" + confirm?.name +
+                "…» — только триггер, в merge попадёт вся dev."
               : `«${confirm?.name}» будет удалена из очереди и не ` +
                 "выполнится. Действие необратимо."}
           </Typography>
@@ -4634,6 +4662,7 @@ export default function App() {
                       (confirm?.active || []).length > 0}>
             {confirm?.kind === "stop" ? "Остановить"
              : confirm?.kind === "topic_reset" ? "Сбросить"
+             : confirm?.kind === "toprod" ? "Отправить"
                                            : "Удалить"}
           </Button>
         </DialogActions>

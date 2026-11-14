@@ -95,6 +95,14 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITLAB_TOKEN = os.environ.get("GITLAB_TOKEN", "")
 GITLAB_BASE_URL = os.environ.get("GITLAB_BASE_URL",
                                  "https://gitlab.com").rstrip("/")
+# Окружение воркера: "prod" (дефолт) или "dev" — на dev в UI виден
+# триггер «в прод»: мердж DEV_BRANCH → DEPLOY_BRANCH через GitHub merge
+# API (токен — сохранённые git-креды юзера или GITHUB_TOKEN), CI на
+# прод-ветке дальше сам собирает :latest и катит прод.
+WORKER_ENV = os.environ.get("WORKER_ENV", "prod")
+DEPLOY_REPO = os.environ.get("DEPLOY_REPO", "kilopers/devin-cli")
+DEPLOY_BRANCH = os.environ.get("DEPLOY_BRANCH", "main")
+DEV_BRANCH = os.environ.get("DEV_BRANCH", "dev")
 # Web UI pages are Jinja2 templates rendered by Flask (render_template):
 # templates/login.html — MUI login form, templates/webui.html — main page.
 TEMPLATES_DIR = Path(os.environ.get("TEMPLATES_DIR", "/app/templates"))

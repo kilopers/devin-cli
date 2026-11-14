@@ -595,3 +595,50 @@ def _service_worker():
 @app.get("/<path:_any>")   # unknown GET → status page (public, as before)
 def _status_page(_any: str = ""):
     return Response(_legacy_status_page(), mimetype="text/html")
+
+
+@app.post("/api/deploy/prod")
+@login_required
+def _deploy_prod():
+    """Dev-инстанс: слить DEV_BRANCH → DEPLOY_BRANCH через GitHub merge
+    API — CI на прод-ветке сам соберёт :latest и катнёт прод.
+    Кнопка 🚀 на done-карточках видна только при WORKER_ENV=dev."""
+    if WORKER_ENV != "dev":
+        return jsonify({"ok": False,
+                        "error": "эндпоинт доступен только на "
+                                 "dev-инстансе"}), 400
+    tk = _cred_get("github.com") or GITHUB_TOKEN
+    if not tk:
+        return jsonify({"ok": False,
+                        "error": "нет GitHub-токена — добавь PAT для "
+                                 "github.com в «Ключи репозиториев» "
+                                 "или GITHUB_TOKEN в .env"}), 400
+    stem = str((request.get_json(silent=True) or {}).get("stem") or "")[:60]
+    note = f" [task {stem}]" if stem else ""
+    body = json.dumps({
+        "base": DEPLOY_BRANCH, "head": DEV_BRANCH,
+        "commit_message":
+        f"deploy: merge {DEV_BRANCH} into {DEPLOY_BRANCH}{note}",
+    }).encode()
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{DEPLOY_REPO}/merges",
+        data=body, method="POST",
+        headers={"Accept": "application/vnd.github+json",
+                 "Authorization": "Bearer " + tk,
+                 "Content-Type": "application/json",
+                 "User-Agent": "devin-worker"})
+    try:
+        with TG_OPENER.open(req, timeout=20) as r:
+            d = json.loads(r.read())
+        return jsonify({"ok": True, "sha": d.get("sha", "")[:8],
+                        "branch": DEPLOY_BRANCH})
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")[:240].strip()
+        if e.code == 422 and "commit" in raw:
+            # "No commits between main and dev" — просто нечего мерджить
+            return jsonify({"ok": True, "sha": "", "nothing": True})
+        return jsonify({"ok": False,
+                        "error": f"GitHub {e.code}: {raw}"}), 502
+    except Exception as e:
+        return jsonify({"ok": False,
+                        "error": f"{type(e).__name__}: {str(e)[:120]}"}), 502
