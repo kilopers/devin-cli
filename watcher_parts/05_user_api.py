@@ -58,6 +58,10 @@ SETTING_FIELDS = [
     ("telegram.thread_id", "Telegram thread id", False,
      "id темы форума (message_thread_id), опционально — у канала нет",
      "TELEGRAM_THREAD_ID", "telegram", "text"),
+    ("telegram.allowed", "Кому отвечает бот", False,
+     "белый список через запятую: @username, user_id или chat_id; "
+     "ПУСТО = бот молчит для всех", "TELEGRAM_ALLOWED",
+     "telegram", "text"),
     ("gitlab.base_url", "GitLab base URL", True, "self-hosted домен",
      "GITLAB_BASE_URL", "repos", "text"),
     ("git.name", "Git user.name", False, "подпись коммитов",
