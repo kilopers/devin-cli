@@ -108,7 +108,7 @@ export default function SettingsPage({ accent, onClose, toast,
     if (!j.ok) return setMsg({ ok: false, text: j.error });
     if ("all_projects" in edit) onChanged?.();
     setEdit({});
-    toast?.("Сохранено");
+    toast?.(j.warn ? "Сохранено · ⚠ " + j.warn : "Сохранено");
     load();
   };
 

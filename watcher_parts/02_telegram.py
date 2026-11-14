@@ -484,19 +484,35 @@ def enqueue_task(text: str, chat_id: int | None = None,
                  or reply_mode(scope))
     if override_mode in ("ask", "code", "say", "plan"):
         rmode = override_mode  # кнопка «Кодировать»/«Спросить» важнее настроек
-    # у веб/cron-задач чата нет — дефолтный адресат из настроек
-    # юзера: telegram.chat_id + telegram.thread_id (env-фолбэк)
+    # «дом» юзера: явно настроенный telegram.chat_id перенаправляет ВСЕ
+    # его уведомления (включая результат задач, поставленных из
+    # телеграма) в его чат/канал — раньше настройка действовала только
+    # на веб/cron-задачи, а тг-задачи отвечали в чат-источник и
+    # настройка казалась сломанной. Пусто — как раньше: туда, откуда
+    # пришло сообщение, либо env TELEGRAM_CHAT_ID у задач без чата.
+    cfg_chat = (us_get(author, "telegram.chat_id") or "").strip()
+    if cfg_chat:
+        try:
+            chat_id = int(cfg_chat) or chat_id
+        except ValueError:
+            pass
     if not chat_id:
         try:
             chat_id = int(uset("telegram.chat_id", author,
                                "TELEGRAM_CHAT_ID") or 0) or None
         except ValueError:
             chat_id = None
-    if thread_id is None:
+    if cfg_chat:
+        # у настроенного чата — ЕГО thread_id (у канала топиков нет:
+        # thread_id чужой группы сломал бы отправку)
+        tt = (us_get(author, "telegram.thread_id") or "").strip()
+        thread_id = int(tt) if tt.isdigit() else None
+    elif thread_id is None:
         tt = uset("telegram.thread_id", author, "TELEGRAM_THREAD_ID")
         thread_id = int(tt) if (tt or "").isdigit() else None
-    bot = getattr(_tg_tls, "token", "") or \
-        (kv_get(f"tg_bot:{chat_id}") if chat_id else "") \
+    bot = (us_get(author, "telegram.bot_token") if cfg_chat else "") \
+        or getattr(_tg_tls, "token", "") \
+        or (kv_get(f"tg_bot:{chat_id}") if chat_id else "") \
         or us_get(author, "telegram.bot_token")
     if chat_id:
         kv_set(f"tg_user:{chat_id}", author)
