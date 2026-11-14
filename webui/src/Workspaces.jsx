@@ -29,10 +29,21 @@ export default function Workspaces({ open, onClose, onChanged }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState(COLORS[0]);
   const [edit, setEdit] = useState(null); // {id,name,color}
+  const [delW, setDelW] = useState(null); // пространство под удаление
+  const [counts, setCounts] = useState({}); // wsid -> число проектов
   const [msg, setMsg] = useState(null);
 
-  const load = () => get("/api/ws").then(j => {
-    setWs(j.ws || []); setActive(j.active || 0); });
+  const load = () => {
+    get("/api/ws").then(j => {
+      setWs(j.ws || []); setActive(j.active || 0); });
+    get("/api/projects").then(d => {
+      const c = {};
+      Object.values(d.wsmap || {}).forEach(id => {
+        c[id] = (c[id] || 0) + 1;
+      });
+      setCounts(c);
+    }).catch(() => {});
+  };
   if (open && ws === null) load();
 
   const reload = () => { load(); onChanged?.(); };
@@ -86,7 +97,8 @@ export default function Workspaces({ open, onClose, onChanged }) {
                 {!w.default &&
                   <Tooltip title="удалить пространство">
                     <IconButton edge="end" size="small"
-                      onClick={e => { e.stopPropagation(); del(w); }}>
+                      onClick={e => { e.stopPropagation();
+                                      setDelW(w); }}>
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>}
@@ -142,6 +154,29 @@ export default function Workspaces({ open, onClose, onChanged }) {
       <DialogActions>
         <Button onClick={() => setEdit(null)}>Отмена</Button>
         <Button variant="contained" onClick={save}>Сохранить</Button>
+      </DialogActions>
+    </Dialog>
+
+    <Dialog open={!!delW} onClose={() => setDelW(null)} maxWidth="xs"
+            fullWidth>
+      <DialogTitle>Удалить пространство?</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2">
+          «{delW?.name}» будет удалено безвозвратно.
+          {(counts[delW?.id] || 0) > 0
+            ? ` Его ${counts[delW.id]} проект(ов) переедут в ` +
+              `пространство по умолчанию — задачи и настройки ` +
+              `не пострадают.`
+            : " Проектов в нём нет."}
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setDelW(null)}>Отмена</Button>
+        <Button variant="contained" color="error"
+                onClick={async () => {
+                  const w = delW; setDelW(null); await del(w); }}>
+          Удалить
+        </Button>
       </DialogActions>
     </Dialog>
   </>);

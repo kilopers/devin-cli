@@ -1464,8 +1464,40 @@ def handle_callback(cb: dict) -> None:
     tg_api("answerCallbackQuery", callback_query_id=cb_id)
 
 
+def _tg_allowed(username, user_id, chat_id, actor: str) -> bool:
+    """Белый список бота владельца: us:<actor>.telegram.allowed (env-
+    фолбэк TELEGRAM_ALLOWED) — @username, user_id или chat_id через
+    запятую. ПУСТО → бот молчит для всех.
+    Канал/анонимный админ (нет from.id) пропускается только из
+    настроенного «дома» telegram.chat_id."""
+    raw = uset("telegram.allowed", actor)
+    ids = {x.strip().lstrip("@").lower()
+           for x in raw.split(",") if x.strip()}
+    if not ids:
+        return False
+    if username and str(username).lstrip("@").lower() in ids:
+        return True
+    if user_id is not None and str(user_id).lower() in ids:
+        return True
+    if chat_id is not None and str(chat_id).lower() in ids:
+        return True
+    if user_id is None:
+        cfg = (us_get(actor, "telegram.chat_id") or "").strip()
+        return bool(cfg) and str(chat_id) == cfg
+    return False
+
+
 def handle_update(upd: dict, actor: str | None = None) -> None:
+    actor = actor or WEB_ADMIN_USER
+    _tg_tls.actor = actor
     if cb := upd.get("callback_query"):
+        fr = cb.get("from") or {}
+        cb_chat = ((cb.get("message") or {}).get("chat") or {}).get("id")
+        if not _tg_allowed(fr.get("username"), fr.get("id"),
+                           cb_chat, actor):
+            log(f"callback ignored: @{fr.get('username') or fr.get('id')} "
+                f"not in telegram.allowed of {actor}")
+            return
         try:
             handle_callback(cb)
         except Exception as e:
@@ -1483,8 +1515,11 @@ def handle_update(upd: dict, actor: str | None = None) -> None:
     if not chat_id:
         log(f"update ignored (no chat): {json.dumps(upd)[:200]}")
         return
-    actor = actor or WEB_ADMIN_USER
-    _tg_tls.actor = actor
+    if not _tg_allowed(sender, (msg.get("from") or {}).get("id"),
+                       chat_id, actor):
+        log(f"update from @{sender} chat={chat_id} ignored — "
+            f"not in telegram.allowed of {actor}")
+        return
     kv_set(f"tg_user:{chat_id}", actor)
     kv_set(f"tg_bot:{chat_id}", _tg_tls.token or TG_TOKEN)
     try:
