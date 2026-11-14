@@ -21,6 +21,8 @@
 AGENT_DEFAULT = "devin"
 CLAUDE_TASK = os.environ.get("CLAUDE_TASK_BIN",
                              "/usr/local/bin/claude-task")
+DEEPSEEK_TASK = os.environ.get("DEEPSEEK_TASK_BIN",
+                               "/usr/local/bin/deepseek-task")
 
 
 def _devin_resume_arg(session_id: str) -> str:
@@ -158,6 +160,112 @@ def _claude_collect_stats(export_path: Path, started: float,
     return st
 
 
+# ---------------------------------------------------------------- deepseek
+# DeepSeek — API-only движок (OpenAI-совместимый chat.completions):
+# CLI нет, вся механика агента — в deepseek_runner.py (function-calling
+# цикл с локальными инструментами bash/read/write/ls). Сессии — свои
+# jsonl-файлы в <SESS_DIR>/deepseek (<sid>.jsonl — история, <sid>.json —
+# живой NDJSON-транскрипт для progress_loop).
+
+DEEPSEEK_SESS_DIR = Path(os.environ.get(
+    "DEVIN_SESSIONS_BASE", str(SESS_DIR / "deepseek")))
+
+# $/1M токенов: (input, cached, output) — формат cost_summary тот же,
+# что парсит _model_costs у devin-каталога.
+_DEEPSEEK_PRICES = (
+    ("deepseek-reasoner", (0.55, 0.14, 2.19)),
+    ("deepseek-chat",     (0.27, 0.07, 1.10)),
+)
+
+_DEEPSEEK_FALLBACK_MODELS = (
+    ("deepseek-chat",     "DeepSeek Chat (V3, с инструментами)"),
+    ("deepseek-reasoner", "DeepSeek Reasoner (R1, без инструментов)"),
+)
+
+
+def _deepseek_cost_summary(model_id: str) -> str:
+    mid = (model_id or "").lower()
+    for pat, (pin, pcache, pout) in _DEEPSEEK_PRICES:
+        if pat in mid:
+            return (f"${pin:g} / 1M Input · ${pcache:g} / 1M "
+                    f"Cached input · ${pout:g} / 1M Output")
+    return ""
+
+
+def deepseek_models() -> list:
+    """[{id, description, family, info}] — статик-каталог + попытка
+    GET /models у настроенного юзера. Кэш — models_cache:deepseek."""
+    key = uset("deepseek.api_key", WEB_ADMIN_USER, "DEEPSEEK_API_KEY")
+    base = (uset("deepseek.base_url", WEB_ADMIN_USER,
+                 "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+            or "https://api.deepseek.com").rstrip("/")
+    models = []
+    if key:
+        try:
+            req = urllib.request.Request(
+                base + "/models",
+                headers={"Authorization": f"Bearer {key}"})
+            data = json.loads(
+                urllib.request.urlopen(req, timeout=20).read())
+            for m in data.get("data") or []:
+                mid = m.get("id")
+                if not mid or not str(mid).startswith("deepseek"):
+                    continue
+                name = next((n for f, n in _DEEPSEEK_FALLBACK_MODELS
+                             if f == mid), mid)
+                models.append({"id": mid, "description": name,
+                               "family": "DeepSeek",
+                               "info": {"label": name,
+                                        "cost_summary":
+                                            _deepseek_cost_summary(mid)}})
+        except Exception as e:
+            log(f"deepseek models list failed: {e}")
+    seen = {m["id"] for m in models}
+    for mid, name in _DEEPSEEK_FALLBACK_MODELS:
+        if mid not in seen:
+            models.append({"id": mid, "description": name,
+                           "family": "DeepSeek",
+                           "info": {"label": name,
+                                    "cost_summary":
+                                        _deepseek_cost_summary(mid)}})
+    try:
+        kv_set("models_cache:deepseek",
+               json.dumps(models, ensure_ascii=False))
+        kv_set("models_cache_at:deepseek", str(int(time.time())))
+    except Exception:
+        pass
+    return models
+
+
+def _deepseek_collect_stats(export_path: Path, started: float,
+                            finished: float) -> dict:
+    """Метрики завершённой deepseek-задачи из result-JSON
+    deepseek_runner'а: usage(prompt_tokens/prompt_cache_hit_tokens/
+    completion_tokens) + session_id + model."""
+    st = {}
+    try:
+        docs = _load_transcript_docs(export_path)
+        ev = next((d for d in reversed(docs)
+                   if isinstance(d, dict) and d.get("type") == "result"),
+                  docs[-1] if docs else {})
+        if isinstance(ev, dict) and ev:
+            usg = ev.get("usage") or {}
+            cache = usg.get("prompt_cache_hit_tokens") or 0
+            st = {"session": ev.get("session_id"),
+                  "model": ev.get("model"),
+                  "prompt_tokens": usg.get("prompt_tokens"),
+                  "completion_tokens": usg.get("completion_tokens"),
+                  "cached_tokens": cache or None}
+    except Exception:
+        pass
+    if started and finished:
+        st["duration"] = max(0, int(finished - started))
+    uid = _model_uid(st.get("model") or "", "deepseek")
+    if uid:
+        st["model_uid"] = uid
+    return st
+
+
 # ------------------------------------------------------------------ реестр
 
 AGENTS = {
@@ -193,6 +301,23 @@ AGENTS = {
         "cred_file": Path.home() / ".claude.json",
         "auth_url": "https://console.anthropic.com/settings/keys",
         "default_model": "sonnet",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "bin": DEEPSEEK_TASK,
+        # баннера нет — раннер сразу печатает маркеры в .out
+        "start_marker": None,
+        "resume_arg": _devin_resume_arg,        # раннер понимает --resume
+        "models": deepseek_models,
+        # живые NDJSON-транскрипты раннера (<sid>.json)
+        "transcripts": DEEPSEEK_SESS_DIR,
+        "mcp_config": None,                     # MCP пока не поддержан
+        "stats": _deepseek_collect_stats,
+        "cred_key": "deepseek.api_key",
+        "cred_env": "DEEPSEEK_API_KEY",
+        "cred_file": None,
+        "auth_url": "https://platform.deepseek.com/api_keys",
+        "default_model": "deepseek-chat",
     },
 }
 

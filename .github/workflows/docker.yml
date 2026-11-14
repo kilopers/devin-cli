@@ -2,7 +2,8 @@ name: docker
 
 on:
   push:
-    branches: [main]
+    # main — прод-образ :latest; dev — отдельный тег :dev
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
@@ -35,14 +36,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.ref_name == 'main' && 'latest' || 'dev' }}
             ghcr.io/${{ github.repository }}:${{ github.sha }}
       
       
       - name: Deploy hook → watchtower
         if: success()
         env:
-          DEPLOY_HOOK_URL: ${{ vars.DEPLOY_HOOK_URL }}
+          # dev-ветка дергает свой хук (vars.DEPLOY_HOOK_URL_DEV),
+          # фолбэк — общий; main — продовый хук
+          DEPLOY_HOOK_URL: ${{ github.ref_name == 'dev' && (vars.DEPLOY_HOOK_URL_DEV || vars.DEPLOY_HOOK_URL) || vars.DEPLOY_HOOK_URL }}
         run: |
           [ -n "$DEPLOY_HOOK_URL" ] || exit 0
           curl -fsS -X POST \
