@@ -1,3 +1,15 @@
+## 2.4.6 — merge в прод: каскад env-кредов владельца
+
+- Фикс «не работает слияние»: PAT из env GIT_REPO_URL воркера был
+  МЁРТВЫЙ (Bad credentials — ссылка на techcontrol). /api/deploy/prod
+  теперь строит список кандидатов и пробует каждый при 401/403:
+  GITHUB_TOKEN → PAT из remote.origin.url чекаута DEPLOY_REPO
+  (PROJECTS_ROOT|WORKDIR/<repo>, те же креды, которыми пушатся
+  коммиты задач — проверено: push:True на kilopers/devin-cli) →
+  PAT из GIT_REPO_URL. Per-user креды по-прежнему не участвуют.
+- На хосте: GITHUB_TOKEN в /docker/devin-dev/.env заменён на
+  рабочий PAT владельца репо.
+
 ## 2.4.5 — merge в прод: только env-токен владельца
 
 - Фикс «нет прав» при merge dev→main: /api/deploy/prod больше не
