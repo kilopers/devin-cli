@@ -1360,7 +1360,10 @@ def run_task(task: dict) -> None:
             )
             with _procs_lock:
                 _task_procs[stem] = proc
-            if chat_id:
+            # живой прогресс в тг — выключен по умолчанию: юзеру
+            # нужен только финальный результат, без технички.
+            # Opt-in: us:<user>.tg.progress = "1" (Настройки/API).
+            if chat_id and us_get(task_user, "tg.progress") == "1":
                 threading.Thread(
                     target=progress_loop, daemon=True,
                     args=(chat_id, export_path, out_path,
