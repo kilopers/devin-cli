@@ -97,8 +97,8 @@ GITLAB_BASE_URL = os.environ.get("GITLAB_BASE_URL",
                                  "https://gitlab.com").rstrip("/")
 # Окружение воркера: "prod" (дефолт) или "dev" — на dev в UI виден
 # триггер «в прод»: мердж DEV_BRANCH → DEPLOY_BRANCH через GitHub merge
-# API (токен — сохранённые git-креды юзера или GITHUB_TOKEN), CI на
-# прод-ветке дальше сам собирает :latest и катит прод.
+# API (только env-токен GITHUB_TOKEN — исключение, per-user креды не
+# участвуют), CI на прод-ветке дальше сам собирает :latest и катит прод.
 WORKER_ENV = os.environ.get("WORKER_ENV", "prod")
 DEPLOY_REPO = os.environ.get("DEPLOY_REPO", "kilopers/devin-cli")
 DEPLOY_BRANCH = os.environ.get("DEPLOY_BRANCH", "main")

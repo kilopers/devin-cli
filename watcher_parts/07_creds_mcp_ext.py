@@ -602,17 +602,23 @@ def _status_page(_any: str = ""):
 def _deploy_prod():
     """Dev-инстанс: слить DEV_BRANCH → DEPLOY_BRANCH через GitHub merge
     API — CI на прод-ветке сам соберёт :latest и катнёт прод.
-    Кнопка 🚀 на done-карточках видна только при WORKER_ENV=dev."""
+    Кнопка 🚀 в баре ветки видна только при WORKER_ENV=dev."""
     if WORKER_ENV != "dev":
         return jsonify({"ok": False,
                         "error": "эндпоинт доступен только на "
                                  "dev-инстансе"}), 400
-    tk = _cred_get("github.com") or GITHUB_TOKEN
+    # Исключение: merge в прод идёт ТОЛЬКО env-токеном владельца —
+    # per-user PAT может не иметь прав push на DEPLOY_REPO.
+    # Фолбэк: PAT, вшитый в env GIT_REPO_URL (x-access-token:<pat>@).
+    tk = GITHUB_TOKEN
+    if not tk:
+        m = re.search(r"://[^/:@]+:([^/@]+)@",
+                      os.environ.get("GIT_REPO_URL", ""))
+        tk = m.group(1) if m else ""
     if not tk:
         return jsonify({"ok": False,
-                        "error": "нет GitHub-токена — добавь PAT для "
-                                 "github.com в «Ключи репозиториев» "
-                                 "или GITHUB_TOKEN в .env"}), 400
+                        "error": "нет GITHUB_TOKEN в .env воркера — "
+                                 "merge в прод невозможен"}), 400
     stem = str((request.get_json(silent=True) or {}).get("stem") or "")[:60]
     note = f" [task {stem}]" if stem else ""
     body = json.dumps({
