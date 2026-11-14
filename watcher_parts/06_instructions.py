@@ -1883,9 +1883,19 @@ def _api_project_add():
                        (folder,))
         if (own and own[0]["owner"] != _current_user()
                 and not _is_admin(_current_user())):
-            return jsonify({"ok": False, "error":
-                            f"папка {folder} — проект пользователя "
-                            f"{own[0]['owner']}"}), 409
+            # самоисцеление старого бага: папку успел «украсть» ленивый
+            # _project_owner (owner=admin) в окне clone→регистрация, но
+            # у юзера осталась его project_ws-строка от того же add —
+            # она доказывает, что добавлял именно он: отдаём ему
+            if (own[0]["owner"] == WEB_ADMIN_USER and db_query(
+                    "SELECT 1 FROM project_ws WHERE user=%s AND name=%s",
+                    (_current_user(), folder))):
+                db_exec("UPDATE project_owner SET owner=%s WHERE name=%s",
+                        (_current_user(), folder))
+            else:
+                return jsonify({"ok": False, "error":
+                                f"папка {folder} — проект пользователя "
+                                f"{own[0]['owner']}"}), 409
         _register_added_project(folder, title, body.get("ws"))
         log(f"web adopted existing project {folder} "
             f"(owner {_current_user()})")

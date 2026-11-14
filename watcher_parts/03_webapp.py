@@ -404,14 +404,13 @@ def _is_admin(user: str | None = None) -> bool:
 
 
 def _project_owner(name: str) -> str:
-    """Владелец проекта; не размеченные (существовавшие до мультиюзера)
-    лениво отдаются админу."""
+    """Владелец проекта; не размеченные считаются админскими —
+    но БЕЗ записи: ленивый INSERT крал у юзера свежую папку
+    в окне между clone и регистрацией в /api/project/add
+    (чей-то поллинг успевал пометить её owner=admin, и INSERT
+    IGNORE регистрации уже молчал)."""
     r = db_query("SELECT owner FROM project_owner WHERE name=%s", (name,))
-    if r:
-        return r[0]["owner"]
-    db_exec("INSERT IGNORE INTO project_owner(name, owner)"
-            " VALUES(%s,%s)", (name, WEB_ADMIN_USER))
-    return WEB_ADMIN_USER
+    return r[0]["owner"] if r else WEB_ADMIN_USER
 
 
 def _granted_projects(user: str) -> set:
