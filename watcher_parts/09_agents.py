@@ -195,9 +195,18 @@ def _deepseek_cost_summary(model_id: str) -> str:
 def deepseek_models() -> list:
     """[{id, description, family, info}] — статик-каталог + попытка
     GET /models у настроенного юзера. Кэш — models_cache:deepseek."""
-    key = uset("deepseek.api_key", WEB_ADMIN_USER, "DEEPSEEK_API_KEY")
-    base = (uset("deepseek.base_url", WEB_ADMIN_USER,
+    # ключ — сначала текущего юзера (настройки per-user), потом
+    # админский/env как раньше
+    try:
+        who = _current_user() or WEB_ADMIN_USER
+    except Exception:
+        who = WEB_ADMIN_USER
+    key = uset("deepseek.api_key", who, "DEEPSEEK_API_KEY") \
+        or uset("deepseek.api_key", WEB_ADMIN_USER, "DEEPSEEK_API_KEY")
+    base = (uset("deepseek.base_url", who,
                  "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+            or uset("deepseek.base_url", WEB_ADMIN_USER,
+                    "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
             or "https://api.deepseek.com").rstrip("/")
     models = []
     if key:
@@ -209,7 +218,9 @@ def deepseek_models() -> list:
                 urllib.request.urlopen(req, timeout=20).read())
             for m in data.get("data") or []:
                 mid = m.get("id")
-                if not mid or not str(mid).startswith("deepseek"):
+                # без фильтра по префиксу: совместимый прокси может
+                # отдавать свои id — показываем все
+                if not mid:
                     continue
                 name = next((n for f, n in _DEEPSEEK_FALLBACK_MODELS
                              if f == mid), mid)
