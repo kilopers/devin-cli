@@ -3306,10 +3306,14 @@ export default function App() {
     try { localStorage.setItem("devin.ptabs", JSON.stringify(tabs)); }
     catch {}
   }, [tabs]);
+  // чистим вкладки от удалённых проектов по wsmap — ПОЛНЫЙ список
+  // проектов юзера (projects — только активного пространства, фильтр
+  // по нему стирал вкладки других ws при каждом переключении)
   useEffect(() => {
-    if (projects.length)
-      setTabs(ts => ts.filter(t => projects.includes(t)));
-  }, [projects]);
+    const all = Object.keys(wsmap);
+    if (all.length)
+      setTabs(ts => ts.filter(t => all.includes(t)));
+  }, [wsmap]);
   useEffect(() => {
     if (project && !tabs.includes(project))
       setTabs(ts => [...ts, project]);
