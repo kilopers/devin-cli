@@ -1,3 +1,28 @@
+## 2.3.0 — движок DeepSeek (API, per-user)
+
+- Третий движок в реестре AGENTS — «deepseek»: задачи идут через
+  DeepSeek chat.completions API (function calling), без внешних CLI.
+  Локальный tool-цикл в deepseek_runner.py: инструменты
+  bash/read_file/write_file/list_dir в DEVIN_WORKDIR, маркеры
+  💬/🔧/⛔/🏁 в .out как у claude-relay, result-JSON (usage/
+  session_id/model) в DEVIN_EXPORT_FILE — статистика и тг-результат
+  работают без изменений.
+- deepseek-task.sh — лаунчер с env-контрактом devin-task
+  (git pull → промпт ask/plan/code → раннер → autocommit/push).
+- Сессии свои: <SESS_DIR>/deepseek/<sid>.jsonl (история, resume по
+  --resume/--continue через last-<workdir> маркер) + <sid>.json
+  NDJSON-транскрипт для прогресса; ночной GC чистит сирот.
+- Модели: deepseek-chat (с инструментами, дефолт) и
+  deepseek-reasoner (без инструментов) + GET /models по ключу,
+  кэш models_cache:deepseek, цены — статик-мапа _DEEPSEEK_PRICES.
+- Настройки per-user: deepseek.api_key (секрет) и deepseek.base_url
+  (дефолт api.deepseek.com) в группе «Движки агентов»; env-фолбэк
+  DEEPSEEK_API_KEY/DEEPSEEK_BASE_URL, миграция env-секретов,
+  проброс в env задачи и _fmt_run.
+- Выбор движка — как у claude: чип 🤖 в шапке, селект «Агент»
+  в теме/проекте, цепочка agent_of без правок.
+
+
 ## 2.2.10 — сборка образа для ветки dev
 
 - docker.yml собирает образ и по пушу в `dev`: тег

@@ -1563,7 +1563,13 @@ def _fmt_run(text: str, workdir: Path, task_user: str, tag: str,
                WINDSURF_API_KEY=uset("devin.api_key", task_user,
                                      "WINDSURF_API_KEY"),
                ANTHROPIC_API_KEY=uset("claude.api_key", task_user,
-                                      "ANTHROPIC_API_KEY"))
+                                      "ANTHROPIC_API_KEY"),
+               DEEPSEEK_API_KEY=uset("deepseek.api_key", task_user,
+                                     "DEEPSEEK_API_KEY"),
+               DEEPSEEK_BASE_URL=uset("deepseek.base_url", task_user,
+                                      "DEEPSEEK_BASE_URL",
+                                      "https://api.deepseek.com"),
+               DEEPSEEK_SESS_DIR=str(SESS_DIR / "deepseek"))
     # fmt-прогон devin — в сторе проекта задачи, иначе его сессии
     # уйдут в глобальную базу и GC их не увидит
     if agent_of(task_ref or {"user": task_user}) == "devin":

@@ -83,6 +83,8 @@ def migrate_env_secrets() -> None:
             "yandex.lang": "YANDEX_LANG",
             "devin.api_key": "WINDSURF_API_KEY",
             "claude.api_key": "ANTHROPIC_API_KEY",
+            "deepseek.api_key": "DEEPSEEK_API_KEY",
+            "deepseek.base_url": "DEEPSEEK_BASE_URL",
             "telegram.bot_token": "TELEGRAM_BOT_TOKEN",
             "gitlab.base_url": "GITLAB_BASE_URL",
             "git.name": "GIT_USER_NAME", "git.email": "GIT_USER_EMAIL",

@@ -105,6 +105,8 @@ ENV CHROME_BIN=/usr/local/bin/chromium-safe \
 COPY entrypoint.sh /usr/local/bin/devin-task
 COPY claude-task.sh /usr/local/bin/claude-task
 COPY claude-relay.py /usr/local/bin/claude-relay.py
+COPY deepseek-task.sh /usr/local/bin/deepseek-task
+COPY deepseek_runner.py /usr/local/bin/deepseek_runner.py
 COPY watcher.py /app/watcher.py
 COPY watcher_parts/ /app/watcher_parts/
 COPY VERSION /app/VERSION
@@ -114,7 +116,8 @@ COPY static/ /app/static/
 COPY --from=webui-build /repo/static/app/ /app/static/app/
 COPY bot.py /app/bot.py
 RUN chmod +x /usr/local/bin/devin-task /usr/local/bin/claude-task \
-        /usr/local/bin/claude-relay.py /app/watcher.py /app/bot.py
+        /usr/local/bin/claude-relay.py /usr/local/bin/deepseek-task \
+        /usr/local/bin/deepseek_runner.py /app/watcher.py /app/bot.py
 
 WORKDIR /workspace
 

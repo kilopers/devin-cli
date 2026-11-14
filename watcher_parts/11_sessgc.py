@@ -108,15 +108,37 @@ def _sess_gc_claude(cutoff: float, pins: set) -> tuple:
     return seen, removed
 
 
+def _sess_gc_deepseek(cutoff: float, pins: set) -> tuple:
+    """Сессии deepseek-раннера: SESS_DIR/deepseek/<sid>.jsonl +
+    <sid>.json (транскрипт) — файлы-сироты без пина старше cutoff."""
+    root = SESS_DIR / "deepseek"
+    seen = removed = 0
+    if not root.is_dir():
+        return seen, removed
+    for f in list(root.glob("*.jsonl")) + list(root.glob("*.json")):
+        seen += 1
+        try:
+            if f.stem in pins or f.stat().st_mtime >= cutoff:
+                continue
+            f.unlink()
+            removed += 1
+            log(f"sess-gc: removed deepseek session {f.name}")
+        except Exception as e:
+            log(f"sess-gc: rm {f} failed: {e}")
+    return seen, removed
+
+
 def sess_gc() -> None:
     """Один прогон сборки: сироты старше SESS_GC_AGE_DAYS дней."""
     cutoff = time.time() - SESS_GC_AGE_DAYS * 86400
     pins = _sess_gc_pins()
     dl, dr = _sess_gc_devin(cutoff, pins)
     cl, cr = _sess_gc_claude(cutoff, pins)
+    dsl, dsr = _sess_gc_deepseek(cutoff, pins)
     kv_set("sess_gc_at", str(time.time()))
     log(f"sess-gc done: devin {dr}/{dl} removed, "
-        f"claude {cr}/{cl} removed, pins={len(pins)}")
+        f"claude {cr}/{cl} removed, "
+        f"deepseek {dsr}/{dsl} removed, pins={len(pins)}")
 
 
 def sess_gc_cron() -> None:
