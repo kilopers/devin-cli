@@ -917,7 +917,13 @@ def progress_loop(chat_id, export_path: Path, out_path: Path,
                     chunk = ANSI.sub("", f.read()).strip()
                     offset = f.tell()
                 if chunk:
-                    buf.append(chunk)
+                    # в тг — только дайджест-строки лаунчера
+                    # (claude-relay 💬/🔧/🏁 и т.п.), не сырой лог:
+                    # для devin .out — полный поток сессии, его
+                    # краткая выжимка идёт через _digest_new_steps
+                    buf += [ln for ln in chunk.splitlines()
+                            if ln.strip().startswith(
+                                ("💬", "🔧", "🏁", "⛔", "🚀", "└"))]
         except Exception:
             pass
         src = export_path if export_path.exists() else None
@@ -1523,9 +1529,41 @@ def run_task(task: dict) -> None:
             log(f"{name}: ext-hook {ext['hook']} не ответил: {e}")
     offer_commit(task, chat_id, workdir, thread_id)
     if TG_TOKEN:
-        notify_chat(stem, f"{name}\n{status}\n\n{body[-3500:]}")
+        # в тг — только результат агента (последнее его сообщение из
+        # export-файла), без внутреннего лога .out; при падении —
+        # хвост лога, там видна ошибка
+        res = (_tg_result_text(export_path, body)
+               if "exit code: 0" in (status or "") else body)
+        notify_chat(stem, f"{name}\n{status}\n\n{res[-3500:]}")
         if chat_id:
             send_task_stats(chat_id, tstats, thread_id)
+
+
+def _tg_result_text(export_path: Path, body: str) -> str:
+    """Короткий результат для телеграм-нотификации: финальный текст
+    ответа агента из export-файла задачи, без внутреннего лога
+    .progress/<stem>.out (тулколы, баннеры, прогресс). claude:
+    claude-relay пишет {"type":"result","result":…}; devin: message
+    последнего agent-шага транскрипта. Фолбэк — очищенный body."""
+    try:
+        last_msg = ""
+        for d in _load_transcript_docs(export_path):
+            if not isinstance(d, dict):
+                continue
+            if (d.get("type") == "result"
+                    and (d.get("result") or "").strip()):
+                return d["result"].strip()
+            steps = d.get("steps") or ([d] if "step_id" in d else [])
+            for s in steps:
+                if (isinstance(s, dict)
+                        and s.get("source") == "agent"
+                        and (s.get("message") or "").strip()):
+                    last_msg = s["message"].strip()
+        if last_msg:
+            return last_msg
+    except Exception:
+        pass
+    return body
 
 
 def _tail_json(text: str):
