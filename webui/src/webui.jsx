@@ -49,7 +49,6 @@ import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import RedoIcon from "@mui/icons-material/Redo";
-import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
@@ -690,7 +689,6 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                                                sel, onNote, onCont, cols,
                                                onDict, dictOn, dictBusy,
                                                pending, pend, onGone,
-                                               onToProd,
                                                mergeSel, onMergeOver,
                                                showOut,
                                                onMergeDrop,
@@ -1274,14 +1272,6 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                   disabled={retryBusy}
                   sx={{ p: "3px", color: "text.secondary" }}>
                   <ReplayIcon sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {t.status === "done" && onToProd && (
-              <Tooltip title="отправить в прод — слить dev → main, CI соберёт :latest и обновит прод">
-                <IconButton size="small" onClick={() => onToProd(t)}
-                  sx={{ p: "3px", color: "text.secondary" }}>
-                  <RocketLaunchIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -3100,7 +3090,6 @@ export default function App() {
           onNote={toggleNote} onCont={toggleCont}
           onStop={askStop} onCancel={askCancel}
           onDel={askDel} toast={setToast} cols={boardCols}
-          onToProd={status.env === "dev" ? askToProd : undefined}
           onDict={toggleDict}
           dictOn={dict?.kind === "note" && dict?.stem === t.stem}
           dictBusy={dictProc?.kind === "note"
@@ -3564,9 +3553,7 @@ export default function App() {
   const askDel = useCallback(
     t2 => setConfirm({ kind: "del", name: t2.name, stem: t2.stem }), []);
   const askToProd = useCallback(
-    t2 => setConfirm({ kind: "toprod", stem: t2.stem,
-                       name: (t2.name || t2.prompt || "")
-                               .trim().slice(0, 60) }), []);
+    () => setConfirm({ kind: "toprod" }), []);
   // ✕ на пузыре чат-колонки: удаляет пару «вопрос+ответ» целиком;
   // активная задача (queued/running) при этом останавливается —
   // текст подтверждения зависит от её статуса
@@ -3690,6 +3677,7 @@ export default function App() {
     const pk = c.kind === "topic_del" || c.kind === "topic_reset"
              ? "col:" + c.tid
              : c.kind === "tpl_del" ? "col:" + c.col
+             : c.kind === "toprod" ? "deploy"
              : c.stem;
     try {
       const d = await pendRun(pk, async () => c.kind === "stop"
@@ -4041,6 +4029,16 @@ export default function App() {
                               height: { xs: 22, md: 24 },
                               whiteSpace: "nowrap", minWidth: 0 }}>
                   ✅ коммит+пуш</Button>
+              </Tooltip>}
+            {status.env === "dev" &&
+              <Tooltip title="отправить в прод — слить dev → main, CI соберёт :latest и обновит прод">
+                <Button size="small" variant="contained" color="warning"
+                        onClick={askToProd}
+                        sx={{ fontSize: { xs: 10, md: 11 },
+                              px: { xs: 0.8, md: 1.5 }, py: 0,
+                              height: { xs: 22, md: 24 },
+                              whiteSpace: "nowrap", minWidth: 0 }}>
+                  🚀 в прод</Button>
               </Tooltip>}
             <Tooltip title="переключить/создать ветку репозитория">
               <Button size="small" variant="outlined"
@@ -4648,8 +4646,8 @@ export default function App() {
                 "темы — сама колонка и её задачи не трогаются."
               : confirm?.kind === "toprod"
               ? "Сольётся ветка dev → main в GitHub — CI соберёт " +
-                ":latest и обновит прод. Задача «" + confirm?.name +
-                "…» — только триггер, в merge попадёт вся dev."
+                ":latest и обновит прод. В merge попадут ВСЕ " +
+                "изменения dev, не отдельная задача."
               : `«${confirm?.name}» будет удалена из очереди и не ` +
                 "выполнится. Действие необратимо."}
           </Typography>
