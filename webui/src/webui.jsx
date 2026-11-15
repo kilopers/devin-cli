@@ -878,11 +878,19 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
   // без fresh) догружаем при открытии «инфо»; цены парсятся из
   // info.cost_summary вида «$4 / 1M Input · $0.2 / 1M Cached input ·
   // $20 / 1M Output» (sidekick-цены fusion не трогаем — регистр букв)
+  // агент задачи: статистика хранит ключ движка (run_task пишет
+  // stats.agent), для старых задач без stats.agent угадываем по id
+  // модели — deepseek/claude не найти в дефолтном каталоге devin
+  const stAgent = st.agent ||
+    (/deepseek/i.test(st.model || t.model || "") ? "deepseek"
+      : /claude/i.test(st.model || t.model || "") ? "claude"
+      : "devin");
   const [prices, setPrices] = useState(null);
   useEffect(() => {
     if (info && prices === null)
-      apiJson("/api/models").then(d => setPrices(d.models || []))
-                            .catch(() => setPrices([]));
+      apiJson("/api/models?agent=" + encodeURIComponent(stAgent))
+        .then(d => setPrices(d.models || []))
+        .catch(() => setPrices([]));
   }, [info]);
   const mdl = (prices || []).find(x => x.id === (st.model || t.model));
   const csumm = mdl?.info?.cost_summary || "";
@@ -1529,7 +1537,8 @@ const TaskCard = React.memo(function TaskCard({ t, onStop, onCancel,
                           sx={{ display: "block", mt: 1, fontSize: 11 }}>
                 модель бесплатная — тариф Free
               </Typography>)}
-            {hasTok && prices !== null && cost == null && !freeTier && (
+            {hasTok && prices !== null && cost == null &&
+             st.cost == null && !freeTier && (
               <Typography variant="caption" color="text.secondary"
                           sx={{ display: "block", mt: 1, fontSize: 11 }}>
                 тариф модели неизвестен — стоимость не посчитана
