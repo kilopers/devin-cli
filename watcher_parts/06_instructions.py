@@ -1620,12 +1620,24 @@ def _fmt_worker(stem: str) -> None:
         res = _fmt_run(row.get("prompt") or "", workdir, task_user,
                        fstem, task_ref=row)
         body = res["body"]
-        # «✨ Оформить» — тоже прогон Devin: его токены и стоимость
+        # «✨ Оформить» — тоже прогон агента: его токены и стоимость
         # считаем в статистику темы заметки (row['topic_id'])
         try:
-            fst = agent_def(row)["stats"](
+            akey = agent_of(row)
+            ag = AGENTS[akey]
+            fst = ag["stats"](
                 res["export"], res["started"], res["finished"])
             if fst:
+                fst["agent"] = akey
+                if fst.get("cost") is None:
+                    cost_fn = ag.get("cost") or _task_cost
+                    try:
+                        cost = cost_fn(fst)
+                    except Exception as e:
+                        log(f"fmt cost {akey}: {e}")
+                        cost = _task_cost(fst)
+                    if cost is not None:
+                        fst["cost"] = cost
                 db_exec("INSERT INTO topic_stats"
                         " (project, topic_id, stem, created, model,"
                         " prompt_tok, cached_tok, completion_tok, cost,"
@@ -1636,7 +1648,7 @@ def _fmt_worker(stem: str) -> None:
                          fst.get("prompt_tokens"),
                          fst.get("cached_tokens"),
                          fst.get("completion_tokens"),
-                         _task_cost(fst), fst.get("duration")))
+                         fst.get("cost"), fst.get("duration")))
         except Exception as e:
             log(f"topic_stats fmt: {e}")
         if not body:

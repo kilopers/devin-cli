@@ -1123,6 +1123,12 @@ def send_task_stats(chat_id, st: dict, thread=None) -> None:
         f"completion={s.get('completion_tokens', '?')}",
         steps + f", session: {s.get('session') or '-'}",
         f"время: {_fmt_dur(s.get('duration'))}",
+    ]
+    if s.get("cost") is not None:
+        lines.append("cost: ≈ $" + (f"{s['cost']:.4f}"
+                                    if s["cost"] < 0.01
+                                    else f"{s['cost']:.2f}"))
+    lines += [
         f"за 24ч: {day} токенов ({nday} задач), "
         f"за 7д: {week} токенов ({nweek} задач)",
     ]

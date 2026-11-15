@@ -1,3 +1,18 @@
+## 2.4.11 — стоимость задачи: метод cost у каждого агента
+
+- В реестр AGENTS добавлен единый метод «cost»: run_task и
+  _fmt_worker больше не считают стоимость общим _task_cost,
+  а спрашивают движок задачи (AGENTS[akey]["cost"]).
+- Devin — как раньше: оценка по тарифу models_cache:devin.
+- Claude — фактическая total_cost_usd из result-JSON relay;
+  если её нет, фолбэк на оценку по тарифу.
+- DeepSeek — оценка по тарифу с фолбэком на статический
+  _DEEPSEEK_PRICES: стоимость появляется в карточке/статистике,
+  даже если models_cache:deepseek ещё не прогрет (задача
+  завершилась раньше первого models_refresh_cron).
+- «✨ Оформить» пишет cost в topic_stats через метод агента.
+- send_task_stats в Telegram показывает «cost: ≈ $…».
+
 ## 2.4.10 — статистика deepseek: итоги, цена, шаги
 
 - «за 24ч / за 7д: 0 токенов» при deepseek/claude — usage_totals
