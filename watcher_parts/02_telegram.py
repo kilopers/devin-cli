@@ -1010,7 +1010,7 @@ def status_text() -> str:
             f"{STATE['current_task'] or '—'}\n"
             f"▫️ последняя: {STATE['last_task']} ({STATE['last_status']})\n"
             f"▫️ выполнено задач: {STATE['tasks_done']}\n"
-            f"▫️ токены — 24ч: {day} ({nday} задач), "
+            f"▫️ свежие токены (без кэша) — 24ч: {day} ({nday} задач), "
             f"7д: {week} ({nweek} задач)\n"
             f"▫️ репо: {_git_head()}")
 
@@ -1071,22 +1071,28 @@ def session_stats(since: float) -> dict | None:
 
 
 def usage_totals() -> tuple:
-    """Cumulative tokens across all agents: (24h tokens, 24h tasks,
-    7d tokens, 7d tasks). Считается по topic_stats — она пишется для
-    всех движков (devin/claude/deepseek); старый вариант сканировал
-    только devin-транскрипты и не видел прогоны прочих агентов."""
+    """Свежие токены (без кэша) по всем движкам: (24h токенов,
+    24h задач, 7d токенов, 7d задач). Считается по topic_stats — она
+    пишется для всех движков (devin/claude/deepseek). cached_tok
+    вычитаем из prompt_tok: у deepseek prompt_tok — сумма по всем
+    вызовам tool-цикла и на ~90% состоит из повторно пересланного
+    кэша, без вычитания «за 24ч/7д» показывал сотни миллионов
+    лишних токенов."""
     day = week = nday = nweek = 0
     now = time.time()
     try:
         rows = db_query(
-            "SELECT created, prompt_tok, completion_tok"
+            "SELECT created, prompt_tok, cached_tok, completion_tok"
             " FROM topic_stats WHERE created >= %s",
             (now - 7 * 86400,))
     except Exception:
         rows = []
     for r in rows or []:
-        # cached_tok не плюсуем: он уже входит в prompt_tok
-        toks = (r.get("prompt_tok") or 0) + (r.get("completion_tok") or 0)
+        # свежие токены = некэшированный вход + вывод; кэш уже
+        # входит в prompt_tok и за него биллит по дешёвому тарифу
+        toks = max((r.get("prompt_tok") or 0)
+                   - (r.get("cached_tok") or 0), 0) \
+            + (r.get("completion_tok") or 0)
         if now - (r.get("created") or 0) <= 86400:
             day += toks
             nday += 1
@@ -1129,8 +1135,8 @@ def send_task_stats(chat_id, st: dict, thread=None) -> None:
                                     if s["cost"] < 0.01
                                     else f"{s['cost']:.2f}"))
     lines += [
-        f"за 24ч: {day} токенов ({nday} задач), "
-        f"за 7д: {week} токенов ({nweek} задач)",
+        f"за 24ч: {day} свежих токенов (без кэша, {nday} задач), "
+        f"за 7д: {week} свежих токенов (без кэша, {nweek} задач)",
     ]
     tg_send(chat_id, "📊 Статистика задачи:\n" + "\n".join(lines),
             thread=thread)

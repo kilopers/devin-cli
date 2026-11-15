@@ -260,7 +260,7 @@ def _deepseek_collect_stats(export_path: Path, started: float,
                             finished: float) -> dict:
     """Метрики завершённой deepseek-задачи из result-JSON
     deepseek_runner'а: usage(prompt_tokens/prompt_cache_hit_tokens/
-    completion_tokens) + session_id + model."""
+    prompt_cache_miss_tokens/completion_tokens) + session_id + model."""
     st = {}
     try:
         docs = _load_transcript_docs(export_path)
@@ -275,6 +275,9 @@ def _deepseek_collect_stats(export_path: Path, started: float,
                   "prompt_tokens": usg.get("prompt_tokens"),
                   "completion_tokens": usg.get("completion_tokens"),
                   "cached_tokens": cache or None,
+                  # некэшированный вход — храним отдельно: у прокси
+                  # prompt_tokens может не равняться hit+miss
+                  "uncached_tokens": usg.get("prompt_cache_miss_tokens"),
                   "steps": ev.get("steps"),
                   "calls": ev.get("calls")}
     except Exception:
@@ -318,8 +321,13 @@ def _deepseek_cost(st: dict) -> float | None:
             p = {"input": pin, "cached": pcache, "output": pout}
     prompt = st.get("prompt_tokens") or 0
     cached = st.get("cached_tokens") or 0
+    uncached = st.get("uncached_tokens")
+    if uncached is None:
+        # прокси/API не отдали prompt_cache_miss_tokens — считаем
+        # разность, как раньше
+        uncached = max(prompt - cached, 0)
     completion = st.get("completion_tokens") or 0
-    return round(max(prompt - cached, 0) * p["input"] / 1e6
+    return round(uncached * p["input"] / 1e6
                  + cached * p["cached"] / 1e6
                  + completion * p["output"] / 1e6, 6)
 
