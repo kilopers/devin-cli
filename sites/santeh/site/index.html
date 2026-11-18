@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Santehkeram — всё для ванной и ремонта в одном месте</title>
+<meta name="description" content="Santehkeram — федеральная сеть магазинов плитки и сантехники: керамогранит, мозаика, ванны, смесители, мебель для ванной. 4700+ городов России, доставка со склада за 3 часа.">
+<style>
+  :root{
+    --blue:#1f6fd6; --deep:#0d2c56; --ink:#222b38; --mut:#66748a;
+    --bg:#f6f8fb; --card:#ffffff; --line:#e4e9f0; --gold:#e8b04b;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+       color:var(--ink);background:var(--bg);line-height:1.65}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+  /* HERO */
+  .hero{position:relative;min-height:92vh;display:flex;align-items:center;
+        overflow:hidden;color:#fff;
+        background:linear-gradient(150deg,#0a2342 0%,#11498f 55%,#1f6fd6 100%)}
+  .hero::before{content:"";position:absolute;inset:0;opacity:.14;
+    background:
+      radial-gradient(circle at 82% 18%, #fff 0 110px, transparent 111px),
+      radial-gradient(circle at 10% 80%, #fff 0 60px, transparent 61px),
+      radial-gradient(circle at 62% 88%, #fff 0 36px, transparent 37px)}
+  .hero::after{content:"🚿";position:absolute;right:5%;top:12%;
+    font-size:min(32vw,320px);opacity:.08;line-height:1;
+    transform:rotate(-10deg);pointer-events:none}
+  .hero .wrap{position:relative;z-index:2}
+  .kicker{letter-spacing:.35em;text-transform:uppercase;font-size:13px;
+          color:#a9d2ff;font-weight:600;margin-bottom:18px}
+  h1{font-size:clamp(40px,6.6vw,80px);line-height:1.06;font-weight:800;
+     max-width:840px}
+  h1 em{font-style:normal;color:var(--gold)}
+  .hero p.lead{font-size:clamp(17px,2.2vw,22px);max-width:620px;
+               margin-top:22px;color:#dbe9fb}
+  .hero .cta{display:inline-flex;gap:14px;margin-top:36px;flex-wrap:wrap}
+  .btn{display:inline-block;padding:14px 30px;border-radius:12px;
+       font-weight:600;text-decoration:none;font-size:15px;
+       transition:transform .18s ease,box-shadow .18s ease}
+  .btn.solid{background:#fff;color:var(--blue)}
+  .btn.ghost{border:1.5px solid rgba(255,255,255,.55);color:#fff}
+  .btn:hover{transform:translateY(-2px);
+             box-shadow:0 10px 28px rgba(0,0,0,.28)}
+  .hero .meta{margin-top:34px;display:flex;gap:26px;flex-wrap:wrap;
+              font-size:14px;color:#bcd7f6}
+  .hero .meta b{color:#fff}
+
+  /* СЕКЦИИ */
+  section{padding:86px 0}
+  .sec-title{font-size:clamp(28px,4vw,42px);font-weight:800;
+             color:var(--deep);line-height:1.15;margin-bottom:12px}
+  .sec-sub{color:var(--mut);max-width:660px;font-size:17px;margin-bottom:44px}
+  .bar{width:64px;height:5px;border-radius:3px;background:var(--blue);
+       margin-bottom:20px}
+
+  /* КАТАЛОГ */
+  .grid{display:grid;gap:20px;
+        grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);
+        border-radius:18px;overflow:hidden;
+        transition:transform .2s ease,box-shadow .2s ease}
+  .card:hover{transform:translateY(-5px);
+              box-shadow:0 14px 34px rgba(13,44,86,.10)}
+  .card .ph{height:120px;display:flex;align-items:center;
+            justify-content:center;font-size:52px}
+  .ph.t1{background:linear-gradient(135deg,#dcebfb,#9dc3ee)}
+  .ph.t2{background:linear-gradient(135deg,#0d2c56,#2e7de0);color:#fff}
+  .ph.t3{background:linear-gradient(135deg,#fdf0d4,#f0cd84)}
+  .ph.t4{background:linear-gradient(135deg,#e3f3ec,#a7d9c2)}
+  .ph.t5{background:linear-gradient(135deg,#ede7f9,#c4b3ea)}
+  .ph.t6{background:linear-gradient(135deg,#fdeaea,#f0b5ae)}
+  .card .bd{padding:18px 20px 22px}
+  .card h3{font-size:18px;color:var(--deep);margin-bottom:6px}
+  .card p{font-size:14px;color:var(--mut)}
+
+  /* ЦИФРЫ */
+  .facts{background:var(--deep);color:#fff}
+  .facts .sec-title{color:#fff}
+  .facts .sec-sub{color:#a9bedd}
+  .fgrid{display:grid;gap:18px;
+         grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .fact{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+        border-radius:16px;padding:26px 22px}
+  .fact .num{font-size:clamp(30px,3.6vw,42px);font-weight:800;
+             color:var(--gold);line-height:1.1}
+  .fact .lbl{margin-top:8px;font-size:14.5px;color:#cfe0f4}
+  .story{display:grid;gap:18px;margin-top:44px;
+         grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .step{border-left:3px solid var(--gold);padding:6px 0 6px 20px}
+  .step .yr{color:var(--gold);font-weight:700;font-size:18px}
+  .step p{color:#dce8f7;font-size:15px;margin-top:6px}
+
+  /* УСЛУГИ */
+  .svc{display:grid;gap:20px;
+       grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .svc .s{background:var(--card);border:1px solid var(--line);
+          border-radius:18px;padding:28px 24px;
+          transition:transform .2s ease,box-shadow .2s ease}
+  .svc .s:hover{transform:translateY(-5px);
+                box-shadow:0 14px 34px rgba(13,44,86,.10)}
+  .svc .ic{font-size:38px}
+  .svc h3{font-size:19px;color:var(--deep);margin:14px 0 8px}
+  .svc p{font-size:14.5px;color:var(--mut)}
+
+  /* ПРЕИМУЩЕСТВА */
+  .perks{background:linear-gradient(160deg,#eef4fc,#e2edfa)}
+  .pgrid{display:grid;gap:18px;
+         grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .perk{background:#fff;border:1px solid var(--line);border-radius:16px;
+        padding:24px 22px}
+  .perk .pi{font-size:30px}
+  .perk h4{font-size:16.5px;color:var(--deep);margin:12px 0 6px}
+  .perk p{font-size:14px;color:var(--mut)}
+
+  /* КОНТАКТЫ */
+  .contacts{background:var(--deep);color:#fff}
+  .contacts .sec-title{color:#fff}
+  .contacts .sec-sub{color:#a9bedd}
+  .cgrid{display:grid;gap:20px;
+         grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+  .cbox{background:rgba(255,255,255,.05);
+        border:1px solid rgba(255,255,255,.12);
+        border-radius:16px;padding:26px 24px}
+  .cbox .ci{font-size:32px}
+  .cbox h4{margin:12px 0 8px;font-size:17px;color:#fff}
+  .cbox p,.cbox a{font-size:15px;color:#cfe0f4;text-decoration:none}
+  .cbox a{border-bottom:1px dashed rgba(255,255,255,.4)}
+  .cbox a:hover{color:#fff}
+  .big-phone{display:block;margin-top:26px;font-size:clamp(24px,4vw,38px);
+             font-weight:800;color:var(--gold);text-decoration:none}
+  .fine{margin-top:34px;font-size:13px;color:#7d95b8;max-width:720px}
+
+  footer{padding:30px 0;background:#081c39;color:#6d84a5;
+         font-size:13px;text-align:center}
+  footer a{color:#8fa8cc;text-decoration:none}
+
+  @media (max-width:640px){
+    section{padding:60px 0}
+    .hero{min-height:78vh}
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. ГЕРОЙ -->
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">Santehkeram · магазин плитки и сантехники</div>
+    <h1>Всё для ванной и ремонта <em>в одном месте</em></h1>
+    <p class="lead">Керамогранит, плитка, мозаика, сантехника и мебель для
+       ванной — от бюджета до премиума. Работаем более чем в 4700 городах
+       России и привозим материалы со склада за 3 часа.</p>
+    <div class="cta">
+      <a class="btn solid" href="https://santehkeram.ru" target="_blank" rel="noopener">Открыть каталог →</a>
+      <a class="btn ghost" href="tel:+78001009862">+7 (800) 100-98-62</a>
+    </div>
+    <div class="meta">
+      <span>🏙 <b>4700+</b> городов доставки</span>
+      <span>📦 <b>10 000 м²</b> склада в Москве</span>
+      <span>🚚 свой автопарк — <b>40</b> машин</span>
+    </div>
+  </div>
+</header>
+
+<!-- 2. КАТАЛОГ -->
+<section id="catalog">
+  <div class="wrap">
+    <div class="bar"></div>
+    <h2 class="sec-title">Каталог товаров</h2>
+    <p class="sec-sub">Всё, что нужно для ванной комнаты и ремонта в целом —
+      от керамогранита и мозаики до обоев, лепнины и тёплого пола.</p>
+    <div class="grid">
+      <div class="card"><div class="ph t1">🧱</div><div class="bd">
+        <h3>Плитка и керамогранит</h3>
+        <p>Керамическая плитка, керамогранит, мозаика, ступени, натуральный
+           камень и клинкерный кирпич.</p></div></div>
+      <div class="card"><div class="ph t2">🛁</div><div class="bd">
+        <h3>Сантехника</h3>
+        <p>Ванны и душевые, унитазы, раковины, смесители, инсталляции,
+           полотенцесушители и аксессуары.</p></div></div>
+      <div class="card"><div class="ph t3">🪞</div><div class="bd">
+        <h3>Мебель для ванной</h3>
+        <p>Тумбы, шкафы и пеналы, зеркала и зеркала-шкафы, комоды и
+           светильники.</p></div></div>
+      <div class="card"><div class="ph t4">💡</div><div class="bd">
+        <h3>Освещение и тёплый пол</h3>
+        <p>Люстры, бра, трековые системы, светодиодная лента и системы
+           тёплого пола.</p></div></div>
+      <div class="card"><div class="ph t5">🪵</div><div class="bd">
+        <h3>Напольные покрытия</h3>
+        <p>Ламинат, виниловые и пробковые полы, подложка и плинтусы.</p></div></div>
+      <div class="card"><div class="ph t6">🏗</div><div class="bd">
+        <h3>Стройматериалы и декор</h3>
+        <p>Строительные смеси, обои, лепнина, карнизы, молдинги и
+           инструменты.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. О КОМПАНИИ -->
+<section class="facts" id="about">
+  <div class="wrap">
+    <div class="bar"></div>
+    <h2 class="sec-title">История в цифрах</h2>
+    <p class="sec-sub">Из маленького склада с двумя сотрудниками — в
+      федеральную сеть, которую знают в 4700 городах.</p>
+    <div class="fgrid">
+      <div class="fact"><div class="num">4700+</div>
+        <div class="lbl">городов России с представительствами и доставкой</div></div>
+      <div class="fact"><div class="num">10 000 м²</div>
+        <div class="lbl">складской комплекс в Москве</div></div>
+      <div class="fact"><div class="num">40</div>
+        <div class="lbl">автомобилей в собственном автопарке</div></div>
+      <div class="fact"><div class="num">300+</div>
+        <div class="lbl">брендов: Россия, Италия, Испания, Китай</div></div>
+    </div>
+    <div class="story">
+      <div class="step"><div class="yr">2013</div>
+        <p>Маленький склад и два человека — только сухие строительные
+           смеси.</p></div>
+      <div class="step"><div class="yr">2018</div>
+        <p>Три офиса в Москве, склад 10 000 м² и собственный автопарк —
+           узнаваемый бренд на рынке стройки.</p></div>
+      <div class="step"><div class="yr">2020</div>
+        <p>Рождение бренда SANTEHKERAM — выход на регионы России и
+           ближнее зарубежье.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. УСЛУГИ -->
+<section id="services">
+  <div class="wrap">
+    <div class="bar"></div>
+    <h2 class="sec-title">Не только магазин</h2>
+    <p class="sec-sub">Помогаем не просто купить, а сделать ремонт:
+      посчитаем, привезём, подскажем и уложим.</p>
+    <div class="svc">
+      <div class="s"><div class="ic">🔨</div>
+        <h3>Ремонт под ключ</h3>
+        <p>Организуем ремонт ванной и всей квартиры: от сметы до
+           чистовой отделки.</p></div>
+      <div class="s"><div class="ic">🧰</div>
+        <h3>Укладка плитки</h3>
+        <p>Профессиональные бригады укладывают керамику и керамогранит
+           с гарантией на работы.</p></div>
+      <div class="s"><div class="ic">📐</div>
+        <h3>Дизайн-проект</h3>
+        <p>Поможем собрать ванную мечты: раскладка плитки, подбор мебели,
+           света и сантехники.</p></div>
+      <div class="s"><div class="ic">⚡</div>
+        <h3>Доставка за 3 часа</h3>
+        <p>Материалы со склада привозим своим автопарком — по Москве в
+           день заказа, по России — через пункты выдачи.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. ПРЕИМУЩЕСТВА -->
+<section class="perks" id="perks">
+  <div class="wrap">
+    <div class="bar"></div>
+    <h2 class="sec-title">Почему выбирают Santehkeram</h2>
+    <p class="sec-sub">Миссия простая: чтобы клиент тратил на закупку
+      материалов минимум времени и сил.</p>
+    <div class="pgrid">
+      <div class="perk"><div class="pi">💬</div>
+        <h4>Менеджер на связи 24/7</h4>
+        <p>Нестандартный подход к каждому клиенту: отвечаем быстро,
+           решаем вопросы любым удобным способом.</p></div>
+      <div class="perk"><div class="pi">💰</div>
+        <h4>Прозрачные цены</h4>
+        <p>Доступные конкурентные цены, рассрочка, акции и распродажа —
+           без скрытых доплат.</p></div>
+      <div class="perk"><div class="pi">✅</div>
+        <h4>Качество по сертификатам</h4>
+        <p>Оригинальные товары с соблюдением норм хранения — всё в пределах
+           срока годности и на долгий срок службы.</p></div>
+      <div class="perk"><div class="pi">🚚</div>
+        <h4>Своя логистика</h4>
+        <p>Собственный автопарк и полные склады — доставка вовремя,
+           аккуратно и без сюрпризов.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. КОНТАКТЫ -->
+<section class="contacts" id="contacts">
+  <div class="wrap">
+    <div class="bar"></div>
+    <h2 class="sec-title">Контакты</h2>
+    <p class="sec-sub">Заходите в шоурум, звоните или заказывайте онлайн —
+      менеджер подберёт всё под ваш ремонт.</p>
+    <div class="cgrid">
+      <div class="cbox"><div class="ci">🏛</div>
+        <h4>Шоурум</h4>
+        <p>Москва, ул. Золоторожский вал, 32,<br>бизнес-центр Au-room</p></div>
+      <div class="cbox"><div class="ci">📦</div>
+        <h4>Склад плитки</h4>
+        <p>Москва, ул. Вторая Лыковская, 63</p></div>
+      <div class="cbox"><div class="ci">✉️</div>
+        <h4>Почта и онлайн</h4>
+        <p><a href="mailto:order@santehkeram.ru">order@santehkeram.ru</a><br>
+           <a href="https://santehkeram.ru" target="_blank" rel="noopener">santehkeram.ru</a></p></div>
+    </div>
+    <a class="big-phone" href="tel:+78001009862">+7 (800) 100-98-62</a>
+    <p class="fine">Ежедневно с 9:00 до 21:00. Представительства —
+      более чем в 4700 городах России. Информация на странице носит
+      справочный характер, подробности уточняйте у менеджера.</p>
+  </div>
+</section>
+
+<footer>
+  Santehkeram · магазин керамики и сантехники ·
+  <a href="https://santehkeram.ru" target="_blank" rel="noopener">santehkeram.ru</a>
+</footer>
+
+</body>
+</html>

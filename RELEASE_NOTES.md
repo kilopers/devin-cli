@@ -1,3 +1,17 @@
+## 2.4.14 — лендинг santeh.ai.kilop.ru для santehkeram.ru
+
+- Новый статичный лендинг sites/santeh/ (nginx:alpine, порт 8093)
+  по образцу sites/turcia: 6 экранов — герой, каталог товаров,
+  история и цифры, услуги, преимущества, контакты.
+- Контент по данным santehkeram.ru: керамогранит/плитка/мозаика,
+  сантехника и мебель для ванной, 4700+ городов, склад 10 000 м²,
+  ремонт/укладка плитки/дизайн-проект, доставка за 3 часа,
+  шоурум на Золоторожском валу 32.
+- infra/traefik/dynamic.yml: роутер+сервис santeh →
+  http://host.docker.internal:8093; файл синхронизирован с
+  продовым конфигом (добавлены devin-dev, mediccrm, pomogator,
+  afinadashboard, monitor и их watchtower-роутеры).
+
 ## 2.4.13 — статистика deepseek: 24ч/7д считают свежие токены
 
 - usage_totals складывал prompt_tok + completion_tok; у deepseek
