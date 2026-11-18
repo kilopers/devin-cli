@@ -3,143 +3,214 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Santehkeram — всё для ванной и ремонта в одном месте</title>
+<title>Santehkeram — керамика, сантехника и всё для ремонта</title>
 <meta name="description" content="Santehkeram — федеральная сеть магазинов плитки и сантехники: керамогранит, мозаика, ванны, смесители, мебель для ванной. 4700+ городов России, доставка со склада за 3 часа.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --blue:#1f6fd6; --deep:#0d2c56; --ink:#222b38; --mut:#66748a;
-    --bg:#f6f8fb; --card:#ffffff; --line:#e4e9f0; --gold:#e8b04b;
+    --terra:#b5622f; --terra-d:#8f4423; --cream:#f7f1e9; --sand:#efe3d3;
+    --ink:#2c1f16; --mut:#8a7563; --gold:#cfa06b; --card:#fffdf9;
+    --line:#e6d8c7; --dark:#221510; --dark2:#331f13;
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
-       color:var(--ink);background:var(--bg);line-height:1.65}
-  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  body{font-family:"Manrope",system-ui,-apple-system,sans-serif;
+       color:var(--ink);background:var(--cream);line-height:1.65}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 26px}
+  h1,h2,.serif{font-family:"Playfair Display",Georgia,serif}
+  ::selection{background:var(--terra);color:#fff}
 
   /* HERO */
-  .hero{position:relative;min-height:92vh;display:flex;align-items:center;
-        overflow:hidden;color:#fff;
-        background:linear-gradient(150deg,#0a2342 0%,#11498f 55%,#1f6fd6 100%)}
-  .hero::before{content:"";position:absolute;inset:0;opacity:.14;
+  .hero{position:relative;min-height:94vh;display:flex;align-items:center;
+        overflow:hidden;color:#f7ede2;
+        background:linear-gradient(160deg,#1e110a 0%,#4a2812 58%,#7a4523 100%)}
+  .hero::before{content:"";position:absolute;inset:0;opacity:.16;
     background:
-      radial-gradient(circle at 82% 18%, #fff 0 110px, transparent 111px),
-      radial-gradient(circle at 10% 80%, #fff 0 60px, transparent 61px),
-      radial-gradient(circle at 62% 88%, #fff 0 36px, transparent 37px)}
-  .hero::after{content:"🚿";position:absolute;right:5%;top:12%;
-    font-size:min(32vw,320px);opacity:.08;line-height:1;
-    transform:rotate(-10deg);pointer-events:none}
+      radial-gradient(circle at 84% 16%, #e8b06a 0 130px, transparent 131px),
+      radial-gradient(circle at 8% 84%, #e8b06a 0 74px, transparent 75px),
+      radial-gradient(circle at 66% 92%, #e8b06a 0 40px, transparent 41px)}
+  .hero::after{content:"◧";position:absolute;right:4%;top:8%;
+    font-size:min(34vw,340px);opacity:.07;line-height:1;color:#f0c190;
+    transform:rotate(-14deg);pointer-events:none}
   .hero .wrap{position:relative;z-index:2}
-  .kicker{letter-spacing:.35em;text-transform:uppercase;font-size:13px;
-          color:#a9d2ff;font-weight:600;margin-bottom:18px}
-  h1{font-size:clamp(40px,6.6vw,80px);line-height:1.06;font-weight:800;
-     max-width:840px}
-  h1 em{font-style:normal;color:var(--gold)}
-  .hero p.lead{font-size:clamp(17px,2.2vw,22px);max-width:620px;
-               margin-top:22px;color:#dbe9fb}
-  .hero .cta{display:inline-flex;gap:14px;margin-top:36px;flex-wrap:wrap}
-  .btn{display:inline-block;padding:14px 30px;border-radius:12px;
-       font-weight:600;text-decoration:none;font-size:15px;
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:34px}
+  .brand .mark{width:44px;height:44px;border-radius:12px;display:flex;
+    align-items:center;justify-content:center;font-size:24px;
+    background:linear-gradient(135deg,#d98c54,#a04f26);
+    box-shadow:0 6px 18px rgba(0,0,0,.35)}
+  .brand .name{font-weight:800;letter-spacing:.18em;font-size:15px;
+    text-transform:uppercase;color:#f3ddc4}
+  .kicker{letter-spacing:.34em;text-transform:uppercase;font-size:12.5px;
+          color:var(--gold);font-weight:700;margin-bottom:20px}
+  h1{font-size:clamp(42px,6.6vw,84px);line-height:1.04;font-weight:700;
+     max-width:860px}
+  h1 em{font-style:italic;color:var(--gold)}
+  .hero p.lead{font-size:clamp(17px,2.1vw,21px);max-width:600px;
+               margin-top:24px;color:#ecd9c2}
+  .hero .cta{display:flex;gap:14px;margin-top:38px;flex-wrap:wrap}
+  .btn{display:inline-block;padding:15px 32px;border-radius:14px;
+       font-weight:700;text-decoration:none;font-size:15px;
        transition:transform .18s ease,box-shadow .18s ease}
-  .btn.solid{background:#fff;color:var(--blue)}
-  .btn.ghost{border:1.5px solid rgba(255,255,255,.55);color:#fff}
+  .btn.solid{background:linear-gradient(135deg,#e0935a,#c05f2b);color:#fff;
+             box-shadow:0 8px 24px rgba(160,79,38,.4)}
+  .btn.ghost{border:1.5px solid rgba(240,215,185,.45);color:#f3e2cd}
   .btn:hover{transform:translateY(-2px);
-             box-shadow:0 10px 28px rgba(0,0,0,.28)}
-  .hero .meta{margin-top:34px;display:flex;gap:26px;flex-wrap:wrap;
-              font-size:14px;color:#bcd7f6}
-  .hero .meta b{color:#fff}
+             box-shadow:0 12px 30px rgba(0,0,0,.35)}
+  .hero .meta{margin-top:40px;display:flex;gap:30px;flex-wrap:wrap;
+              font-size:14px;color:#d9bfa3}
+  .hero .meta b{color:#f7e8d4}
+  .scroll-hint{position:absolute;left:50%;bottom:26px;z-index:2;
+    transform:translateX(-50%);color:#c9a37d;font-size:12px;
+    letter-spacing:.25em;text-transform:uppercase}
 
   /* СЕКЦИИ */
-  section{padding:86px 0}
-  .sec-title{font-size:clamp(28px,4vw,42px);font-weight:800;
-             color:var(--deep);line-height:1.15;margin-bottom:12px}
-  .sec-sub{color:var(--mut);max-width:660px;font-size:17px;margin-bottom:44px}
-  .bar{width:64px;height:5px;border-radius:3px;background:var(--blue);
-       margin-bottom:20px}
+  section{padding:92px 0}
+  .sec-title{font-size:clamp(30px,4vw,46px);font-weight:700;
+             color:var(--ink);line-height:1.12;margin-bottom:14px}
+  .sec-sub{color:var(--mut);max-width:660px;font-size:17px;margin-bottom:46px}
+  .bar{width:70px;height:4px;border-radius:3px;
+       background:linear-gradient(90deg,var(--terra),var(--gold));
+       margin-bottom:22px}
 
   /* КАТАЛОГ */
   .grid{display:grid;gap:20px;
-        grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+        grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
   .card{background:var(--card);border:1px solid var(--line);
-        border-radius:18px;overflow:hidden;
-        transition:transform .2s ease,box-shadow .2s ease}
-  .card:hover{transform:translateY(-5px);
-              box-shadow:0 14px 34px rgba(13,44,86,.10)}
-  .card .ph{height:120px;display:flex;align-items:center;
+        border-radius:20px;overflow:hidden;
+        transition:transform .22s ease,box-shadow .22s ease}
+  .card:hover{transform:translateY(-6px);
+              box-shadow:0 18px 40px rgba(90,50,20,.13)}
+  .card .ph{height:118px;display:flex;align-items:center;
             justify-content:center;font-size:52px}
-  .ph.t1{background:linear-gradient(135deg,#dcebfb,#9dc3ee)}
-  .ph.t2{background:linear-gradient(135deg,#0d2c56,#2e7de0);color:#fff}
-  .ph.t3{background:linear-gradient(135deg,#fdf0d4,#f0cd84)}
-  .ph.t4{background:linear-gradient(135deg,#e3f3ec,#a7d9c2)}
-  .ph.t5{background:linear-gradient(135deg,#ede7f9,#c4b3ea)}
-  .ph.t6{background:linear-gradient(135deg,#fdeaea,#f0b5ae)}
-  .card .bd{padding:18px 20px 22px}
-  .card h3{font-size:18px;color:var(--deep);margin-bottom:6px}
+  .ph.t1{background:linear-gradient(135deg,#f3ddc4,#e0b184)}
+  .ph.t2{background:linear-gradient(135deg,#4a2812,#96603a);color:#f0d9bd}
+  .ph.t3{background:linear-gradient(135deg,#f9ecd9,#edc98f)}
+  .ph.t4{background:linear-gradient(135deg,#e8ded1,#c9b397)}
+  .ph.t5{background:linear-gradient(135deg,#f2e2d6,#d8a986)}
+  .ph.t6{background:linear-gradient(135deg,#efe4d8,#c4a882)}
+  .card .bd{padding:20px 22px 24px}
+  .card h3{font-family:"Playfair Display",serif;font-size:19px;
+           color:var(--ink);margin-bottom:6px}
   .card p{font-size:14px;color:var(--mut)}
 
   /* ЦИФРЫ */
-  .facts{background:var(--deep);color:#fff}
-  .facts .sec-title{color:#fff}
-  .facts .sec-sub{color:#a9bedd}
+  .facts{background:var(--dark);color:#f1e3d0;position:relative;overflow:hidden}
+  .facts::before{content:"";position:absolute;inset:0;opacity:.05;
+    background:repeating-linear-gradient(45deg,#e8b06a 0 2px,transparent 2px 26px)}
+  .facts .wrap{position:relative}
+  .facts .sec-title{color:#f7e8d4}
+  .facts .sec-sub{color:#c4a284}
   .fgrid{display:grid;gap:18px;
          grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
-  .fact{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
-        border-radius:16px;padding:26px 22px}
-  .fact .num{font-size:clamp(30px,3.6vw,42px);font-weight:800;
+  .fact{background:rgba(255,240,220,.045);border:1px solid rgba(224,177,132,.18);
+        border-radius:18px;padding:28px 24px}
+  .fact .num{font-family:"Playfair Display",serif;
+             font-size:clamp(32px,3.6vw,44px);font-weight:700;
              color:var(--gold);line-height:1.1}
-  .fact .lbl{margin-top:8px;font-size:14.5px;color:#cfe0f4}
-  .story{display:grid;gap:18px;margin-top:44px;
+  .fact .lbl{margin-top:10px;font-size:14.5px;color:#d9bfa3}
+  .story{display:grid;gap:18px;margin-top:48px;
          grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-  .step{border-left:3px solid var(--gold);padding:6px 0 6px 20px}
-  .step .yr{color:var(--gold);font-weight:700;font-size:18px}
-  .step p{color:#dce8f7;font-size:15px;margin-top:6px}
+  .step{border-left:3px solid var(--terra);padding:6px 0 6px 20px}
+  .step .yr{font-family:"Playfair Display",serif;color:var(--gold);
+            font-weight:700;font-size:20px}
+  .step p{color:#e5d2b8;font-size:15px;margin-top:6px}
 
   /* УСЛУГИ */
   .svc{display:grid;gap:20px;
        grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
   .svc .s{background:var(--card);border:1px solid var(--line);
-          border-radius:18px;padding:28px 24px;
-          transition:transform .2s ease,box-shadow .2s ease}
-  .svc .s:hover{transform:translateY(-5px);
-                box-shadow:0 14px 34px rgba(13,44,86,.10)}
-  .svc .ic{font-size:38px}
-  .svc h3{font-size:19px;color:var(--deep);margin:14px 0 8px}
+          border-radius:20px;padding:30px 26px;
+          transition:transform .22s ease,box-shadow .22s ease}
+  .svc .s:hover{transform:translateY(-6px);
+                box-shadow:0 18px 40px rgba(90,50,20,.13)}
+  .svc .ic{width:60px;height:60px;border-radius:16px;font-size:30px;
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#f7e5cd,#eccfa8)}
+  .svc h3{font-family:"Playfair Display",serif;font-size:19px;
+          color:var(--ink);margin:16px 0 8px}
   .svc p{font-size:14.5px;color:var(--mut)}
 
-  /* ПРЕИМУЩЕСТВА */
-  .perks{background:linear-gradient(160deg,#eef4fc,#e2edfa)}
-  .pgrid{display:grid;gap:18px;
-         grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
-  .perk{background:#fff;border:1px solid var(--line);border-radius:16px;
-        padding:24px 22px}
-  .perk .pi{font-size:30px}
-  .perk h4{font-size:16.5px;color:var(--deep);margin:12px 0 6px}
-  .perk p{font-size:14px;color:var(--mut)}
+  /* ФОРМА */
+  .form-sec{background:linear-gradient(165deg,#f0e4d2,#e9d6bf)}
+  .form-box{display:grid;gap:34px;align-items:start;
+            grid-template-columns:1fr 1.1fr}
+  .form-side h3{font-family:"Playfair Display",serif;font-size:26px;
+                color:var(--ink);margin-bottom:12px}
+  .form-side p{color:var(--mut);font-size:15px;margin-bottom:20px}
+  .form-side ul{list-style:none}
+  .form-side li{display:flex;gap:12px;align-items:flex-start;
+                margin-bottom:14px;font-size:14.5px;color:#5c4636}
+  .form-side li .dot{flex:none;width:26px;height:26px;border-radius:50%;
+    background:linear-gradient(135deg,#d98c54,#a04f26);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:800;margin-top:1px}
+  form{background:var(--card);border:1px solid var(--line);
+       border-radius:22px;padding:32px 30px;
+       box-shadow:0 22px 50px rgba(90,50,20,.10)}
+  .frow{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  label{display:block;font-size:13px;font-weight:700;color:#5c4636;
+        margin-bottom:7px;letter-spacing:.02em}
+  input,select,textarea{width:100%;padding:13px 15px;font:inherit;
+    font-size:15px;color:var(--ink);background:#fbf6ee;
+    border:1.5px solid var(--line);border-radius:12px;outline:none;
+    transition:border-color .15s ease,box-shadow .15s ease}
+  input:focus,select:focus,textarea:focus{
+    border-color:var(--terra);
+    box-shadow:0 0 0 3px rgba(181,98,47,.14)}
+  textarea{resize:vertical;min-height:88px}
+  .fgroup{margin-bottom:16px}
+  .cats{display:flex;gap:8px;flex-wrap:wrap}
+  .cats input{display:none}
+  .cats label{cursor:pointer;margin:0;padding:8px 14px;font-size:13px;
+    font-weight:600;border:1.5px solid var(--line);border-radius:99px;
+    background:#fbf6ee;color:#6d5743;
+    transition:all .15s ease}
+  .cats input:checked+label{background:var(--terra);border-color:var(--terra);
+    color:#fff}
+  .fbtn{width:100%;margin-top:6px;padding:16px;border:none;cursor:pointer;
+    font:inherit;font-weight:800;font-size:15px;letter-spacing:.03em;
+    color:#fff;border-radius:14px;
+    background:linear-gradient(135deg,#d98c54,#a04f26);
+    transition:transform .18s ease,box-shadow .18s ease}
+  .fbtn:hover{transform:translateY(-2px);
+              box-shadow:0 12px 30px rgba(160,79,38,.35)}
+  .fnote{margin-top:14px;font-size:12.5px;color:var(--mut);text-align:center}
+  .form-ok{display:none;margin-top:14px;padding:13px 16px;font-size:14px;
+    color:#3f6b34;background:#e9f3e3;border:1px solid #c4ddb4;
+    border-radius:12px;text-align:center}
+  .form-ok.on{display:block}
 
   /* КОНТАКТЫ */
-  .contacts{background:var(--deep);color:#fff}
-  .contacts .sec-title{color:#fff}
-  .contacts .sec-sub{color:#a9bedd}
+  .contacts{background:var(--dark2);color:#f1e3d0}
+  .contacts .sec-title{color:#f7e8d4}
+  .contacts .sec-sub{color:#c4a284}
   .cgrid{display:grid;gap:20px;
          grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
-  .cbox{background:rgba(255,255,255,.05);
-        border:1px solid rgba(255,255,255,.12);
-        border-radius:16px;padding:26px 24px}
+  .cbox{background:rgba(255,240,220,.05);
+        border:1px solid rgba(224,177,132,.18);
+        border-radius:18px;padding:28px 26px}
   .cbox .ci{font-size:32px}
-  .cbox h4{margin:12px 0 8px;font-size:17px;color:#fff}
-  .cbox p,.cbox a{font-size:15px;color:#cfe0f4;text-decoration:none}
-  .cbox a{border-bottom:1px dashed rgba(255,255,255,.4)}
+  .cbox h4{font-family:"Playfair Display",serif;margin:14px 0 8px;
+           font-size:18px;color:#f7e8d4}
+  .cbox p,.cbox a{font-size:15px;color:#d9bfa3;text-decoration:none}
+  .cbox a{border-bottom:1px dashed rgba(224,177,132,.45)}
   .cbox a:hover{color:#fff}
-  .big-phone{display:block;margin-top:26px;font-size:clamp(24px,4vw,38px);
-             font-weight:800;color:var(--gold);text-decoration:none}
-  .fine{margin-top:34px;font-size:13px;color:#7d95b8;max-width:720px}
+  .big-phone{display:block;margin-top:30px;font-family:"Playfair Display",serif;
+             font-size:clamp(26px,4vw,40px);font-weight:700;
+             color:var(--gold);text-decoration:none}
+  .fine{margin-top:36px;font-size:13px;color:#9b7f66;max-width:720px}
 
-  footer{padding:30px 0;background:#081c39;color:#6d84a5;
+  footer{padding:32px 0;background:#1a0f09;color:#8a6a52;
          font-size:13px;text-align:center}
-  footer a{color:#8fa8cc;text-decoration:none}
+  footer a{color:#c9a37d;text-decoration:none}
 
-  @media (max-width:640px){
-    section{padding:60px 0}
-    .hero{min-height:78vh}
+  @media (max-width:760px){
+    section{padding:64px 0}
+    .hero{min-height:82vh}
+    .form-box{grid-template-columns:1fr}
+    .frow{grid-template-columns:1fr}
   }
 </style>
 </head>
@@ -148,13 +219,17 @@
 <!-- 1. ГЕРОЙ -->
 <header class="hero">
   <div class="wrap">
-    <div class="kicker">Santehkeram · магазин плитки и сантехники</div>
-    <h1>Всё для ванной и ремонта <em>в одном месте</em></h1>
-    <p class="lead">Керамогранит, плитка, мозаика, сантехника и мебель для
-       ванной — от бюджета до премиума. Работаем более чем в 4700 городах
-       России и привозим материалы со склада за 3 часа.</p>
+    <div class="brand">
+      <div class="mark">◧</div>
+      <div class="name">Santehkeram</div>
+    </div>
+    <div class="kicker">Магазин керамики и сантехники</div>
+    <h1>Тёплая керамика для <em>вашего дома</em></h1>
+    <p class="lead">Керамогранит, плитка, мозаика, сантехника и мебель
+       для ванной — от бюджета до премиума. Более 4700 городов России
+       и доставка со склада за 3 часа.</p>
     <div class="cta">
-      <a class="btn solid" href="https://santehkeram.ru" target="_blank" rel="noopener">Открыть каталог →</a>
+      <a class="btn solid" href="#request">Оставить заявку →</a>
       <a class="btn ghost" href="tel:+78001009862">+7 (800) 100-98-62</a>
     </div>
     <div class="meta">
@@ -163,6 +238,7 @@
       <span>🚚 свой автопарк — <b>40</b> машин</span>
     </div>
   </div>
+  <div class="scroll-hint">листайте вниз</div>
 </header>
 
 <!-- 2. КАТАЛОГ -->
@@ -170,8 +246,8 @@
   <div class="wrap">
     <div class="bar"></div>
     <h2 class="sec-title">Каталог товаров</h2>
-    <p class="sec-sub">Всё, что нужно для ванной комнаты и ремонта в целом —
-      от керамогранита и мозаики до обоев, лепнины и тёплого пола.</p>
+    <p class="sec-sub">Всё для ванной комнаты и ремонта в целом — от
+      керамогранита и мозаики до обоев, лепнины и тёплого пола.</p>
     <div class="grid">
       <div class="card"><div class="ph t1">🧱</div><div class="bd">
         <h3>Плитка и керамогранит</h3>
@@ -259,30 +335,62 @@
   </div>
 </section>
 
-<!-- 5. ПРЕИМУЩЕСТВА -->
-<section class="perks" id="perks">
+<!-- 5. ФОРМА ЗАЯВКИ -->
+<section class="form-sec" id="request">
   <div class="wrap">
-    <div class="bar"></div>
-    <h2 class="sec-title">Почему выбирают Santehkeram</h2>
-    <p class="sec-sub">Миссия простая: чтобы клиент тратил на закупку
-      материалов минимум времени и сил.</p>
-    <div class="pgrid">
-      <div class="perk"><div class="pi">💬</div>
-        <h4>Менеджер на связи 24/7</h4>
-        <p>Нестандартный подход к каждому клиенту: отвечаем быстро,
-           решаем вопросы любым удобным способом.</p></div>
-      <div class="perk"><div class="pi">💰</div>
-        <h4>Прозрачные цены</h4>
-        <p>Доступные конкурентные цены, рассрочка, акции и распродажа —
-           без скрытых доплат.</p></div>
-      <div class="perk"><div class="pi">✅</div>
-        <h4>Качество по сертификатам</h4>
-        <p>Оригинальные товары с соблюдением норм хранения — всё в пределах
-           срока годности и на долгий срок службы.</p></div>
-      <div class="perk"><div class="pi">🚚</div>
-        <h4>Своя логистика</h4>
-        <p>Собственный автопарк и полные склады — доставка вовремя,
-           аккуратно и без сюрпризов.</p></div>
+    <div class="form-box">
+      <div class="form-side">
+        <div class="bar"></div>
+        <h2 class="sec-title">Заявка на подбор</h2>
+        <p>Опишите, что нужно для вашего ремонта, — сформируем письмо
+          менеджеру Santehkeram. Он подберёт материалы, посчитает
+          стоимость и перезвонит.</p>
+        <ul>
+          <li><span class="dot">1</span><span>Имя и телефон — менеджер
+            перезвонит в рабочее время (ежедневно 9:00–21:00)</span></li>
+          <li><span class="dot">2</span><span>Отметьте категории —
+            подберут сразу несколько вариантов под бюджет</span></li>
+          <li><span class="dot">3</span><span>Письмо откроется в вашем
+            почтовом клиенте на order@santehkeram.ru — останется только
+            нажать «отправить»</span></li>
+        </ul>
+        <p>Или просто позвоните: <a href="tel:+78001009862"
+           style="color:var(--terra);font-weight:700">+7 (800) 100-98-62</a></p>
+      </div>
+      <form id="req" novalidate>
+        <div class="frow">
+          <div class="fgroup">
+            <label for="fname">Ваше имя *</label>
+            <input id="fname" name="name" required placeholder="Иван">
+          </div>
+          <div class="fgroup">
+            <label for="fphone">Телефон *</label>
+            <input id="fphone" name="phone" required type="tel"
+                   placeholder="+7 (___) ___-__-__">
+          </div>
+        </div>
+        <div class="fgroup">
+          <label>Что подобрать</label>
+          <div class="cats">
+            <input type="checkbox" id="c1" value="плитка/керамогранит"><label for="c1">Плитка</label>
+            <input type="checkbox" id="c2" value="сантехника"><label for="c2">Сантехника</label>
+            <input type="checkbox" id="c3" value="мебель для ванной"><label for="c3">Мебель</label>
+            <input type="checkbox" id="c4" value="освещение/тёплый пол"><label for="c4">Свет и тёплый пол</label>
+            <input type="checkbox" id="c5" value="ремонт/укладка"><label for="c5">Ремонт и укладка</label>
+          </div>
+        </div>
+        <div class="fgroup">
+          <label for="fmsg">Комментарий</label>
+          <textarea id="fmsg" placeholder="Например: ванная 4 м²,
+нужен керамогранит под мрамор и смеситель"></textarea>
+        </div>
+        <button class="fbtn" type="submit">Подготовить письмо менеджеру</button>
+        <div class="fnote">Откроется письмо на order@santehkeram.ru
+          с заполненным текстом — ничего не отправляется без вашего
+          подтверждения.</div>
+        <div class="form-ok" id="fok">Письмо подготовлено — проверьте
+          ваш почтовый клиент.</div>
+      </form>
     </div>
   </div>
 </section>
@@ -317,6 +425,40 @@
   Santehkeram · магазин керамики и сантехники ·
   <a href="https://santehkeram.ru" target="_blank" rel="noopener">santehkeram.ru</a>
 </footer>
+
+<script>
+document.getElementById('req').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var name = document.getElementById('fname').value.trim();
+  var phone = document.getElementById('fphone').value.trim();
+  var msg = document.getElementById('fmsg').value.trim();
+  var cats = Array.prototype.map.call(
+    document.querySelectorAll('.cats input:checked'),
+    function (c) { return c.value; });
+  if (!name || !phone) {
+    [document.getElementById('fname'), document.getElementById('fphone')]
+      .forEach(function (el) {
+        el.style.borderColor = el.value.trim() ? '' : '#c0392b';
+      });
+    return;
+  }
+  var lines = [
+    'Здравствуйте!',
+    '',
+    'Заявка с лендинга santeh.ai.kilop.ru:',
+    'Имя: ' + name,
+    'Телефон: ' + phone
+  ];
+  if (cats.length) lines.push('Интересует: ' + cats.join(', '));
+  if (msg) lines.push('Комментарий: ' + msg);
+  lines.push('', 'Прошу перезвонить для подбора материалов.');
+  var href = 'mailto:order@santehkeram.ru'
+    + '?subject=' + encodeURIComponent('Заявка на подбор — ' + name)
+    + '&body=' + encodeURIComponent(lines.join('\n'));
+  window.location.href = href;
+  document.getElementById('fok').classList.add('on');
+});
+</script>
 
 </body>
 </html>
