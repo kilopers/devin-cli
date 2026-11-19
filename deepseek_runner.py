@@ -298,10 +298,12 @@ def main() -> int:
          + ("" if tools else " · без инструментов"))
 
     step = 0
+    ncalls = 0
     result_text, usage_all = "", {}
     started = time.time()
     try:
         for _ in range(MAX_TURNS):
+            ncalls += 1
             resp = api_call(messages, tools)
             u = resp.get("usage") or {}
             # суммируем по вызовам: у tool-цикла N запросов к API,
@@ -364,6 +366,7 @@ def main() -> int:
                 json.dump({"type": "result", "result": result_text,
                            "session_id": sid, "model": MODEL,
                            "usage": usage_all,
+                           "steps": step, "calls": ncalls,
                            "duration_ms": int(dur * 1000)},
                           f, ensure_ascii=False)
         except OSError:

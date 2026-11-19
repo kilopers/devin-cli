@@ -1464,10 +1464,17 @@ def run_task(task: dict) -> None:
                          finished_ts)
     if tstats:
         tstats["agent"] = akey
-        # у claude в stats уже есть реальная стоимость прогона;
-        # оценку по тарифу считаем, только если своей нет
+        # стоимость считает САМ движок через AGENTS[key]["cost"]:
+        # claude берёт фактическую сумму прогона, devin/deepseek —
+        # оценку по тарифу модели. Общий _task_cost — только фолбэк
+        # для движков без своего метода.
         if tstats.get("cost") is None:
-            cost = _task_cost(tstats)
+            cost_fn = ag.get("cost") or _task_cost
+            try:
+                cost = cost_fn(tstats)
+            except Exception as e:
+                log(f"cost {akey}: {e}")
+                cost = _task_cost(tstats)
             if cost is not None:
                 tstats["cost"] = cost
     db_exec("UPDATE tasks SET status='done',"

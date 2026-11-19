@@ -6,6 +6,12 @@ http:
       service: devin
       tls:
         certResolver: le
+    devin-dev:
+      rule: "Host(`dev.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: devin-dev
+      tls:
+        certResolver: le
     mihomo:
       rule: "Host(`mihomo.ai.kilop.ru`)"
       entryPoints: [websecure]
@@ -16,6 +22,12 @@ http:
       rule: "Host(`turcia.ai.kilop.ru`)"
       entryPoints: [websecure]
       service: turcia
+      tls:
+        certResolver: le
+    santeh:
+      rule: "Host(`santeh.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: santeh
       tls:
         certResolver: le
     techcontrol:
@@ -57,6 +69,63 @@ http:
       middlewares: [wt-strip]
       tls:
         certResolver: le
+    mediccrm:
+      rule: "Host(`mediccrm.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: mediccrm
+      tls:
+        certResolver: le
+    mediccrm-watchtower:
+      rule: "Host(`mediccrm.ai.kilop.ru`) && PathPrefix(`/_watchtower`)"
+      entryPoints: [websecure]
+      service: mediccrm-watchtower
+      middlewares: [wt-strip]
+      tls:
+        certResolver: le
+    pomogator:
+      rule: "Host(`pomogator.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: pomogator
+      tls:
+        certResolver: le
+    pomogator-admin:
+      rule: "Host(`pomogator-admin.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: pomogator-admin
+      tls:
+        certResolver: le
+    pomogator-api:
+      rule: "Host(`pomogator-api.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: pomogator-api
+      tls:
+        certResolver: le
+    afinadashboard:
+      rule: "Host(`afinadashboard.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: afinadashboard
+      tls:
+        certResolver: le
+    afinadashboard-watchtower:
+      rule: "Host(`afinadashboard.ai.kilop.ru`) && PathPrefix(`/_watchtower`)"
+      entryPoints: [websecure]
+      service: afinadashboard-watchtower
+      middlewares: [wt-strip]
+      tls:
+        certResolver: le
+    monitor:
+      rule: "Host(`monitor.ai.kilop.ru`)"
+      entryPoints: [websecure]
+      service: monitor
+      tls:
+        certResolver: le
+    monitor-watchtower:
+      rule: "Host(`monitor.ai.kilop.ru`) && PathPrefix(`/_watchtower`)"
+      entryPoints: [websecure]
+      service: monitor-watchtower
+      middlewares: [wt-strip]
+      tls:
+        certResolver: le
   middlewares:
     wt-strip:
       stripPrefix:
@@ -66,6 +135,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:8089"
+    devin-dev:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8390"
     mihomo:
       loadBalancer:
         servers:
@@ -74,6 +147,10 @@ http:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:8092"
+    santeh:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8093"
     techcontrol:
       loadBalancer:
         servers:
@@ -98,3 +175,39 @@ http:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:8285"
+    mediccrm:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8290"
+    mediccrm-watchtower:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8292"
+    pomogator:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8333"
+    pomogator-admin:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8332"
+    pomogator-api:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8330"
+    afinadashboard:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8340"
+    afinadashboard-watchtower:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8341"
+    monitor:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8360"
+    monitor-watchtower:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8361"

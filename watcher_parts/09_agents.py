@@ -13,6 +13,10 @@
 #   transcripts   каталог живых транскриптов (прогресс до export-файла)
 #   mcp_config    MCP-конфиг CLI, подмешиваемый на время задачи
 #   stats         fn(export_path, started, finished) -> tasks.stats
+#   cost          fn(stats) -> стоимость задачи в долларах (None —
+#                 нельзя посчитать). Каждый движок сам решает: claude
+#                 берёт фактическую сумму прогона, devin/deepseek —
+#                 оценку по тарифу модели.
 #   cred_key/cred_env/cred_file  чем движок авторизуется (для
 #                 «настроен/нет» в UI и agent_configured)
 #   auth_url      где юзеру взять ключ (ссылка в диалоге авторизации)
@@ -189,7 +193,11 @@ def _deepseek_cost_summary(model_id: str) -> str:
         if pat in mid:
             return (f"${pin:g} / 1M Input · ${pcache:g} / 1M "
                     f"Cached input · ${pout:g} / 1M Output")
-    return ""
+    # неизвестный id (совместимый прокси со своими именами, напр.
+    # deepseek-flash) — оценка по тарифу chat, «≈» помечает оценку
+    pin, pcache, pout = _DEEPSEEK_PRICES[1][1]
+    return (f"≈${pin:g} / 1M Input · ${pcache:g} / 1M "
+            f"Cached input · ${pout:g} / 1M Output")
 
 
 def deepseek_models() -> list:
@@ -252,7 +260,7 @@ def _deepseek_collect_stats(export_path: Path, started: float,
                             finished: float) -> dict:
     """Метрики завершённой deepseek-задачи из result-JSON
     deepseek_runner'а: usage(prompt_tokens/prompt_cache_hit_tokens/
-    completion_tokens) + session_id + model."""
+    prompt_cache_miss_tokens/completion_tokens) + session_id + model."""
     st = {}
     try:
         docs = _load_transcript_docs(export_path)
@@ -266,7 +274,12 @@ def _deepseek_collect_stats(export_path: Path, started: float,
                   "model": ev.get("model"),
                   "prompt_tokens": usg.get("prompt_tokens"),
                   "completion_tokens": usg.get("completion_tokens"),
-                  "cached_tokens": cache or None}
+                  "cached_tokens": cache or None,
+                  # некэшированный вход — храним отдельно: у прокси
+                  # prompt_tokens может не равняться hit+miss
+                  "uncached_tokens": usg.get("prompt_cache_miss_tokens"),
+                  "steps": ev.get("steps"),
+                  "calls": ev.get("calls")}
     except Exception:
         pass
     if started and finished:
@@ -275,6 +288,48 @@ def _deepseek_collect_stats(export_path: Path, started: float,
     if uid:
         st["model_uid"] = uid
     return st
+
+
+def _devin_cost(st: dict) -> float | None:
+    """Devin: оценка по тарифу модели из models_cache:devin."""
+    return _task_cost(st)
+
+
+def _claude_cost(st: dict) -> float | None:
+    """Claude: фактическая стоимость прогона из result-JSON relay;
+    если её нет — оценка по тарифу, как у остальных."""
+    if st.get("cost") is not None:
+        return st["cost"]
+    return _task_cost(st)
+
+
+def _deepseek_cost(st: dict) -> float | None:
+    """DeepSeek: оценка по тарифу модели. Тариф сначала ищем в
+    models_cache:deepseek; если каталог ещё не прогрет (например,
+    задача завершилась раньше первого models_refresh_cron) — фолбэк
+    на статический _DEEPSEEK_PRICES. Для неизвестных id совместимых
+    прокси берётся тариф deepseek-chat, как в _deepseek_cost_summary."""
+    p = _model_costs(st.get("model") or "", "deepseek")
+    if not p:
+        mid = (st.get("model") or "").lower()
+        for pat, (pin, pcache, pout) in _DEEPSEEK_PRICES:
+            if pat in mid:
+                p = {"input": pin, "cached": pcache, "output": pout}
+                break
+        if not p:
+            _, (pin, pcache, pout) = _DEEPSEEK_PRICES[1]
+            p = {"input": pin, "cached": pcache, "output": pout}
+    prompt = st.get("prompt_tokens") or 0
+    cached = st.get("cached_tokens") or 0
+    uncached = st.get("uncached_tokens")
+    if uncached is None:
+        # прокси/API не отдали prompt_cache_miss_tokens — считаем
+        # разность, как раньше
+        uncached = max(prompt - cached, 0)
+    completion = st.get("completion_tokens") or 0
+    return round(uncached * p["input"] / 1e6
+                 + cached * p["cached"] / 1e6
+                 + completion * p["output"] / 1e6, 6)
 
 
 # ------------------------------------------------------------------ реестр
@@ -290,6 +345,7 @@ AGENTS = {
             Path.home() / ".local/share/devin/cli/transcripts",
         "mcp_config": _MCP_CFG,
         "stats": _collect_task_stats,
+        "cost": _devin_cost,
         "cred_key": "devin.api_key",
         "cred_env": "WINDSURF_API_KEY",
         "cred_file":
@@ -307,6 +363,7 @@ AGENTS = {
         "transcripts": Path.home() / ".claude/projects",
         "mcp_config": os.path.expanduser("~/.claude.json"),
         "stats": _claude_collect_stats,
+        "cost": _claude_cost,
         "cred_key": "claude.api_key",
         "cred_env": "ANTHROPIC_API_KEY",
         "cred_file": Path.home() / ".claude.json",
@@ -324,6 +381,7 @@ AGENTS = {
         "transcripts": DEEPSEEK_SESS_DIR,
         "mcp_config": None,                     # MCP пока не поддержан
         "stats": _deepseek_collect_stats,
+        "cost": _deepseek_cost,
         "cred_key": "deepseek.api_key",
         "cred_env": "DEEPSEEK_API_KEY",
         "cred_file": None,
