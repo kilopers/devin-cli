@@ -102,6 +102,30 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Локальный STT (faster-whisper, OpenAI-совместимый API) — заменяет
+  # внешний провайдер: STT_PROVIDER=openai,yandex + STT_BASE_URL=
+  # http://whisper:8000/v1 в .env (или настройки юзера в вебе). Порт
+  # наружу не публикуется — доступ только из docker-сети по имени
+  # 'whisper'. При STT через прокси mihomo имя 'whisper' должно идти
+  # DIRECT (правило в mihomo/config.yaml) либо воркер сам обходит прокси
+  # для внутренних хостов (_stt_opener). Модель кэшируется в томе
+  # whisper-models (скачивается с HF при первом обращении). Лимит 3g:
+  # small+int8 ≈ 700MB в работе, float32 не влезает в 2g (OOM).
+  whisper:
+    image: fedirz/faster-whisper-server:0.6.0-rc.3-cpu
+    container_name: devin-whisper
+    restart: unless-stopped
+    environment:
+      WHISPER__MODEL: Systran/faster-whisper-small
+      WHISPER__COMPUTE_TYPE: int8
+      DEFAULT_LANGUAGE: ru
+    volumes:
+      - whisper-models:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+
   # MySQL: очередь/история задач и всё состояние воркера (таблицы создаются
   # сами при старте; файлы tasks/*.txt|*.json импортируются один раз).
   mysql:
@@ -154,3 +178,6 @@ services:
     entrypoint: ["devin", "auth", "login", "--force-manual-token-flow"]
     volumes:
       - ./devin-data:/root/.local/share/devin
+
+volumes:
+  whisper-models:

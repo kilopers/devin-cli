@@ -106,6 +106,23 @@ def gemini_transcribe(audio: bytes, mime: str = "audio/ogg",
         raise RuntimeError(f"gemini HTTP {e.code}: {e.read().decode()[:500]}")
 
 
+def _stt_opener(url: str):
+    """Локальный STT-сервер (docker-сервис без точки в имени, localhost,
+    приватный IP) — напрямую через DIRECT_OPENER: прокси mihomo не
+    резолвит docker-имена и отвечает 502. Внешний API — как раньше
+    через TG_OPENER."""
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if not host or host == "localhost" or "." not in host:
+        return DIRECT_OPENER
+    try:
+        import ipaddress
+        if ipaddress.ip_address(host).is_private:
+            return DIRECT_OPENER
+    except ValueError:
+        pass
+    return TG_OPENER
+
+
 def openai_transcribe(audio: bytes, mime: str = "audio/ogg", user: str | None = None) -> str:
     """OpenAI-compatible /audio/transcriptions (OpenAI, Groq, …)."""
     boundary = "----devincli" + str(int(time.time() * 1000))
@@ -133,7 +150,7 @@ def openai_transcribe(audio: bytes, mime: str = "audio/ogg", user: str | None = 
             "Authorization": f"Bearer {sk}",
         })
     try:
-        with TG_OPENER.open(req, timeout=120) as r:
+        with _stt_opener(sb).open(req, timeout=120) as r:
             res = json.load(r)
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"stt HTTP {e.code}: {e.read().decode()[:500]}")

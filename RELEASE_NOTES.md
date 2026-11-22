@@ -1,3 +1,25 @@
+## 2.4.16 — локальный STT: faster-whisper в compose, фикс прокси
+
+- docker-compose.yml: сервис whisper
+  (fedirz/faster-whisper-server:0.6.0-rc.3-cpu, модель
+  Systran/faster-whisper-small, compute_type=int8,
+  DEFAULT_LANGUAGE=ru, том whisper-models, лимит 3g — float32
+  не влезал в 2g и уходил в OOM-рестарт). Порт наружу не
+  публикуется, доступ по имени 'whisper' в docker-сети.
+- watcher_parts/02_telegram.py: _stt_opener — openai_transcribe
+  ходит напрямую (DIRECT_OPENER) для внутренних хостов
+  (docker-имя без точки, localhost, приватный IP): через
+  mihomo-прокси запросы к http://whisper:8000 падали с 502.
+- Настройки (env на хосте + per-user): STT_PROVIDER=openai,yandex,
+  STT_BASE_URL=http://whisper:8000/v1, STT_MODEL=small; локальный
+  whisper — основной, Яндекс — фолбэк. stt.api_key остаётся
+  яндекс-ключом (whisper игнорирует Bearer) — фолбэк работает.
+  Внимание: значение модели 'whisper-1' роняет сервер (он грузит
+  её как HF-модель и OOM'ится) — у юзеров заменено на 'small'.
+- mihomo (хост, config.yaml): правило DOMAIN-SUFFIX,whisper→DIRECT
+  и 127.0.0.11 в direct-nameserver — иначе запросы из
+  прокси-клиентов к docker-имени не резолвились (502).
+
 ## 2.4.15 — лендинг santeh: тёплая гамма + форма заявки
 
 - sites/santeh/site/index.html переписан в тёплой «керамической»
