@@ -178,6 +178,8 @@ const mdStyles = {
     "& code": { fontFamily: MONO, fontSize: ".92em" },
     "& :not(pre) > code": { bgcolor: "#eceff1", color: "#ad1457",
       p: "1px 5px", borderRadius: "4px" },
+    "& code a": { color: "inherit", textDecoration: "underline" },
+    "& pre code a": { color: "#79c0ff" },
     "& blockquote": { borderLeft: "3px solid #c5cae9", m: ".5em 0",
       p: "2px 12px", color: "#5f6368" },
     "& ul,& ol": { pl: "24px", m: ".4em 0" },

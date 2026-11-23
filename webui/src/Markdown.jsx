@@ -22,6 +22,42 @@ function paintDiff(codeEl) {
   }).join("\n");
 }
 
+// URL внутри <code>/<pre> marked принципиально не линкует — весь текст
+// там «сырой код». Пост-проход по DOM: http(s):// в текстовых уздах
+// оборачиваем в <a>, ссылка становится кликабельной и в code-блоке.
+// stopPropagation — клик по ссылке не должен раскрывать карточку/пузырь.
+const URL_RE = /https?:\/\/[^\s<>"'`]+/g;
+
+function linkifyCode(codeEl) {
+  const walker = document.createTreeWalker(codeEl, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  for (const tn of nodes) {
+    if (tn.parentElement?.closest("a")) continue;
+    const text = tn.nodeValue || "";
+    URL_RE.lastIndex = 0;
+    if (!URL_RE.test(text)) continue;
+    URL_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = URL_RE.exec(text))) {
+      const url = m[0].replace(/[.,;:!?)\]]+$/, "");
+      frag.append(document.createTextNode(text.slice(last, m.index)));
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = url;
+      a.addEventListener("click", e => e.stopPropagation());
+      frag.append(a, document.createTextNode(m[0].slice(url.length)));
+      last = m.index + m[0].length;
+    }
+    frag.append(document.createTextNode(text.slice(last)));
+    tn.parentNode.replaceChild(frag, tn);
+  }
+}
+
 export default React.memo(function Markdown({ text }) {
   const ref = useRef(null);
   const html = useMemo(
@@ -35,10 +71,12 @@ export default React.memo(function Markdown({ text }) {
     ref.current?.querySelectorAll("pre code").forEach(c => {
       if ((c.className || "").includes("language-diff")) {
         paintDiff(c);
-        return;
+      } else {
+        try { hljs.highlightElement(c); } catch (e) { /* keep raw block */ }
       }
-      try { hljs.highlightElement(c); } catch (e) { /* keep raw block */ }
+      linkifyCode(c);
     });
+    ref.current?.querySelectorAll(":not(pre) > code").forEach(linkifyCode);
   }, [html]);
   return <div ref={ref} className="md"
               dangerouslySetInnerHTML={{ __html: html }} />;
