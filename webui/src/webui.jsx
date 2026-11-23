@@ -4040,14 +4040,19 @@ export default function App() {
             </Typography>
             {(brInfo.branches || [])
               .find(b => b.current && b.dirty > 0) &&
-              <Tooltip title="закоммитить незакоммиченные изменения и запушить">
+              <Tooltip title={brInfo.busy
+                       ? "по проекту идёт или ждёт очереди задача — коммит заблокирован до её завершения"
+                       : "закоммитить незакоммиченные изменения и запушить"}>
+                <span>
                 <Button size="small" variant="contained" color="success"
+                        disabled={brInfo.busy}
                         onClick={repoCommit}
                         sx={{ fontSize: { xs: 10, md: 11 },
                               px: { xs: 0.8, md: 1.5 }, py: 0,
                               height: { xs: 22, md: 24 },
                               whiteSpace: "nowrap", minWidth: 0 }}>
                   ✅ коммит+пуш</Button>
+                </span>
               </Tooltip>}
             {status.env === "dev" &&
               <Tooltip title="отправить в прод — слить dev → main, CI соберёт :latest и обновит прод">
@@ -4059,14 +4064,19 @@ export default function App() {
                               whiteSpace: "nowrap", minWidth: 0 }}>
                   🚀 в прод</Button>
               </Tooltip>}
-            <Tooltip title="переключить/создать ветку репозитория">
+            <Tooltip title={brInfo.busy
+                     ? "по проекту идёт или ждёт очереди задача — ветки заблокированы до её завершения"
+                     : "переключить/создать ветку репозитория"}>
+              <span>
               <Button size="small" variant="outlined"
+                      disabled={brInfo.busy}
                       onClick={openBranchDlg}
                       sx={{ fontSize: { xs: 10, md: 11 },
                             px: { xs: 0.8, md: 1.5 }, py: 0,
                             height: { xs: 22, md: 24 },
                             whiteSpace: "nowrap", minWidth: 0 }}>
                 🌿 ветка</Button>
+              </span>
             </Tooltip>
             {/* ссылка проекта из настроек — мини-кнопка «Проверить»
                 открывает её в новой вкладке; не задана — не рисуем */}

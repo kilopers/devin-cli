@@ -459,6 +459,11 @@ export function Branches({ project, open, onToggle, toast }) {
   const branches = (data && data.branches) || [];
   if (data && !branches.length) return null;
   const onMain = data && data.current === data.main;
+  // проект занят задачей (queued/running) — меню веток блочим:
+  // смена/merge под бегущим агентом смешает рабочее дерево
+  const taskBusy = !!data?.busy;
+  const lockTip = "по проекту идёт или ждёт очереди задача — " +
+                  "операции с ветками заблокированы до её завершения";
 
   return (<>
     <ListItemButton dense onClick={onToggle} sx={{ px: 1.5, py: 0.5 }}>
@@ -468,13 +473,19 @@ export function Branches({ project, open, onToggle, toast }) {
       <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
         Ветки
       </Typography>
+      {taskBusy &&
+        <Tooltip title={lockTip}>
+          <Chip size="small" label="🔒 задача"
+                sx={{ ml: 0.7, height: 18, fontSize: 10 }} />
+        </Tooltip>}
       <Chip size="small" label={branches.length}
             sx={{ ml: "auto", height: 18, fontSize: 11 }} />
       {data && !onMain &&
-        <Tooltip title={"слить " + data.current + " в " + data.main}>
+        <Tooltip title={taskBusy ? lockTip
+                          : "слить " + data.current + " в " + data.main}>
           <span>
             <IconButton size="small" sx={{ ml: "auto" }}
-              disabled={busy}
+              disabled={busy || taskBusy}
               onClick={e => { e.stopPropagation();
                 act("/api/branch/merge", {},
                     "Слито в " + data.main); }}>
@@ -484,14 +495,17 @@ export function Branches({ project, open, onToggle, toast }) {
         </Tooltip>}
     </ListItemButton>
     <Collapse in={open}>
-      <Box>
+      <Box sx={{ opacity: taskBusy ? 0.45 : 1,
+                 filter: taskBusy ? "blur(0.4px)" : "none" }}>
         {branches.map(b => (
-          <ListItemButton key={b.name} dense selected={b.current}
-            disabled={busy || b.current}
-            onClick={() => act("/api/branch/switch",
-                               { branch: b.name },
-                               "Ветка: " + b.name)}
-            sx={{ px: 1.5, py: 0.3 }}>
+          <Tooltip key={b.name} title={taskBusy ? lockTip : ""}>
+            <Box component="span" sx={{ display: "block" }}>
+            <ListItemButton dense selected={b.current}
+              disabled={busy || b.current || taskBusy}
+              onClick={() => act("/api/branch/switch",
+                                 { branch: b.name },
+                                 "Ветка: " + b.name)}
+              sx={{ px: 1.5, py: 0.3 }}>
             <Typography variant="body2" noWrap sx={{
               flex: 1, fontSize: 12.5,
               fontFamily: "ui-monospace, Menlo, monospace" }}>
@@ -518,9 +532,10 @@ export function Branches({ project, open, onToggle, toast }) {
                   <CloudDoneIcon sx={{ fontSize: 14, color: "#2e7d32",
                                        flexShrink: 0 }} />
                 </Tooltip>
-              : <Tooltip title={"отправить " + b.name + " на remote"}>
+              : <Tooltip title={taskBusy ? lockTip
+                                 : "отправить " + b.name + " на remote"}>
                   <span>
-                    <IconButton size="small" disabled={busy}
+                    <IconButton size="small" disabled={busy || taskBusy}
                         onClick={e => { e.stopPropagation();
                           act("/api/branch/push", { branch: b.name },
                               "Запушено: " + b.name); }}>
@@ -529,7 +544,9 @@ export function Branches({ project, open, onToggle, toast }) {
                     </IconButton>
                   </span>
                 </Tooltip>}
-          </ListItemButton>))}
+            </ListItemButton>
+            </Box>
+          </Tooltip>))}
       </Box>
     </Collapse>
   </>);

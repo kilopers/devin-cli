@@ -780,6 +780,24 @@ def _stash_count(root: Path, branch: str) -> int:
                if f"auto:{branch}" in ln)
 
 
+def _proj_busy(proj: str) -> bool:
+    """У проекта есть задача в очереди или в работе — гит-операции,
+    меняющие дерево/HEAD (switch/new/merge/commit), в это время
+    опасны: бегущий агент может писать файлы и коммитить на ту
+    ветку, на которой стартовал."""
+    with _run_lock:
+        if proj in RUNNING_PROJS:
+            return True
+    return bool(db_query(
+        "SELECT 1 FROM tasks WHERE project=%s AND status='queued'"
+        " LIMIT 1", (proj,)))
+
+
+_BRANCH_BUSY_ERR = ("по проекту идёт или ждёт очереди задача — "
+                    "операции с ветками заблокированы до её "
+                    "завершения")
+
+
 @app.post("/api/repo/commit")
 @login_required
 def _api_repo_commit():
@@ -789,6 +807,8 @@ def _api_repo_commit():
     root = _proj_root(proj)
     if not (root / ".git").exists():
         return jsonify({"ok": False, "error": "нет репо"}), 400
+    if _proj_busy(proj):
+        return jsonify({"ok": False, "error": _BRANCH_BUSY_ERR}), 409
     out = []
     u = _current_user()
     gname = uset("git.name", u, "GIT_USER_NAME", "") or "webdev"
@@ -852,7 +872,8 @@ def _api_branches():
             "stash": _stash_count(root, name),
             "dirty": len(dirty.splitlines()) if name == cur else 0})
     res.update({"branches": branches, "current": cur,
-                "main": _main_branch(root, proj)})
+                "main": _main_branch(root, proj),
+                "busy": _proj_busy(proj)})
     return jsonify(res)
 
 
@@ -869,6 +890,8 @@ def _api_branch_switch():
         return jsonify({"ok": False, "error": "bad branch"}), 400
     if not (root / ".git").exists():
         return jsonify({"ok": False, "error": "нет репо"}), 400
+    if _proj_busy(proj):
+        return jsonify({"ok": False, "error": _BRANCH_BUSY_ERR}), 409
     _, cur = _git(root, "branch", "--show-current")
     cur = cur.strip()
     _, dirty = _git(root, "status", "--porcelain")
@@ -908,6 +931,8 @@ def _api_branch_new():
     root = _proj_root(proj)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,80}", br):
         return jsonify({"ok": False, "error": "bad name"}), 400
+    if _proj_busy(proj):
+        return jsonify({"ok": False, "error": _BRANCH_BUSY_ERR}), 409
     rc, o = _git(root, "checkout", "-b", br)
     if rc != 0:
         return jsonify({"ok": False, "error": o[:300]})
@@ -925,6 +950,8 @@ def _api_branch_push():
     root = _proj_root(proj)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,80}", br):
         return jsonify({"ok": False, "error": "bad branch"}), 400
+    if _proj_busy(proj):
+        return jsonify({"ok": False, "error": _BRANCH_BUSY_ERR}), 409
     rc, o = _git(root, "push", "-u", "origin", br)
     if rc != 0:
         return jsonify({"ok": False, "error": o[:400]})
@@ -939,6 +966,8 @@ def _api_branch_merge():
     body = _req_json()
     proj = (body.get("project") or "").strip()
     root = _proj_root(proj)
+    if _proj_busy(proj):
+        return jsonify({"ok": False, "error": _BRANCH_BUSY_ERR}), 409
     main = _main_branch(root, proj)
     _, cur = _git(root, "branch", "--show-current")
     cur = cur.strip()
