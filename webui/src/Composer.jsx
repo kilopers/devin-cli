@@ -51,7 +51,9 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
-  const [lastAudio, setLastAudio] = useState(null);  // failed WAV → retry
+  const [lastAudio, setLastAudio] = useState(null);  // {wav,dur} failed → retry
+  const [recEst, setRecEst] = useState(null);   // {t0,dur} — оценка прогресса
+  const [, setEstTick] = useState(0);
   const [dictDraft, setDictDraft] = useState(null);  // длинный диктант → оверлей
   const textRef = useRef("");
   textRef.current = text;
@@ -377,18 +379,19 @@ export default function Composer({ project, sttStatus, toast, onSent,
     clearTimeout(r.timer); clearInterval(r.clock);
     r.proc.disconnect(); r.src.disconnect(); r.gain.disconnect();
     r.stream.getTracks().forEach(t => t.stop());
-    const wav = encodeWav(resample(r.chunks, r.ctx.sampleRate, STT_RATE),
-                          STT_RATE);
+    const pcm = resample(r.chunks, r.ctx.sampleRate, STT_RATE);
+    const wav = encodeWav(pcm, STT_RATE);
     r.ctx.close();
-    sendAudio(wav);
+    sendAudio(wav, pcm.length / STT_RATE);
   };
 
   // POST the WAV to STT. On any failure keep the blob in lastAudio —
   // providers (yandex etc.) often recover within seconds, the «ещё раз»
   // button resends it so the recording isn't lost.
-  const sendAudio = async wav => {
+  const sendAudio = async (wav, durSec = 0) => {
     setRecognizing(true);
     setRecInfo("распознаю…");
+    setRecEst({ t0: Date.now(), dur: durSec });
     try {
       const d = await (await api("/api/stt", { method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
@@ -405,13 +408,14 @@ export default function Composer({ project, sttStatus, toast, onSent,
       } else {
         toast(d.ok ? "Ничего не распознано"
                    : "STT: " + (d.error || "?"));
-        setLastAudio(wav);
+        setLastAudio({ wav, dur: durSec });
       }
     } catch (e) {
       toast("STT сеть: " + e);
-      setLastAudio(wav);
+      setLastAudio({ wav, dur: durSec });
     }
     setRecognizing(false);
+    setRecEst(null);
     setRecInfo("");
   };
 
@@ -444,24 +448,38 @@ export default function Composer({ project, sttStatus, toast, onSent,
     if (r) stopRec(r); else startRec();
   };
 
-  const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
-  // круговой прогресс распознавания: процент вытаскиваем из строки
-  // статуса «🎙 распознано ~66% (…)», без процента — indeterminate
+  // текст рядом с кнопками — только таймер записи; статус
+  // распознавания не выводим, кольцо на кнопке и так показывает ход
+  const shownStat = recording ? recInfo : "";
+  // круговой прогресс распознавания: сначала реальный процент из
+  // stt_status («распознано ~66%»), а для коротких клипов, чей
+  // SSE-стрим заканчивается раньше веб-поллинга, — оценка по
+  // длительности аудио (≈0.35× real-time + 1.5с оверхед, cap 95%)
+  useEffect(() => {
+    if (!recognizing || !recEst) return;
+    const t = setInterval(() => setEstTick(x => x + 1), 400);
+    return () => clearInterval(t);
+  }, [recognizing, recEst]);
   const sttPct = recognizing && sttStatus
     ? (m => (m ? Math.min(100, +m[1]) : null))(sttStatus.match(/~(\d{1,3})%/))
     : null;
+  const estPct = recognizing && recEst
+    ? Math.min(95, (Date.now() - recEst.t0) /
+                    (recEst.dur * 350 + 1500) * 100)
+    : null;
+  const ringPct = sttPct ?? estPct;
   const sttRing = recognizing && (
     <Box sx={{ position: "relative", display: "inline-flex",
                alignItems: "center", justifyContent: "center",
                lineHeight: 0 }}>
       <CircularProgress size={22} thickness={5}
-        variant={sttPct === null ? "indeterminate" : "determinate"}
-        value={sttPct ?? 0} />
-      {sttPct !== null && (
+        variant={ringPct === null ? "indeterminate" : "determinate"}
+        value={ringPct ?? 0} />
+      {ringPct !== null && (
         <Typography component="span" sx={{
           position: "absolute", fontSize: 8, fontWeight: 700,
           color: "text.secondary" }}>
-          {sttPct}%
+          {Math.round(ringPct)}%
         </Typography>)}
     </Box>);
 
@@ -579,7 +597,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         {lastAudio && !recognizing && (
           <BottomNavigationAction label="Ещё раз"
             icon={<RefreshIcon />}
-            onClick={() => sendAudio(lastAudio)}
+            onClick={() => sendAudio(lastAudio.wav, lastAudio.dur)}
             sx={{ minWidth: 0, color: "warning.light" }} />
         )}
         <BottomNavigationAction
@@ -669,7 +687,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
               <Tooltip title="отправить запись на распознавание ещё раз">
                 <Button size="small" variant="outlined" color="warning"
                         startIcon={<RefreshIcon sx={{ fontSize: 15 }} />}
-                        onClick={() => sendAudio(lastAudio)}
+                        onClick={() => sendAudio(lastAudio.wav, lastAudio.dur)}
                         sx={{ textTransform: "none", whiteSpace: "nowrap",
                               fontSize: 12, px: 1, minWidth: 0 }}>
                   ещё раз
