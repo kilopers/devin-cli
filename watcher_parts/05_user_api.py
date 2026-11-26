@@ -103,6 +103,8 @@ def _api_project_settings_get():
                                       f"colfull:{p}") or "",
                     "seltopic": us_get(_current_user(),
                                        f"seltopic:{p}") or "",
+                    "draft": us_get(_current_user(),
+                                    f"draft:{p}") or "",
                     "model": pj_get(p, "model"),
                     "agent": pj_get(p, "agent"),
                     "reply_mode": pj_get(p, "reply_mode"),
@@ -182,6 +184,11 @@ def _api_project_settings_set():
             return jsonify({"ok": False,
                             "error": "seltopic: «main» или id темы"}), 400
         us_set(_current_user(), f"seltopic:{p}", v)
+    # черновик композера — настройка юзера+проекта (v2.4.20),
+    # синхронизируется между устройствами
+    if "draft" in body:
+        us_set(_current_user(), f"draft:{p}",
+               str(body.get("draft") or "")[:20000])
     return jsonify({"ok": True})
 
 

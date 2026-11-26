@@ -56,6 +56,36 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const textRef = useRef("");
   textRef.current = text;
 
+  // черновик поля per-юзер+проект: localStorage — мгновенно, ключ
+  // us:<u>.draft:<project> — дебаунсом 3с (синк между устройствами)
+  const projRef = useRef(project);
+  projRef.current = project;
+  const draftTimer = useRef(null);
+  const draftKey = p => "devin.draft." + p;
+  const saveDraft = v => {
+    const p = projRef.current;
+    if (!p || p === "workspace") return;
+    localStorage.setItem(draftKey(p), v);
+    clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() =>
+      post("/api/project/settings", { project: p, draft: v })
+        .catch(() => {}), 3000);
+  };
+  const updText = v => { setText(v); saveDraft(v); };
+  // уход со страницы/смена проекта (полная перезагрузка) — досылаем
+  // последнее состояние маяком, не дожидаясь таймера
+  useEffect(() => {
+    const flush = () => {
+      const p = projRef.current;
+      if (p && p !== "workspace" && navigator.sendBeacon)
+        navigator.sendBeacon("/api/project/settings", new Blob(
+          [JSON.stringify({ project: p, draft: textRef.current })],
+          { type: "application/json" }));
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
+
   // диктовка из колонки канбана (🎙 у «＋ … сюда»): распознанный
   // текст приходит пропом inject {text,n} — короткий дописываем
   // в поле, длинный — в оверлей-превью поверх бара (dictDraftEl)
@@ -65,7 +95,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                ? textRef.current.replace(/\s+$/, "") + " " : "")
               + inject.text;
     if (m.length > DICT_DRAFT_MIN) setDictDraft(m);
-    else setText(m);
+    else updText(m);
   }, [inject?.n]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // чипы параметров следующей задачи: проектные дефолты + разовые
@@ -79,14 +109,26 @@ export default function Composer({ project, sttStatus, toast, onSent,
   const [tAnchor, setTAnchor] = useState(null);   // меню целевой темы
   useEffect(() => {
     if (!project || project === "workspace") return;
+    // черновик: локальный кэш — сразу, серверный догоняет ответом;
+    // если юзер успел печатать — его ввод свежее, сервер не затирает
+    const key = draftKey(project);
+    const cached = localStorage.getItem(key) || "";
+    setText(cached);
     get("/api/project/settings?project=" + encodeURIComponent(project))
-      .then(j => setEff({ model: j.eff_model || "",
-                          mode: j.eff_mode || "code",
-                          ac: j.auto_commit || "0" }))
+      .then(j => {
+        setEff({ model: j.eff_model || "",
+                 mode: j.eff_mode || "code",
+                 ac: j.auto_commit || "0" });
+        const srv = j.draft || "";
+        if (srv && srv !== cached && textRef.current === cached) {
+          setText(srv);
+          localStorage.setItem(key, srv);
+        } else if (!srv && cached) saveDraft(cached);
+      })
       .catch(() => {});
     get("/api/models").then(j => setModels(j.models || [])).catch(()=>{});
     setOv({});
-  }, [project]);
+  }, [project]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // настройки целевой колонки: её дефолты идут после разовых
   // оверрайдов, но раньше проектных (eff.*)
@@ -297,7 +339,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         // отжимается сама, когда опрос привезёт новый статус
         const d = await post("/api/task/continue",
                              { stem: cont.stem, text: s });
-        if (d.ok) { setText(""); onSent?.(); }
+        if (d.ok) { updText(""); onSent?.(); }
         else toast("Ошибка: " + (d.error || "?"));
       } else if (note) {
         // «нажатая» карточка-заметка: ввод дописывается в её текст
@@ -305,7 +347,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         // отжимается
         const d = await post("/api/task/append",
                              { stem: note.stem, text: s });
-        if (d.ok) { setText(""); onNoteDone?.(); onSent?.(); }
+        if (d.ok) { updText(""); onNoteDone?.(); onSent?.(); }
         else toast("Ошибка: " + (d.error || "?"));
       } else {
         const d = await post("/api/tasks", {
@@ -315,7 +357,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
           ...(ov.ac !== undefined ? { auto_commit: ov.ac } : {}),
           ...(ov.model ? { model: ov.model } : {}),
           ...(att ? { attach: att.id } : {}) });
-        if (d.ok) { setText(""); setOv({}); setAtt(null); onSent?.(); }
+        if (d.ok) { updText(""); setOv({}); setAtt(null); onSent?.(); }
         else toast("Ошибка: " + (d.error || "?"));
       }
     } catch (e) { toast("Сеть: " + e); }
@@ -358,7 +400,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         if (fast) sendText(merged);          // быстрый: сразу в работу
         else if (merged.length > DICT_DRAFT_MIN)
           setDictDraft(merged);              // длинное — оверлей-превью
-        else setText(merged);
+        else updText(merged);
         setLastAudio(null);
       } else {
         toast(d.ok ? "Ничего не распознано"
@@ -437,7 +479,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
       <Box sx={{ display: "flex", gap: 0.8,
                  justifyContent: "flex-end" }}>
         <Button size="small" variant="outlined"
-                onClick={() => { setText(dictDraft);
+                onClick={() => { updText(dictDraft);
                                  setDictDraft(null); }}
                 sx={{ textTransform: "none", fontSize: 12,
                       borderRadius: "9px" }}>
@@ -480,7 +522,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                             ? `Что спланировать по «${project || "…"}»`
                             : `Задача для «${project || "…"}»`}
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={e => updText(e.target.value)}
           onPaste={onPasteFile}
           onKeyDown={e => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -570,7 +612,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
              : `Задача для агента по проекту «${project || "…"}»`) +
                          " — Ctrl+Enter чтобы отправить"}
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={e => updText(e.target.value)}
             onPaste={onPasteFile}
             onKeyDown={e => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
