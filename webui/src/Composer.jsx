@@ -12,12 +12,12 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Chip from "@mui/material/Chip";
 import Menu from "@mui/material/Menu";
+import CircularProgress from "@mui/material/CircularProgress";
 import MenuItem from "@mui/material/MenuItem";
 import Typography from "@mui/material/Typography";
 import MicIcon from "@mui/icons-material/Mic";
 import StopIcon from "@mui/icons-material/Stop";
 import MenuIcon from "@mui/icons-material/Menu";
-import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import SendIcon from "@mui/icons-material/Send";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
@@ -445,6 +445,25 @@ export default function Composer({ project, sttStatus, toast, onSent,
   };
 
   const shownStat = recognizing && sttStatus ? sttStatus : recInfo;
+  // круговой прогресс распознавания: процент вытаскиваем из строки
+  // статуса «🎙 распознано ~66% (…)», без процента — indeterminate
+  const sttPct = recognizing && sttStatus
+    ? (m => (m ? Math.min(100, +m[1]) : null))(sttStatus.match(/~(\d{1,3})%/))
+    : null;
+  const sttRing = recognizing && (
+    <Box sx={{ position: "relative", display: "inline-flex",
+               alignItems: "center", justifyContent: "center",
+               lineHeight: 0 }}>
+      <CircularProgress size={22} thickness={5}
+        variant={sttPct === null ? "indeterminate" : "determinate"}
+        value={sttPct ?? 0} />
+      {sttPct !== null && (
+        <Typography component="span" sx={{
+          position: "absolute", fontSize: 8, fontWeight: 700,
+          color: "text.secondary" }}>
+          {sttPct}%
+        </Typography>)}
+    </Box>);
 
   // превью длинного надиктованного текста: карточка поверх бара
   // (absolute внутри fixed #composer-bar — в потоке не участвует,
@@ -550,7 +569,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
         <BottomNavigationAction
           label={recording ? "Стоп" : "Запись"}
           icon={recording ? <StopIcon />
-            : recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+            : recognizing ? sttRing : <MicIcon />}
           onClick={micClick}
           sx={{ minWidth: 0,
                 color: recording ? "error.light" : "#fff",
@@ -643,7 +662,7 @@ export default function Composer({ project, sttStatus, toast, onSent,
                                   { "50%": { opacity: 0.35 } } }
                             : {}}>
                 {recording ? <StopIcon />
-                  : recognizing ? <HourglassEmptyIcon /> : <MicIcon />}
+                  : recognizing ? sttRing : <MicIcon />}
               </IconButton>
             </Tooltip>
             {lastAudio && !recognizing && (
