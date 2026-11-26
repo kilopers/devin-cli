@@ -123,38 +123,127 @@ def _stt_opener(url: str):
     return TG_OPENER
 
 
-def openai_transcribe(audio: bytes, mime: str = "audio/ogg", user: str | None = None) -> str:
-    """OpenAI-compatible /audio/transcriptions (OpenAI, Groq, …)."""
+def _stt_read_sse(r, report, duration: float | None) -> str:
+    """SSE-стрим speaches: 'data: {json}' на каждый сегмент по мере
+    распознавания. verbose_json несёт duration окна и таймкоды
+    сегмента — считаем % обработанного аудио для статуса; текст
+    сегментов склеиваем в итог. OpenAI delta-формат тоже собирается
+    (delta + transcription.text.done)."""
+    chunks = []
+    base = 0.0          # длительность уже пройденных 30с-окон
+    prev_start = -1.0   # start последнего сегмента в текущем окне
+    win_dur = 0.0       # duration текущего окна из события
+    for raw in r:
+        line = raw.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if payload == "[DONE]":
+            break
+        try:
+            ev = json.loads(payload)
+        except Exception:
+            if payload:
+                chunks.append(payload)
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if ev.get("type") == "transcription.text.done":
+            if not chunks and ev.get("text"):
+                chunks.append(ev["text"])
+            continue
+        segs = ev.get("segments") or []
+        if segs:
+            s = segs[-1]
+            st = float(s.get("start") or 0)
+            en = float(s.get("end") or 0)
+            if st < prev_start - 0.01:      # новое 30с-окно whisper
+                base += win_dur
+            prev_start = st
+            win_dur = float(ev.get("duration") or 0)
+            done = base + en
+            if duration:
+                pct = min(99, int(done / duration * 100))
+                report(f"🎙 распознано ~{pct}% "
+                       f"({done:.0f}с из {duration:.0f}с)")
+            else:
+                report(f"🎙 распознано ~{done:.0f}с аудио")
+        t = ev.get("delta") or ev.get("text")
+        if isinstance(t, str) and t:
+            chunks.append(t)
+    return "".join(chunks).strip()
+
+
+def openai_transcribe(audio: bytes, mime: str = "audio/ogg",
+                      on_status=None, duration: float | None = None,
+                      user: str | None = None) -> str:
+    """OpenAI-compatible /audio/transcriptions (OpenAI, Groq, …).
+    С on_status просим stream=true + verbose_json: speaches/whisper
+    стримит сегменты по SSE — показываем живой прогресс; сервер без
+    SSE отвечает обычным JSON. Провайдер, не понимающий stream
+    (4xx), получает повтор без него."""
     boundary = "----devincli" + str(int(time.time() * 1000))
     ext = {"audio/ogg": "oga", "audio/mpeg": "mp3", "audio/mp4": "m4a",
            "audio/wav": "wav"}.get(mime, "ogg")
-    parts = [
-        f"--{boundary}\r\nContent-Disposition: form-data; "
-        f'name="model"\r\n\r\n{uset("stt.model", user, "STT_MODEL", "whisper-1")}\r\n'.encode(),
-        f"--{boundary}\r\nContent-Disposition: form-data; "
-        f'name="file"; filename="voice.{ext}"\r\n'
-        f"Content-Type: {mime}\r\n\r\n".encode() + audio + b"\r\n",
-        f"--{boundary}--\r\n".encode(),
-    ]
+
+    def _field(name: str, val: str) -> bytes:
+        return (f"--{boundary}\r\nContent-Disposition: form-data; "
+                f'name="{name}"\r\n\r\n{val}\r\n').encode()
+
     sb = uset("stt.base_url", user, "STT_BASE_URL",
               "https://api.openai.com/v1")
     sk = uset("stt.api_key", user, "STT_API_KEY")
     sm = uset("stt.model", user, "STT_MODEL", "whisper-1")
     log(f"stt -> transcribing {len(audio)} bytes via {sb} ({sm})")
     started = time.time()
-    req = urllib.request.Request(
-        f"{sb}/audio/transcriptions",
-        data=b"".join(parts),
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Authorization": f"Bearer {sk}",
-        })
-    try:
-        with _stt_opener(sb).open(req, timeout=120) as r:
-            res = json.load(r)
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"stt HTTP {e.code}: {e.read().decode()[:500]}")
-    text = res["text"].strip()
+
+    def _req(stream: bool) -> urllib.request.Request:
+        parts = [_field("model", sm)]
+        if stream:
+            parts += [_field("stream", "true"),
+                      _field("response_format", "verbose_json")]
+        parts += [
+            f"--{boundary}\r\nContent-Disposition: form-data; "
+            f'name="file"; filename="voice.{ext}"\r\n'
+            f"Content-Type: {mime}\r\n\r\n".encode() + audio + b"\r\n",
+            f"--{boundary}--\r\n".encode(),
+        ]
+        return urllib.request.Request(
+            f"{sb}/audio/transcriptions",
+            data=b"".join(parts),
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Authorization": f"Bearer {sk}",
+            })
+
+    # on_status не чаще раза в ~2с — и веб-поллинг каждые 3с ловит,
+    # и телеграм не спамится editMessageText
+    last_rep = [0.0]
+    def _report(msg: str) -> None:
+        if on_status and time.time() - last_rep[0] >= 2:
+            last_rep[0] = time.time()
+            try:
+                on_status(msg)
+            except Exception:
+                pass
+
+    stream = bool(on_status)
+    for attempt in range(2):
+        try:
+            with _stt_opener(sb).open(_req(stream), timeout=300) as r:
+                ctype = r.headers.get("Content-Type", "")
+                if stream and "text/event-stream" in ctype:
+                    text = _stt_read_sse(r, _report, duration)
+                else:
+                    res = json.load(r)
+                    text = res["text"].strip()
+            break
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()[:500]
+            if stream and e.code in (400, 404, 422):
+                stream = False             # провайдер без stream — заново
+                continue
+            raise RuntimeError(f"stt HTTP {e.code}: {body}")
     log(f"stt <- {time.time() - started:.1f}s: {text!r}")
     return text
 
@@ -349,7 +438,7 @@ def _stt_dispatch(p: str, audio: bytes, mime: str, on_status=None,
         return yandex_transcribe(audio, mime, on_status, user)
     if p == "gemini":
         return gemini_transcribe(audio, mime, user)
-    return openai_transcribe(audio, mime, user)
+    return openai_transcribe(audio, mime, on_status, duration, user)
 
 
 def transcribe(audio: bytes, mime: str = "audio/ogg", on_status=None,
@@ -432,7 +521,8 @@ def web_transcribe(wav: bytes) -> str:
 
     def _try(p: str) -> str:
         if p != "yandex":
-            return _stt_dispatch(p, wav, "audio/wav", user=u)
+            return _stt_dispatch(p, wav, "audio/wav", on_status=_status,
+                                 duration=duration, user=u)
         try:
             if duration < 28:
                 return yandex_transcribe_sync(pcm, "audio/L16", rate,
@@ -444,7 +534,10 @@ def web_transcribe(wav: bytes) -> str:
         finally:
             STATE["stt"] = None
 
-    return _stt_run(chain, _try, _status)
+    try:
+        return _stt_run(chain, _try, _status)
+    finally:
+        STATE["stt"] = None
 
 
 def _load_json(path: Path) -> dict:

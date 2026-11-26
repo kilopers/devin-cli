@@ -4517,7 +4517,7 @@ export default function App() {
             {dict
               ? <>{dictInfo || "00:00"} — {dict.kind === "note"
                   ? "диктую в заметку" : "диктую в колонку"}</>
-              : dictErr || "идёт распознавание…"}
+              : dictErr || status.stt_status || "идёт распознавание…"}
           </Typography>
           {dict &&
             <Button size="small" onClick={stopDict}
