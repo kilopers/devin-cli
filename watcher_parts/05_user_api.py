@@ -105,6 +105,8 @@ def _api_project_settings_get():
                                        f"seltopic:{p}") or "",
                     "draft": us_get(_current_user(),
                                     f"draft:{p}") or "",
+                    "stt_result": us_get(_current_user(),
+                                         f"stt_result:{p}") or "",
                     "model": pj_get(p, "model"),
                     "agent": pj_get(p, "agent"),
                     "reply_mode": pj_get(p, "reply_mode"),
@@ -189,6 +191,11 @@ def _api_project_settings_set():
     if "draft" in body:
         us_set(_current_user(), f"draft:{p}",
                str(body.get("draft") or "")[:20000])
+    # «входящее» распознавание: композер забирает текст и чистит
+    # ключ пустой строкой (v2.4.23)
+    if "stt_result" in body:
+        us_set(_current_user(), f"stt_result:{p}",
+               str(body.get("stt_result") or "")[:20000])
     return jsonify({"ok": True})
 
 

@@ -126,6 +126,17 @@ export default function Composer({ project, sttStatus, toast, onSent,
           setText(srv);
           localStorage.setItem(key, srv);
         } else if (!srv && cached) saveDraft(cached);
+        // «входящее» распознавание: STT ответил, пока юзер был на
+        // другом проекте/странице — сливаем текст в поле и чистим
+        // ключ; endsWith-дедуп на случай, когда он уже дописан
+        const inc = (j.stt_result || "").trim();
+        if (inc) {
+          const base = textRef.current.replace(/\s+$/, "");
+          if (!base.endsWith(inc))
+            updText((base ? base + " " : "") + inc);
+          post("/api/project/settings", { project, stt_result: "" })
+            .catch(() => {});
+        }
       })
       .catch(() => {});
     get("/api/models").then(j => setModels(j.models || [])).catch(()=>{});
@@ -393,9 +404,16 @@ export default function Composer({ project, sttStatus, toast, onSent,
     setRecInfo("распознаю…");
     setRecEst({ t0: Date.now(), dur: durSec });
     try {
-      const d = await (await api("/api/stt", { method: "POST",
+      const d = await (await api("/api/stt?project=" +
+        encodeURIComponent(project || ""), { method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: wav })).json();
+      // сервер продублировал результат в us:<u>.stt_result:<p> на
+      // случай ухода со страницы — ответ до нас дошёл, ключ чистим,
+      // чтобы при следующем открытии проекта не слился повторно
+      if (project && project !== "workspace")
+        post("/api/project/settings", { project, stt_result: "" })
+          .catch(() => {});
       if (d.ok && d.text.trim()) {
         const merged = (textRef.current
                         ? textRef.current.replace(/\s+$/, "") + " "

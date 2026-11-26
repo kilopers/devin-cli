@@ -1102,12 +1102,18 @@ def _api_stt():
     audio = request.get_data()
     if not audio or len(audio) > 16_000_000:
         return jsonify({"ok": False, "error": "bad audio"}), 400
+    p = (request.args.get("project") or "").strip()
     try:
         text = web_transcribe(audio)
     except Exception as e:
         log(f"web stt failed: {e}")
         return jsonify({"ok": False, "error": str(e)[:300]}), 502
     log(f"web stt <- {len(audio)} bytes: {text!r}")
+    # «входящее» распознавание: если юзер ушёл со страницы/сменил
+    # проект до ответа, текст не пропадёт — композер подхватит
+    # stt_result при следующем открытии проекта и сольёт в черновик
+    if p and _owns_project(p):
+        us_set(_current_user(), f"stt_result:{p}", text[:20000])
     return jsonify({"ok": True, "text": text})
 
 

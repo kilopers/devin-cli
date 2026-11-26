@@ -3405,9 +3405,15 @@ export default function App() {
     // кнопка 🎙 источника и окошко показывают лоадер
     setDictProc(r.target);
     try {
-      const d = await (await fetch("/api/stt", { method: "POST",
+      const d = await (await fetch("/api/stt?project=" +
+        encodeURIComponent(project || ""), { method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: wav })).json();
+      // ответ дошёл — чистим серверный stt_result (он нужен только
+      // если юзер ушёл со страницы до конца распознавания)
+      if (project && project !== "workspace")
+        post("/api/project/settings", { project, stt_result: "" })
+          .catch(() => {});
       const txt = cleanDictText((d.text || "").trim());
       if (!d.ok || !txt) {
         flashDictErr(d.ok ? "Ничего не распознано"
