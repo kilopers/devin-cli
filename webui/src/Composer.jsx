@@ -486,17 +486,22 @@ export default function Composer({ project, sttStatus, toast, onSent,
                     (recEst.dur * 350 + 1500) * 100)
     : null;
   const ringPct = sttPct ?? estPct;
+  // цвет как у кнопок рядом: на мобильном бар крашен accent'ом и
+  // иконки белые → кольцо белое; на десктопе — акцент/primary
+  const ringColor = mobile ? "#fff" : (accent || "primary.main");
   const sttRing = recognizing && (
     <Box sx={{ position: "relative", display: "inline-flex",
                alignItems: "center", justifyContent: "center",
                lineHeight: 0 }}>
-      <CircularProgress size={22} thickness={5}
+      <CircularProgress size={24} thickness={4.5}
         variant={ringPct === null ? "indeterminate" : "determinate"}
-        value={ringPct ?? 0} />
+        value={ringPct ?? 0}
+        sx={{ color: ringColor }} />
       {ringPct !== null && (
         <Typography component="span" sx={{
-          position: "absolute", fontSize: 8, fontWeight: 700,
-          color: "text.secondary" }}>
+          position: "absolute", fontSize: 7, fontWeight: 600,
+          letterSpacing: -0.2, lineHeight: 1,
+          color: mobile ? "#fff" : "text.secondary" }}>
           {Math.round(ringPct)}%
         </Typography>)}
     </Box>);
