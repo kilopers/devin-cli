@@ -3560,6 +3560,45 @@ export default function App() {
     return () => clearInterval(t);
   }, [project, loadBranches]);
 
+  // кнопки-действия проекта (.devin/actions.json + pj:<p>.actions) —
+  // выпадашка «⚡ Действия» в баре ветки
+  const [acts, setActs] = useState([]);
+  const [actsLast, setActsLast] = useState({});  // id -> {ts, ok}
+  const [actMenu, setActMenu] = useState(null);  // anchor выпадашки
+  const [actBusy, setActBusy] = useState("");    // id запущенного
+  const [actOut, setActOut] = useState(null);    // {label,text,ok} — диалог
+  const loadActs = useCallback(async () => {
+    const p = projRef.current;
+    if (!p) return;
+    try {
+      const d = await apiJson("/api/actions?project=" +
+        encodeURIComponent(p));
+      if (d.ok) { setActs(d.actions || []); setActsLast(d.last || {}); }
+      else setActs([]);
+    } catch (e) { setActs([]); }
+  }, []);
+  useEffect(() => {
+    setActs([]); setActsLast({});
+    loadActs();
+  }, [project, loadActs]);
+  const runAct = async a => {
+    setActMenu(null);
+    if (a.confirm &&
+        !window.confirm("Запустить «" + a.label + "»?")) return;
+    setActBusy(a.id);
+    try {
+      const d = await post("/api/action/run",
+        { project: projRef.current, id: a.id });
+      setActsLast(l => ({ ...l,
+        [a.id]: { ts: Date.now() / 1000, ok: !!d.ok } }));
+      if (d.output) setActOut({ label: a.label, text: d.output,
+                                ok: !!d.ok });
+      setToast(d.ok ? "✓ " + a.label
+                    : "✗ " + a.label + (d.error ? ": " + d.error : ""));
+    } catch (e) { setToast("Сеть: " + e); }
+    setActBusy("");
+  };
+
   const repoCommit = async () => {
     try {
       const d = await post("/api/repo/commit", { project: projRef.current });
@@ -4097,7 +4136,64 @@ export default function App() {
                               whiteSpace: "nowrap", minWidth: 0 }}>
                   🔗 Проверить</Button>
               </Tooltip>}
+            {acts.length > 0 &&
+              <Tooltip title="действия проекта — .devin/actions.json">
+                <Button size="small" variant="outlined" color="secondary"
+                        onClick={e => setActMenu(e.currentTarget)}
+                        sx={{ fontSize: { xs: 10, md: 11 },
+                              px: { xs: 0.8, md: 1.5 }, py: 0,
+                              height: { xs: 22, md: 24 },
+                              whiteSpace: "nowrap", minWidth: 0 }}>
+                  ⚡ действия</Button>
+              </Tooltip>}
           </Box>}
+
+        <Menu anchorEl={actMenu} open={!!actMenu}
+              onClose={() => setActMenu(null)}>
+          {acts.map(a => {
+            const last = actsLast[a.id];
+            const ago = last && last.ts
+              ? Math.max(0, Math.round((Date.now() / 1000 - last.ts) / 60))
+              : null;
+            return (
+              <MenuItem key={a.id} dense disabled={!!actBusy}
+                        onClick={() => runAct(a)}
+                        sx={{ fontSize: 13 }}>
+                {actBusy === a.id
+                  ? <CircularProgress size={14} sx={{ mr: 1 }} />
+                  : (a.icon || "⚡") + " "}
+                {a.label}
+                <Typography component="span" variant="caption"
+                            sx={{ ml: 1, opacity: 0.55 }}>
+                  {last && (last.ok ? "✓" : "✗") +
+                    (ago != null
+                      ? (ago < 1 ? " сейчас"
+                         : ago < 60 ? ` ${ago}м`
+                           : ` ${Math.round(ago / 60)}ч`)
+                      : "")}
+                </Typography>
+              </MenuItem>);
+          })}
+        </Menu>
+
+        <Dialog open={!!actOut} onClose={() => setActOut(null)}
+                maxWidth="md" fullWidth>
+          <DialogTitle sx={{ fontSize: 14, py: 1.2 }}>
+            {actOut && (actOut.ok ? "✓ " : "✗ ") + actOut.label}
+          </DialogTitle>
+          <DialogContent sx={{ py: 1 }}>
+            <Box component="pre" sx={{ m: 0, p: 1, fontSize: 11.5,
+                 fontFamily: "ui-monospace, Menlo, monospace",
+                 bgcolor: "action.hover", borderRadius: 1,
+                 whiteSpace: "pre-wrap", wordBreak: "break-word",
+                 maxHeight: "60vh", overflow: "auto" }}>
+              {actOut && actOut.text}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setActOut(null)}>Закрыть</Button>
+          </DialogActions>
+        </Dialog>
 
         <SwipeableDrawer open={drawerOpen}
                 onOpen={() => setDrawerOpen(true)}

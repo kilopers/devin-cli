@@ -1,0 +1,33 @@
+[
+  {
+    "id": "pull",
+    "label": "git pull",
+    "icon": "⬇",
+    "cmd": "git pull --ff-only",
+    "timeout": 60
+  },
+  {
+    "id": "status",
+    "label": "git status",
+    "icon": "🌿",
+    "cmd": "git status --short --branch && git log --oneline -5",
+    "timeout": 30
+  },
+  {
+    "id": "build-webui",
+    "label": "собрать webui",
+    "icon": "🛠",
+    "cmd": "cd webui && npm run build",
+    "timeout": 600,
+    "confirm": true
+  },
+  {
+    "id": "restart-worker",
+    "label": "рестарт воркера",
+    "icon": "♻",
+    "cmd": "cd /docker/devin && docker compose restart devin",
+    "host": true,
+    "confirm": true,
+    "timeout": 120
+  }
+]

@@ -202,6 +202,122 @@ def _api_project_settings_set():
 PROTECTED_PROJECTS = {"devin-cli"}   # сам воркер — удалить нельзя
 
 
+# --- project scoped actions: кнопки-скрипты в интерфейсе проекта -------
+#
+# Манифест действий — .devin/actions.json в корне репозитория проекта
+# (версионируется вместе с кодом, агент может сам дописывать кнопки)
+# плюс оверрайд/дополнение из kv pj:<p>.actions (JSON-массив — можно
+# держать проектные кнопки без коммита). Элемент массива:
+#   {"id":"pull","label":"git pull","icon":"⬇","cmd":"git pull --ff-only",
+#    "dir":".",          # подкаталог репа, дефолт корень
+#    "timeout":120,      # сек, cap 600
+#    "confirm":true,     # диалог «точно?» перед запуском
+#    "host":true,        # выполнить на хосте через SSH вместо контейнера
+#    "output":true}      # показать хвост вывода (дефолт вкл)
+def _proj_actions(p: str) -> list:
+    acts = []
+    man = PROJECTS_ROOT and (PROJECTS_ROOT / p / ".devin" / "actions.json")
+    if man and man.is_file():
+        try:
+            acts += json.loads(man.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    try:
+        kv = json.loads(pj_get(p, "actions") or "[]")
+        if isinstance(kv, list):
+            acts += kv
+    except Exception:
+        pass
+    out, seen = [], set()
+    for a in acts:
+        if not isinstance(a, dict):
+            continue
+        aid = str(a.get("id") or "")[:40]
+        cmd = str(a.get("cmd") or "")[:2000]
+        if not aid or not cmd or aid in seen:
+            continue
+        seen.add(aid)
+        try:
+            to = min(max(int(a.get("timeout") or 120), 5), 600)
+        except (TypeError, ValueError):
+            to = 120
+        out.append({"id": aid,
+                    "label": str(a.get("label") or aid)[:60],
+                    "icon": str(a.get("icon") or "⚡")[:8],
+                    "cmd": cmd,
+                    "dir": str(a.get("dir") or "")[:200],
+                    "host": bool(a.get("host")),
+                    "confirm": bool(a.get("confirm")),
+                    "output": bool(a.get("output", True)),
+                    "timeout": to})
+    return out[:20]
+
+
+@app.get("/api/actions")
+@login_required
+def _api_actions():
+    p = (request.args.get("project") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    acts = [{k: v for k, v in a.items() if k != "cmd"}
+            for a in _proj_actions(p)]
+    # последний прогон каждой кнопки — бейдж «✓ 5 мин назад»
+    last = {}
+    for a in acts:
+        try:
+            last[a["id"]] = json.loads(
+                pj_get(p, f"action_last:{a['id']}") or "{}")
+        except Exception:
+            last[a["id"]] = {}
+    return jsonify({"ok": True, "actions": acts, "last": last})
+
+
+@app.post("/api/action/run")
+@login_required
+def _api_action_run():
+    body = _req_json()
+    p = (body.get("project") or "").strip()
+    aid = (body.get("id") or "").strip()
+    if not p or not _owns_project(p):
+        return jsonify({"ok": False, "error": "нет доступа"}), 403
+    act = next((a for a in _proj_actions(p) if a["id"] == aid), None)
+    if not act:
+        return jsonify({"ok": False,
+                        "error": "действие не найдено"}), 404
+    if act["host"]:
+        key = Path("/host-keys/host_key")
+        if not key.is_file():
+            return jsonify({"ok": False,
+                            "error": "нет SSH-ключа к хосту"}), 400
+        cmd = ["ssh", "-i", str(key), "-o", "BatchMode=yes",
+               "-o", "StrictHostKeyChecking=no",
+               "-o", "UserKnownHostsFile=/dev/null",
+               "root@host.docker.internal", act["cmd"]]
+        cwd = None
+    else:
+        root = PROJECTS_ROOT / p
+        d = (root / act["dir"]).resolve() if act["dir"] else root
+        if not d.is_dir() or root.resolve() not in \
+                (d, *d.parents):
+            return jsonify({"ok": False, "error": "плохой dir"}), 400
+        cmd = ["bash", "-lc", act["cmd"]]
+        cwd = str(d)
+    try:
+        r = subprocess.run(cmd, cwd=cwd, timeout=act["timeout"],
+                           capture_output=True, text=True)
+        out = (r.stdout + r.stderr)[-4000:]
+        ok = r.returncode == 0
+    except subprocess.TimeoutExpired:
+        out, ok = f"timeout {act['timeout']}s", False
+    except Exception as e:
+        out, ok = str(e)[:500], False
+    pj_set(p, f"action_last:{aid}", json.dumps(
+        {"ts": time.time(), "ok": ok, "tail": out[-1000:]},
+        ensure_ascii=False))
+    log(f"action {p}/{aid} rc={'ok' if ok else 'fail'}")
+    return jsonify({"ok": ok, "output": out if act["output"] else ""})
+
+
 @app.post("/api/project/delete")
 @login_required
 def _api_project_delete():
